@@ -11,11 +11,15 @@
  * Files that already exist are left as they are. So is an entry for
  * nginx.org's repository that the machine already has in another file,
  * for example from nginx.org's own instructions: the tool then uses that
- * entry, with whatever key it names, and adds no source or key of its
- * own, since apt refuses two entries for one repository that name
- * different key files. The function returns the files it wrote, so a
- * caller that must leave the system as it found it can remove exactly
- * those.
+ * entry and adds no source or key of its own, since apt refuses two
+ * entries for one repository that name different key files. But first
+ * it checks that each key file the entry names holds both pinned
+ * fingerprints. It stops when one doesn't, or when the entry names no
+ * key file, since apt would then trust every key it holds for
+ * nginx.org's packages. A key file already at the tool's own keyring
+ * path is checked the same way. The function returns the files it
+ * wrote, so a caller that must leave the system as it found it can
+ * remove exactly those.
  */
 
 import path from "node:path";
@@ -27,6 +31,7 @@ import {
   NGINX_KEYRING_PATH,
   NGINX_SIGNING_KEY_URL,
   PINNED_FINGERPRINTS,
+  nginxOrgKeyFiles,
   parseGpgFingerprints,
 } from "./nginx-org.js";
 import { renderAptPin, renderAptSource } from "./render-host-files.js";
@@ -49,6 +54,42 @@ function gpg(host, home, args, what, options = {}) {
 }
 
 /**
+ * Runs work with a gpg folder made for it, and removes the folder after,
+ * once gpg's helpers have stopped.
+ * @param {object} host  The host.
+ * @param {(home: string) => *} work  The work, given gpg's folder.
+ * @returns {*} What the work returns.
+ */
+function withGpgHome(host, work) {
+  const home = host.makeTempDir();
+  try {
+    return work(home);
+  } finally {
+    host.run("gpgconf", ["--homedir", home, "--kill", "all"]);
+    host.removeTempDir(home);
+  }
+}
+
+/**
+ * Lists the pinned fingerprints that a key file lacks.
+ * @param {object} host  The host.
+ * @param {string} home  gpg's folder.
+ * @param {string} keyFile  The key file, armored or binary.
+ * @param {string} what  The step, for an error.
+ * @returns {string[]} The missing fingerprints; none when it holds both.
+ */
+function missingPinnedKeys(host, home, keyFile, what) {
+  const shown = gpg(
+    host,
+    home,
+    ["--show-keys", "--with-colons", keyFile],
+    what,
+  );
+  const found = parseGpgFingerprints(shown.stdout);
+  return PINNED_FINGERPRINTS.filter((fpr) => !found.includes(fpr));
+}
+
+/**
  * Checks nginx.org's key file and exports the pinned keys alone.
  * @param {object} host  The host.
  * @param {string} keyText  The key file nginx.org serves.
@@ -56,18 +97,15 @@ function gpg(host, home, args, what, options = {}) {
  * @throws {Error} When the key file lacks a pinned fingerprint.
  */
 export function exportPinnedKeys(host, keyText) {
-  const home = host.makeTempDir();
-  try {
+  return withGpgHome(host, (home) => {
     const keyFile = path.join(home, "nginx_signing.key");
     host.writeText(keyFile, keyText);
-    const shown = gpg(
+    const missing = missingPinnedKeys(
       host,
       home,
-      ["--show-keys", "--with-colons", keyFile],
+      keyFile,
       "Reading nginx.org's signing key file",
     );
-    const found = parseGpgFingerprints(shown.stdout);
-    const missing = PINNED_FINGERPRINTS.filter((fpr) => !found.includes(fpr));
     if (missing.length > 0) {
       throw new Error(
         `nginx.org's signing key file no longer holds ${missing.join(" or ")}` +
@@ -83,9 +121,61 @@ export function exportPinnedKeys(host, keyText) {
       "Exporting the pinned keys",
       { binary: true },
     ).stdout;
-  } finally {
-    host.run("gpgconf", ["--homedir", home, "--kill", "all"]);
-    host.removeTempDir(home);
+  });
+}
+
+/**
+ * Requires a key file already on the machine, which apt would use for
+ * nginx.org's packages, to hold both pinned fingerprints.
+ * @param {object} host  The host.
+ * @param {string} keyFile  The key file.
+ * @param {{where: string, fix: string}} words  For the error: a clause
+ *   saying where the key file comes from, and what to do about it.
+ * @throws {Error} When it lacks a pinned fingerprint, since it then
+ *   isn't nginx.org's key file as the tool knows it.
+ */
+function requirePinnedKeys(host, keyFile, { where, fix }) {
+  const missing = withGpgHome(host, (home) =>
+    missingPinnedKeys(host, home, keyFile, `Reading ${keyFile}`),
+  );
+  if (missing.length > 0) {
+    throw new Error(
+      `${keyFile}, ${where}, doesn't hold ${missing.join(" or ")}, so the ` +
+        `tool won't use it. ${fix}`,
+    );
+  }
+}
+
+/**
+ * Checks each entry for nginx.org's repository in an apt source file the
+ * machine already has: it must name a key file, and each key file it
+ * names must hold both pinned fingerprints.
+ * @param {object} host  The host.
+ * @param {string} sourcePath  The apt source file.
+ * @throws {Error} When an entry names no key file, since apt would then
+ *   trust every key it holds for nginx.org's packages, or when a key
+ *   file lacks a pinned fingerprint.
+ */
+function checkExistingEntries(host, sourcePath) {
+  const text = host.readText(sourcePath);
+  const entries = nginxOrgKeyFiles(text, sourcePath.endsWith(".sources"));
+  for (const keyFiles of entries) {
+    if (keyFiles.length === 0) {
+      throw new Error(
+        `${sourcePath} names nginx.org's repository without a key file in ` +
+          "its signed-by option, so apt would trust every key it holds " +
+          "for nginx.org's packages. Name nginx.org's key file there, or " +
+          "remove that entry so the tool adds its own.",
+      );
+    }
+    for (const keyFile of keyFiles) {
+      requirePinnedKeys(host, keyFile, {
+        where: `which ${sourcePath} names for nginx.org's repository`,
+        fix:
+          "Replace it with nginx.org's current key file, or remove that " +
+          "entry so the tool adds its own.",
+      });
+    }
   }
 }
 
@@ -134,7 +224,8 @@ function otherNginxSources(host) {
  * Writes the keyring, the apt source and the apt pin where they are
  * missing, noting each file in `written` as soon as it exists. When
  * another file already names nginx.org's repository, only the pin can be
- * written.
+ * written. First it checks the key files apt would use that are already
+ * on the machine: those another entry names, or the tool's own keyring.
  * @param {object} host  The host.
  * @param {{codename: string, timeoutMs: number}} options  The Ubuntu
  *   release's code name, and how long to wait for nginx.org.
@@ -142,15 +233,21 @@ function otherNginxSources(host) {
  * @returns {Promise<void>}
  */
 async function writeRepositoryFiles(host, { codename, timeoutMs }, written) {
+  const others = otherNginxSources(host);
+  for (const sourcePath of others) {
+    checkExistingEntries(host, sourcePath);
+  }
   const files = [[NGINX_APT_PIN_PATH, renderAptPin()]];
-  if (otherNginxSources(host).length === 0) {
-    if (!host.exists(NGINX_KEYRING_PATH)) {
+  if (others.length === 0) {
+    if (host.exists(NGINX_KEYRING_PATH)) {
+      requirePinnedKeys(host, NGINX_KEYRING_PATH, {
+        where: "already on this machine",
+        fix: "Remove it, so the tool downloads nginx.org's key file again.",
+      });
+    } else {
       const keyText = await downloadSigningKey(host, timeoutMs);
-      host.writeRootFile(
-        NGINX_KEYRING_PATH,
-        exportPinnedKeys(host, keyText),
-        "0644",
-      );
+      const keyring = exportPinnedKeys(host, keyText);
+      host.writeRootFile(NGINX_KEYRING_PATH, keyring, "0644");
       written.push(NGINX_KEYRING_PATH);
     }
     files.unshift([NGINX_APT_SOURCE_PATH, renderAptSource(codename)]);

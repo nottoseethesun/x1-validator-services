@@ -5,64 +5,53 @@
  * shipped defaults setting by setting, and every problem refused at
  * once, each named with what to change. Each test works in a temporary
  * copy of the shipped folder, so no test reads or writes the operator's
- * own settings.
+ * own settings, and takes the shipped values from the copy rather than
+ * keeping its own.
  */
 
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
-import { makeTestTempFolder } from "../../scripts/_test-temp-folders.js";
-import { defaultConfigDir, loadSettings } from "../src/lib/settings.js";
-
-const DEFAULTS = "app-defaults-for-user-configurable";
+import { loadSettings } from "../src/lib/settings.js";
+import { copyShippedConfig } from "./helpers/config-copies.js";
 
 /**
- * Copies the shipped settings into a temporary folder, with an override
- * file holding the given text, if any.
- * @param {string} [overrideText]  The override file's text.
- * @returns {{configDir: string, overridePath: string}}
+ * Loads the shipped settings alone.
+ * @returns {object}
  */
-function configWith(overrideText) {
-  const configDir = makeTestTempFolder("settings");
-  fs.mkdirSync(path.join(configDir, DEFAULTS));
-  fs.mkdirSync(path.join(configDir, "user-configurable"));
-  for (const name of ["private-rpc.json", "private-rpc.schema.json"]) {
-    fs.copyFileSync(
-      path.join(defaultConfigDir(), DEFAULTS, name),
-      path.join(configDir, DEFAULTS, name),
-    );
-  }
-  const overridePath = path.join(
-    configDir,
-    "user-configurable",
-    "private-rpc.json",
-  );
-  if (overrideText !== undefined) {
-    fs.writeFileSync(overridePath, overrideText);
-  }
-  return { configDir, overridePath };
+function shippedSettings() {
+  return loadSettings(copyShippedConfig().configDir);
 }
 
-test("without an override, the shipped values load, without $schema", () => {
-  const settings = loadSettings(configWith().configDir);
-  assert.equal(settings.requestTimeoutSeconds, 10);
-  assert.equal(Object.hasOwn(settings, "$schema"), false);
+test("without an override, the shipped file's values load, without $schema", () => {
+  const { configDir } = copyShippedConfig();
+  const shippedFile = path.join(
+    configDir,
+    "app-defaults-for-user-configurable",
+    "private-rpc.json",
+  );
+  const { $schema, ...values } = JSON.parse(
+    fs.readFileSync(shippedFile, "utf8"),
+  );
+  assert.equal(typeof $schema, "string");
+  assert.deepEqual(loadSettings(configDir), values);
 });
 
 test("an override changes only the settings it names", () => {
+  const shipped = shippedSettings();
+  const timeout = shipped.requestTimeoutSeconds + 1;
   const settings = loadSettings(
-    configWith('{"requestTimeoutSeconds": 30}').configDir,
+    copyShippedConfig(JSON.stringify({ requestTimeoutSeconds: timeout }))
+      .configDir,
   );
-  assert.equal(settings.requestTimeoutSeconds, 30);
-  assert.equal(
-    settings.keyHandOffPath,
-    "/run/x1-validator-private-rpc/api-key",
-  );
+  assert.deepEqual(settings, { ...shipped, requestTimeoutSeconds: timeout });
 });
 
 test("an unknown setting is refused, saying where to remove it", () => {
-  const { configDir, overridePath } = configWith('{"requestTimeout": 30}');
+  const { configDir, overridePath } = copyShippedConfig(
+    '{"requestTimeout": 30}',
+  );
   assert.throws(() => loadSettings(configDir), {
     message: new RegExp(
       `"requestTimeout" isn't a setting this tool reads. Remove it from ` +
@@ -72,14 +61,14 @@ test("an unknown setting is refused, saying where to remove it", () => {
 });
 
 test("a value out of range is refused with its rule and its value", () => {
-  const { configDir } = configWith('{"requestTimeoutSeconds": 500}');
+  const { configDir } = copyShippedConfig('{"requestTimeoutSeconds": 1000000}');
   assert.throws(() => loadSettings(configDir), {
-    message: /requestTimeoutSeconds: must be <= 120 \(it is 500\)/,
+    message: /requestTimeoutSeconds: must be <= \d+ \(it is 1000000\)/,
   });
 });
 
 test("every problem is listed at once", () => {
-  const { configDir } = configWith(
+  const { configDir } = copyShippedConfig(
     '{"requestTimeoutSeconds": 0, "keyHandOffPath": "relative/path"}',
   );
   assert.throws(() => loadSettings(configDir), {
@@ -88,15 +77,36 @@ test("every problem is listed at once", () => {
 });
 
 test("an override that isn't valid json is refused, naming the file", () => {
-  const { configDir, overridePath } = configWith("{ not json");
+  const { configDir, overridePath } = copyShippedConfig("{ not json");
   assert.throws(() => loadSettings(configDir), {
     message: new RegExp(`${overridePath} isn't valid json`),
   });
 });
 
 test("an override that isn't one object is refused", () => {
-  const { configDir } = configWith("[1, 2]");
+  const { configDir } = copyShippedConfig("[1, 2]");
   assert.throws(() => loadSettings(configDir), {
     message: /must hold one json object/,
   });
+});
+
+test("a settings file under another name is refused, naming it", () => {
+  const { configDir, overridePath } = copyShippedConfig();
+  const folder = path.dirname(overridePath);
+  fs.writeFileSync(path.join(folder, "private_rpc.json"), "{}");
+  assert.throws(() => loadSettings(configDir), {
+    message: new RegExp(
+      `${folder} holds private_rpc\\.json, which the tool doesn't read\\. ` +
+        `It reads your settings from ${path.basename(overridePath)} alone`,
+    ),
+  });
+});
+
+test("the folder's README may sit beside the override", () => {
+  const { configDir, overridePath } = copyShippedConfig("{}");
+  fs.writeFileSync(
+    path.join(path.dirname(overridePath), "README.md"),
+    "# Your Settings\n",
+  );
+  assert.deepEqual(loadSettings(configDir), shippedSettings());
 });

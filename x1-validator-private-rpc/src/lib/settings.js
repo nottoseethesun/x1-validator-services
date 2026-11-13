@@ -8,7 +8,8 @@
  * used: every problem is listed at once, each naming the setting, what
  * it must be and what it is, and the tool refuses to go on. An unknown
  * setting is refused too, since a misspelled one would otherwise be
- * ignored without a word.
+ * ignored without a word. So is any file in the operator's folder other
+ * than the override file and its README, such as a misnamed override.
  *
  * Settings are read when a command runs, never as a module loads, and
  * nothing keeps a copy of a default elsewhere.
@@ -24,12 +25,49 @@ const SCHEMA_FILE = "private-rpc.schema.json";
 const DEFAULTS_FOLDER = "app-defaults-for-user-configurable";
 const OVERRIDES_FOLDER = "user-configurable";
 
+/** The file that explains the operator's folder, which the tool ships. */
+const OVERRIDES_README = "README.md";
+
 /**
  * Finds the feature's `app-config` folder from this file's own location.
  * @returns {string} Its absolute path.
  */
 export function defaultConfigDir() {
   return fileURLToPath(new URL("../../app-config/", import.meta.url));
+}
+
+/**
+ * Finds the operator's override file.
+ * @param {string} [configDir]  The `app-config` folder; the feature's own
+ *   unless a caller passes another.
+ * @returns {string} Its path.
+ */
+export function overrideFilePath(configDir = defaultConfigDir()) {
+  return path.join(configDir, OVERRIDES_FOLDER, SETTINGS_FILE);
+}
+
+/**
+ * Refuses a file in the operator's folder that the tool doesn't read.
+ * Settings saved under another name, such as `private_rpc.json`, would
+ * otherwise leave the tool on its defaults without a word.
+ * @param {string} overridePath  The operator's override file.
+ * @throws {Error} Naming each such file, so no setting is ignored.
+ */
+function refuseUnreadFiles(overridePath) {
+  const folder = path.dirname(overridePath);
+  if (!fs.existsSync(folder)) {
+    return;
+  }
+  const unread = fs
+    .readdirSync(folder)
+    .filter((name) => name !== SETTINGS_FILE && name !== OVERRIDES_README);
+  if (unread.length > 0) {
+    throw new Error(
+      `${folder} holds ${unread.join(", ")}, which the tool doesn't read. ` +
+        `It reads your settings from ${SETTINGS_FILE} alone, so move them ` +
+        "there and remove the other file(s).",
+    );
+  }
 }
 
 /**
@@ -99,15 +137,17 @@ export function settingsProblems(schema, settings, overridePath) {
  * @param {string} [configDir]  The `app-config` folder; the feature's own
  *   unless a test passes another.
  * @returns {object} The settings, each key holding its value.
- * @throws {Error} Listing every problem, when a file is broken or a
- *   setting is wrong or unknown.
+ * @throws {Error} Listing every problem, when a file is broken, a file
+ *   the tool doesn't read sits beside the override, or a setting is
+ *   wrong or unknown.
  */
 export function loadSettings(configDir = defaultConfigDir()) {
   const schema = readJson(path.join(configDir, DEFAULTS_FOLDER, SCHEMA_FILE));
   const defaults = readJson(
     path.join(configDir, DEFAULTS_FOLDER, SETTINGS_FILE),
   );
-  const overridePath = path.join(configDir, OVERRIDES_FOLDER, SETTINGS_FILE);
+  const overridePath = overrideFilePath(configDir);
+  refuseUnreadFiles(overridePath);
   const overrides = fs.existsSync(overridePath) ? readJson(overridePath) : {};
   if (
     typeof overrides !== "object" ||

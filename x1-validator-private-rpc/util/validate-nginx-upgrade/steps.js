@@ -12,9 +12,11 @@
  * it and that the key carried over. Last, it removes everything it
  * added, even when a step failed, leaving the machine as it found it.
  *
- * Every change is recorded with the step that undoes it, as it's made.
- * The undo steps run newest first, so files go before the packages that
- * own their folders, and the packages before the repository they came
+ * Every change is recorded with the step that undoes it, as it's made,
+ * and the command that undoes it by hand, which the check prints if its
+ * own undo step fails. The undo steps run newest first, so files go
+ * before the folders that hold them, folders before the packages that
+ * own their parents, and the packages before the repository they came
  * from. A Ctrl-C stops the check after the step it's on, and the undo
  * steps still run. The long apt steps run through `wait`, which shows a
  * spinner on a terminal. Every effect goes through the host it is given,
@@ -64,8 +66,16 @@ const STOPPED = "Stopped because Ctrl-C was pressed.";
  *   Prints the progress line of a long step and runs the step, showing
  *   that it's still at work.
  * @property {() => boolean} isInterrupted  Whether Ctrl-C was pressed.
- * @property {{what: string, action: () => (void|Promise<void>)}[]} undo
- *   The changes made so far, each with the step that undoes it.
+ * @property {UndoStep[]} undo  The changes made so far, each with the
+ *   step that undoes it.
+ */
+
+/**
+ * @typedef {object} UndoStep
+ * @property {string} what  The step, in words.
+ * @property {() => (void|Promise<void>)} action  The step.
+ * @property {string} byHand  The shell command that does the same, for
+ *   the person at the terminal when the step fails.
  */
 
 /**
@@ -119,24 +129,44 @@ function readMachine(host) {
 }
 
 /**
- * Writes a file root owns, recording its removal, and the removal of its
- * folder when the folder is new.
+ * Records the removal of a folder about to be created, and of each
+ * missing folder above it, since creating it creates them all. They're
+ * recorded outermost first, so the undo steps remove them innermost
+ * first.
+ * @param {Context} context  The run.
+ * @param {string} folder  The folder.
+ */
+function trackNewFolders({ host, undo }, folder) {
+  const missing = [];
+  let current = folder;
+  while (!host.exists(current) && current !== path.dirname(current)) {
+    missing.unshift(current);
+    current = path.dirname(current);
+  }
+  for (const newFolder of missing) {
+    undo.push({
+      what: `Removing ${newFolder}`,
+      action: () => host.removeRootDir(newFolder),
+      byHand: `sudo rmdir ${newFolder}`,
+    });
+  }
+}
+
+/**
+ * Writes a file root owns, recording its removal, and the removal of
+ * each folder the write creates.
  * @param {Context} context  The run.
  * @param {string} filePath  The file.
  * @param {string} content  Its content.
  * @param {string} mode  Its mode.
  */
-function writeTracked({ host, undo }, filePath, content, mode) {
-  const folder = path.dirname(filePath);
-  if (!host.exists(folder)) {
-    undo.push({
-      what: `Removing ${folder}`,
-      action: () => host.removeRootDir(folder),
-    });
-  }
+function writeTracked(context, filePath, content, mode) {
+  const { host, undo } = context;
+  trackNewFolders(context, path.dirname(filePath));
   undo.push({
     what: `Removing ${filePath}`,
     action: () => host.removeRootFile(filePath),
+    byHand: `sudo rm ${filePath}`,
   });
   host.writeRootFile(filePath, content, mode);
 }
@@ -162,6 +192,7 @@ async function installPreviousRelease(context, codename) {
           mustSucceed(host.sudo("userdel", ["nginx"]), "Removing nginx's user");
         }
       },
+      byHand: "sudo userdel nginx",
     });
   }
   const written = await longStep(
@@ -177,6 +208,7 @@ async function installPreviousRelease(context, codename) {
     undo.push({
       what: "Removing nginx.org's apt repository",
       action: () => removeNginxRepository(host, written),
+      byHand: `sudo rm ${written.join(" ")} && sudo apt update`,
     });
   }
   stopIfInterrupted(context);
@@ -186,10 +218,12 @@ async function installPreviousRelease(context, codename) {
   undo.push({
     what: "Unmasking nginx",
     action: () => systemctl(host, ["unmask", UNIT]),
+    byHand: `sudo systemctl unmask ${UNIT}`,
   });
   undo.push({
     what: "Removing nginx and its modules",
     action: () => purgePackages(host, NGINX_PACKAGES),
+    byHand: `sudo apt purge ${NGINX_PACKAGES.join(" ")}`,
   });
   await longStep(
     context,
@@ -230,6 +264,7 @@ function installTestFiles(context, port) {
   undo.push({
     what: "Reloading systemd",
     action: () => systemctl(host, ["daemon-reload"]),
+    byHand: "sudo systemctl daemon-reload",
   });
   const dropIn = renderDropIn({
     startWrapperPath: settings.startWrapperPath,
@@ -248,10 +283,7 @@ function startNginx(context) {
   const { host, settings, report, undo } = context;
   const folder = path.dirname(settings.keyHandOffPath);
   if (!host.exists(folder)) {
-    undo.push({
-      what: `Removing ${folder}`,
-      action: () => host.removeRootDir(folder),
-    });
+    trackNewFolders(context, folder);
     host.makeRootDir(folder, "0700");
   }
   writeTracked(
@@ -266,6 +298,7 @@ function startNginx(context) {
   undo.push({
     what: "Stopping nginx",
     action: () => systemctl(host, ["stop", UNIT]),
+    byHand: `sudo systemctl stop ${UNIT}`,
   });
   systemctl(host, ["start", UNIT]);
 }
@@ -422,7 +455,8 @@ async function runSteps(context) {
 /**
  * Runs every undo step, newest first, going on past any that fails.
  * @param {Context} context  The run.
- * @returns {Promise<string[]>} One message per undo step that failed.
+ * @returns {Promise<string[]>} One message per undo step that failed,
+ *   with a second line giving the command that does it by hand.
  */
 async function undoAll({ undo }) {
   const failures = [];
@@ -430,7 +464,10 @@ async function undoAll({ undo }) {
     try {
       await step.action();
     } catch (error) {
-      failures.push(`Couldn't finish "${step.what}": ${error.message}`);
+      failures.push(
+        `Couldn't finish "${step.what}": ${error.message}\n` +
+          `  By hand: ${step.byHand}`,
+      );
     }
   }
   return failures;

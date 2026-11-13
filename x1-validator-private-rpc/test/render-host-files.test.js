@@ -8,6 +8,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  NGINX_KEYRING_PATH,
+  NGINX_REPOSITORY_URL,
+} from "../src/lib/nginx-org.js";
+import {
   renderAptPin,
   renderAptSource,
   renderDropIn,
@@ -26,10 +30,10 @@ const WRAPPER_VALUES = {
 test("the apt source is a deb822 entry naming the release and the pinned keyring", () => {
   assert.deepEqual(renderAptSource("noble").split("\n").slice(1), [
     "Types: deb",
-    "URIs: https://nginx.org/packages/ubuntu",
+    `URIs: ${NGINX_REPOSITORY_URL}`,
     "Suites: noble",
     "Components: nginx",
-    "Signed-By: /etc/apt/keyrings/nginx-archive-keyring.gpg",
+    `Signed-By: ${NGINX_KEYRING_PATH}`,
     "",
   ]);
 });
