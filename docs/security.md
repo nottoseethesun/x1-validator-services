@@ -2,6 +2,10 @@
 
 This page records the security decisions that no tool checks by itself. LP Ranger's security guide is the authority for the rules; see [CLAUDE.md](../CLAUDE.md).
 
+## The Audit in CI
+
+`.github/workflows/security-audit.yml` runs three jobs: the audit of the shipped dependencies, the security lint and the secret scan. It runs on every push and pull request to main, and once a day. The daily run is there because the advisory database changes on its own, so code nobody touched can start failing. Validators install from main, so main is the code operators run. The README's security badge shows the latest result.
+
 ## Security Lint Exceptions
 
 ### Rules Off for the Whole Project

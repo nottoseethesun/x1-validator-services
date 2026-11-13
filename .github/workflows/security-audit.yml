@@ -1,0 +1,83 @@
+# .github/workflows/security-audit.yml
+#
+# The security audit, in three jobs that can each be required on their
+# own: the advisories in the shipped dependencies, the security lint and
+# the secret scan. `npm run check` runs the same three on every machine.
+#
+# It runs on every push and pull request to main, and daily, because the
+# advisory database changes on its own: a tree nobody touched can start
+# failing tomorrow. Validators install from main, so main is the code
+# operators run. The README's security badge shows the latest result.
+
+name: Security Audit
+run-name: Security Audit on ${{ github.head_ref || github.ref_name }}
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "55 11 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  dependency-audit:
+    name: Dependency Audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js 24
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Audit the shipped dependencies
+        run: npm run audit:deps
+
+  security-lint:
+    name: Security Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js 24
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run the security lint
+        run: npm run audit:security
+
+  secret-scan:
+    name: Secret Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js 24
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Scan for committed credentials
+        run: npm run audit:secrets
