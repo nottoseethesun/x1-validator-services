@@ -2,7 +2,8 @@
  * @file x1-validator-private-rpc/src/lib/nginx-org.js
  * @description
  * What the tool knows about nginx.org's packages for Ubuntu, and how it
- * reads apt's and gpg's answers about them. Names that nginx.org decides
+ * reads apt's and gpg's answers about them and apt's source files that
+ * name nginx.org's repository. Names that nginx.org decides
  * are constants here, not settings: its signing key's address and the
  * two fingerprints the tool trusts, its repository, the three packages,
  * and the apt files its instructions name.
@@ -135,6 +136,107 @@ export function parseAptPolicy(text) {
     }
   }
   return entries;
+}
+
+/**
+ * @typedef {object} SourceEntry
+ * @property {string[]} uris  The repositories the entry names.
+ * @property {string[]} signedBy  What its signed-by option names: key
+ *   files or fingerprints; nothing when it has no such option.
+ */
+
+/**
+ * Reads the entries of an apt source file in the one-line format of
+ * `.list` files: `deb` or `deb-src`, then options in brackets, if any,
+ * then the repository. Text after a `#` is a comment.
+ * @param {string} text  The file's text.
+ * @returns {SourceEntry[]}
+ */
+function oneLineEntries(text) {
+  return text.split("\n").flatMap((line) => {
+    let rest = line.split("#")[0].trim();
+    const type = rest.split(/\s+/)[0];
+    if (type !== "deb" && type !== "deb-src") {
+      return [];
+    }
+    rest = rest.slice(type.length).trim();
+    let options = [];
+    if (rest.startsWith("[")) {
+      const end = rest.indexOf("]");
+      options = rest.slice(1, end).split(/\s+/);
+      rest = rest.slice(end + 1).trim();
+    }
+    const signedBy = options.find((option) => option.startsWith("signed-by="));
+    return [
+      {
+        uris: [rest.split(/\s+/)[0]],
+        signedBy:
+          signedBy === undefined
+            ? []
+            : signedBy.slice("signed-by=".length).split(","),
+      },
+    ];
+  });
+}
+
+/**
+ * Reads the entries of an apt source file in the deb822 format of
+ * `.sources` files: stanzas apart by blank lines, each made of `Name:
+ * value` fields, where a line that starts with a space or a tab carries
+ * on the field above. A stanza with `Enabled: no` is left out, as apt
+ * leaves it out. A key written into the Signed-By field itself names no
+ * key file.
+ * @param {string} text  The file's text.
+ * @returns {SourceEntry[]}
+ */
+function deb822Entries(text) {
+  const stanzas = [];
+  let fields = new Map();
+  let name = "";
+  for (const line of [...text.split("\n"), ""]) {
+    if (line.trim() === "") {
+      if (fields.size > 0) {
+        stanzas.push(fields);
+      }
+      fields = new Map();
+    } else if (/^\s/.test(line)) {
+      fields.set(name, `${fields.get(name)} ${line.trim()}`);
+    } else if (!line.startsWith("#")) {
+      const colon = line.indexOf(":");
+      name = line.slice(0, colon).trim().toLowerCase();
+      fields.set(name, line.slice(colon + 1).trim());
+    }
+  }
+  return stanzas
+    .filter((stanza) => stanza.get("enabled")?.toLowerCase() !== "no")
+    .map((stanza) => {
+      const signedBy = stanza.get("signed-by") ?? "";
+      return {
+        uris: (stanza.get("uris") ?? "").split(/\s+/),
+        signedBy: signedBy.includes("-----BEGIN")
+          ? []
+          : signedBy.split(/[\s,]+/),
+      };
+    });
+}
+
+/**
+ * Lists the key files that each entry for nginx.org's repository in one
+ * apt source file names in its signed-by option. A fingerprint there, or
+ * a key written into the entry itself, isn't a key file.
+ * @param {string} text  The file's text.
+ * @param {boolean} deb822  Whether the file is in the deb822 format, as
+ *   `.sources` files are, rather than the one-line format of `.list`
+ *   files.
+ * @returns {string[][]} For each entry naming nginx.org's repository,
+ *   the absolute paths of the key files it names; empty when it names
+ *   none.
+ */
+export function nginxOrgKeyFiles(text, deb822) {
+  const entries = deb822 ? deb822Entries(text) : oneLineEntries(text);
+  return entries
+    .filter((entry) => entry.uris.some((uri) => NGINX_REPOSITORY.test(uri)))
+    .map((entry) => entry.signedBy.filter((value) => value.startsWith("/")));
 }
 
 /**

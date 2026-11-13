@@ -18,7 +18,7 @@ cd ~/x1-validator-services
 node x1-validator-private-rpc/util/validate-nginx-upgrade/index.js
 ```
 
-It ends with `Passed`, or with the reasons it failed. To stop it early, press Ctrl-C: it finishes the step it's on, then removes everything it added. Type `exit` afterwards to leave tmux. Go on with the install only once it passes.
+It ends with `Passed`, or with the reasons it failed. If it ever can't remove something it added, it lists that step with a `By hand:` command that does the same. Run those commands in the order listed, then run it again. To stop it early, press Ctrl-C: it finishes the step it's on, then removes everything it added. Type `exit` afterwards to leave tmux. Go on with the install only once it passes.
 
 ### Cronitor Heartbeat
 

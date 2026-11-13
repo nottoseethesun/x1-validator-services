@@ -5,12 +5,12 @@
  * The first step of installing x1-validator-private-rpc on a validator.
  * It proves, on this machine, that a regular apt upgrade of nginx keeps
  * the gated rpc working, so the install can go ahead with nginx left to
- * apt. steps.js does the work and describes it; this entry point reads
- * the command line and the settings, and prints the outcome. On a
- * terminal, a spinner shows that a long step is still at work. Ctrl-C
- * stops the check after the step it's on, and the check still removes
- * everything it added. Run it as the validator's account; it asks for
- * sudo itself.
+ * apt. steps.js does the work and describes it; terminal.js shows its
+ * progress, with a spinner beside each long step, and its outcome, and
+ * answers Ctrl-C by stopping the check after the step it's on, which
+ * still removes everything it added. This entry point reads the command
+ * line and the settings, and joins the two. Run it as the validator's
+ * account; it asks for sudo itself.
  */
 
 import { Command } from "commander";
@@ -18,8 +18,7 @@ import ora from "ora";
 import { createHost } from "../../src/lib/host.js";
 import { loadSettings } from "../../src/lib/settings.js";
 import { validateNginxUpgrade } from "./steps.js";
-
-const PREFIX = "[validate-nginx-upgrade]";
+import { createTerminal, reportOutcome } from "./terminal.js";
 
 const PURPOSE = `Proves on this machine that a regular apt upgrade of nginx keeps
 x1-validator-private-rpc's gated rpc working. It installs nginx.org's
@@ -51,57 +50,15 @@ function buildProgram() {
 }
 
 /**
- * Builds how the check talks to the person at the terminal: its progress
- * lines, a spinner beside each long step, and its answer to Ctrl-C.
- *
- * While the spinner turns, ora reads the keyboard itself, so a Ctrl-C
- * reaches only this program, and apt's work underneath finishes. At other
- * times a Ctrl-C also stops the command running, and that step fails.
- * Either way the check stops at its next step and removes what it added.
- * @returns {{report: Function, wait: Function, isInterrupted: Function}}
- */
-function createTerminal() {
-  let spinner = null;
-  let interrupted = false;
-  const report = (line) => {
-    spinner?.clear();
-    console.log(`${PREFIX} ${line}`);
-    spinner?.render();
-  };
-  process.on("SIGINT", () => {
-    if (!interrupted) {
-      interrupted = true;
-      report(
-        "Ctrl-C: stopping after this step, then removing everything the " +
-          "check added.",
-      );
-    }
-  });
-  // ora needs a terminal that reports its width; it never stops otherwise.
-  const canSpin = process.stdout.isTTY === true && process.stdout.columns > 0;
-  const wait = async (line, work) => {
-    if (!canSpin) {
-      report(line);
-      return work();
-    }
-    spinner = ora({ text: `${PREFIX} ${line}`, stream: process.stdout });
-    spinner.start();
-    try {
-      return await work();
-    } finally {
-      spinner.stopAndPersist({ symbol: "" });
-      spinner = null;
-    }
-  };
-  return { report, wait, isInterrupted: () => interrupted };
-}
-
-/**
  * Runs the check and prints the outcome.
  */
 async function main() {
   buildProgram().parse(process.argv);
-  const terminal = createTerminal();
+  const terminal = createTerminal({
+    stdout: process.stdout,
+    signals: process,
+    makeSpinner: ora,
+  });
   let result;
   try {
     result = await validateNginxUpgrade({
@@ -112,22 +69,7 @@ async function main() {
   } catch (error) {
     result = { passed: false, problems: [error.message], leftovers: [] };
   }
-  if (result.passed) {
-    terminal.report(
-      "Passed: an apt upgrade of nginx keeps the gated rpc unlocked.",
-    );
-    return;
-  }
-  for (const problem of [...result.problems, ...result.leftovers]) {
-    console.error(`${PREFIX} ${problem}`);
-  }
-  console.error(
-    result.leftovers.length === 0
-      ? `${PREFIX} Failed. The check removed everything it added.`
-      : `${PREFIX} Failed, and some of what the check added is still in ` +
-          "place, as listed above.",
-  );
-  process.exitCode = 1;
+  process.exitCode = reportOutcome(result, terminal.report);
 }
 
 await main();

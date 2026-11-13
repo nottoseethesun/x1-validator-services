@@ -9,6 +9,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   newestFirst,
+  nginxOrgKeyFiles,
   parseAptPolicy,
   parseGpgFingerprints,
   pickUpgradePair,
@@ -88,6 +89,61 @@ test("counts nginx.org's repository over plain http too, but not its mainline on
     parseAptPolicy(policy("https://nginx.org/packages/mainline/ubuntu")).length,
     0,
   );
+});
+
+test("lists the key files of nginx.org's entries in a one-line source file", () => {
+  const text = [
+    "# deb [signed-by=/commented.gpg] http://nginx.org/packages/ubuntu noble nginx",
+    "deb http://archive.ubuntu.com/ubuntu noble main",
+    "deb [arch=amd64 signed-by=/a.gpg,/b.gpg] https://nginx.org/packages/ubuntu/ noble nginx # nginx.org",
+    "deb-src http://nginx.org/packages/ubuntu noble nginx",
+    `deb [signed-by=${PINNED_FINGERPRINTS[0]}] http://nginx.org/packages/ubuntu noble nginx`,
+    "deb [arch=amd64] http://nginx.org/packages/mainline/ubuntu noble nginx",
+  ].join("\n");
+  assert.deepEqual(nginxOrgKeyFiles(text, false), [
+    ["/a.gpg", "/b.gpg"],
+    [],
+    [],
+  ]);
+});
+
+test("lists the key files of nginx.org's entries in a deb822 source file", () => {
+  const text = [
+    "Types: deb",
+    "URIs: http://archive.ubuntu.com/ubuntu",
+    "Suites: noble",
+    "Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg",
+    "",
+    "# nginx.org's packages, with two key files",
+    "Types: deb deb-src",
+    "URIs: https://nginx.org/packages/ubuntu",
+    "Suites: noble",
+    "Signed-By: /etc/apt/keyrings/a.gpg",
+    " /etc/apt/keyrings/b.gpg",
+    "",
+    "Types: deb",
+    "URIs: http://nginx.org/packages/ubuntu",
+    "Enabled: no",
+    "",
+    "Types: deb",
+    "URIs: http://nginx.org/packages/ubuntu",
+    "Signed-By:",
+    " -----BEGIN PGP PUBLIC KEY BLOCK-----",
+    " .",
+    " /mQINBGAkeyDataThatStartsWithASlash",
+    " -----END PGP PUBLIC KEY BLOCK-----",
+    "",
+    "",
+    "Enabled: yes",
+    "",
+    "Types: deb",
+    "URIs: http://nginx.org/packages/ubuntu",
+  ].join("\n");
+  assert.deepEqual(nginxOrgKeyFiles(text, true), [
+    ["/etc/apt/keyrings/a.gpg", "/etc/apt/keyrings/b.gpg"],
+    [],
+    [],
+  ]);
 });
 
 test("sorts versions newest first, module builds included", () => {

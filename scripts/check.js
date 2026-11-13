@@ -67,9 +67,17 @@ const HIGH_RISK_PERCENT = 95;
 /**
  * Files held to HIGH_RISK_PERCENT each, as paths from the project's root:
  * the ones whose failure would hurt the validator or leak the api key.
+ * They are the api-key check nginx runs; the text of the files the tool
+ * installs into nginx, systemd and apt; and the trust in nginx.org's
+ * signing key, with the reading of the key files apt already has.
  * @type {string[]}
  */
-const HIGH_RISK_FILES = [];
+const HIGH_RISK_FILES = [
+  "x1-validator-private-rpc/src/njs/x1-validator-private-rpc.js",
+  "x1-validator-private-rpc/src/lib/render-host-files.js",
+  "x1-validator-private-rpc/src/lib/nginx-repo.js",
+  "x1-validator-private-rpc/src/lib/nginx-org.js",
+];
 
 /** Where the gate writes its reports, relative to the project's root. */
 const REPORT_DIR = path.join("tmp", "check");

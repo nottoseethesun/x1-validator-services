@@ -9,7 +9,10 @@
  * the feature and Node.js 20.0.0 (the validator's version), installs the
  * runtime dependencies, and runs the check as the container's ordinary
  * user, who has sudo, as a validator's account does. Then it confirms
- * the container is as clean as before and deletes it.
+ * the container is as clean as before and deletes it. What counts as
+ * clean comes from the app: the paths in the settings the check loads in
+ * the container, nginx.org's repository files, and the folders above
+ * them, so this test keeps no copy of a default.
  *
  * It needs LXD, and network access from the container to Ubuntu's
  * archive, nginx.org and npm's registry. It isn't part of `npm run
@@ -24,6 +27,7 @@ import {
   NGINX_APT_SOURCE_PATH,
   NGINX_KEYRING_PATH,
 } from "../x1-validator-private-rpc/src/lib/nginx-org.js";
+import { overrideFilePath } from "../x1-validator-private-rpc/src/lib/settings.js";
 import {
   checkScriptArgs,
   projectRoot,
@@ -47,19 +51,10 @@ const NODE_TARBALL = "node-v20.0.0-linux-x64.tar.xz";
 const GUEST_PROJECT = "/home/ubuntu/x1-validator-services";
 const GUEST_PATH = "/opt/node/bin:/usr/local/bin:/usr/bin:/bin";
 
-/**
- * What the check installs or writes in passing, each of which must be
- * gone afterwards.
- */
-const MUST_BE_GONE = [
-  "/etc/nginx",
-  NGINX_APT_SOURCE_PATH,
-  NGINX_APT_PIN_PATH,
-  NGINX_KEYRING_PATH,
-  "/etc/systemd/system/nginx.service.d",
-  "/usr/local/libexec/x1-validator-private-rpc",
-  "/run/x1-validator-private-rpc",
-];
+/** Prints, as json, the settings the check loads, using the app's code. */
+const PRINT_SETTINGS =
+  'import { loadSettings } from "./x1-validator-private-rpc/src/lib/settings.js";' +
+  "process.stdout.write(JSON.stringify(loadSettings()));";
 
 /**
  * Runs a command in the container as root, streaming its output.
@@ -72,14 +67,15 @@ function asRoot(name, command) {
 }
 
 /**
- * Runs a command in the container as its ordinary user, from the
- * project's folder, with Node.js 20.0.0 first on the PATH.
+ * Builds the arguments of `lxc` that run a command in the container as
+ * its ordinary user, from the project's folder, with Node.js 20.0.0
+ * first on the PATH.
  * @param {string} name  The container.
  * @param {string[]} command  The command and its arguments.
- * @returns {number} Its exit code.
+ * @returns {string[]}
  */
-function asUser(name, command) {
-  return runInherited("lxc", [
+function asUserArgs(name, command) {
+  return [
     "exec",
     name,
     "--user",
@@ -94,7 +90,18 @@ function asUser(name, command) {
     `PATH=${GUEST_PATH}`,
     "--",
     ...command,
-  ]);
+  ];
+}
+
+/**
+ * Runs a command in the container as its ordinary user, streaming its
+ * output.
+ * @param {string} name  The container.
+ * @param {string[]} command  The command and its arguments.
+ * @returns {number} Its exit code.
+ */
+function asUser(name, command) {
+  return runInherited("lxc", asUserArgs(name, command));
 }
 
 /**
@@ -160,19 +167,24 @@ function installNode(name) {
 
 /**
  * Copies the feature and the package files into the container, as the
- * container's ordinary user, leaving out any local settings override.
+ * container's ordinary user, leaving out every file in the operator's
+ * settings folder, so the check runs on the shipped settings.
  * @param {string} name  The container.
  * @param {string} workFolder  A local temporary folder.
  */
 function copyProject(name, workFolder) {
   const archive = path.join(workFolder, "project.tar.gz");
+  const operatorFolder = path.relative(
+    projectRoot(),
+    path.dirname(overrideFilePath()),
+  );
   mustPass(
     runInherited("tar", [
       "-czf",
       archive,
       "-C",
       projectRoot(),
-      "--exclude=x1-validator-private-rpc/app-config/user-configurable/private-rpc.json",
+      `--exclude=${operatorFolder}/*`,
       "package.json",
       "package-lock.json",
       "x1-validator-private-rpc",
@@ -207,13 +219,74 @@ function copyProject(name, workFolder) {
 }
 
 /**
+ * Reads the settings the check loads in the container, from the app.
+ * @param {string} name  The container.
+ * @returns {object}
+ */
+function guestSettings(name) {
+  const result = runCaptured(
+    "lxc",
+    asUserArgs(name, ["node", "--input-type=module", "--eval", PRINT_SETTINGS]),
+  );
+  mustPass(result.status, "Reading the check's settings in the container");
+  return JSON.parse(result.stdout);
+}
+
+/**
+ * Lists every path the check might create: each absolute path in its
+ * settings, nginx.org's repository files, and every folder above them.
+ * @param {object} settings  The settings the check loads.
+ * @returns {string[]}
+ */
+function pathsTheCheckMightCreate(settings) {
+  const files = [
+    ...Object.values(settings).filter(
+      (value) => typeof value === "string" && value.startsWith("/"),
+    ),
+    NGINX_KEYRING_PATH,
+    NGINX_APT_SOURCE_PATH,
+    NGINX_APT_PIN_PATH,
+  ];
+  const paths = new Set();
+  for (const file of files) {
+    for (let p = file; p !== path.posix.dirname(p); p = path.posix.dirname(p)) {
+      paths.add(p);
+    }
+  }
+  return [...paths].sort();
+}
+
+/**
+ * Lists which of the given paths exist in the container.
+ * @param {string} name  The container.
+ * @param {string[]} paths  The paths.
+ * @returns {string[]}
+ */
+function existingPaths(name, paths) {
+  const result = runCaptured("lxc", [
+    "exec",
+    name,
+    "--",
+    "sh",
+    "-c",
+    'for p; do if [ -e "$p" ]; then echo "$p"; fi; done',
+    "sh",
+    ...paths,
+  ]);
+  mustPass(result.status, "Listing paths in the container");
+  return result.stdout.split("\n").filter((line) => line !== "");
+}
+
+/**
  * Lists what the check left behind in the container.
  * @param {string} name  The container.
+ * @param {string[]} paths  The paths the check might create.
+ * @param {string[]} before  Those that existed before the check ran.
  * @returns {string[]} One line per leftover; none when it's clean.
  */
-function leftovers(name) {
-  const found = MUST_BE_GONE.filter(
-    (target) => asRoot(name, ["test", "!", "-e", target]) !== 0,
+function leftovers(name, paths, before) {
+  const found = existingPaths(name, paths).filter(
+    (target) => !before.includes(target),
   );
   const nginx = runCaptured("lxc", [
     "exec",
@@ -251,12 +324,14 @@ function runTest(name, workFolder) {
     asUser(name, ["npm", "ci", "--omit=dev", "--ignore-scripts"]),
     "Installing the runtime dependencies",
   );
+  const paths = pathsTheCheckMightCreate(guestSettings(name));
+  const before = existingPaths(name, paths);
   console.log("\n── The nginx upgrade check ──");
   const checkStatus = asUser(name, [
     "node",
     "x1-validator-private-rpc/util/validate-nginx-upgrade/index.js",
   ]);
-  const left = leftovers(name);
+  const left = leftovers(name, paths, before);
   for (const item of left) {
     console.error(`Left behind: ${item}`);
   }
