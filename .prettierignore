@@ -1,0 +1,11 @@
+# Files Prettier never checks or rewrites. Each entry says why.
+
+# npm owns the lockfile's format. Reformatting it causes churn and can
+# break `npm ci`'s integrity checks.
+package-lock.json
+
+# Disposable output of the gate and other tools; never committed.
+tmp/
+
+# The hand-off and its reference files, kept as they were delivered.
+project-kickoff-documents/

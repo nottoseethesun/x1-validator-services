@@ -1,0 +1,9 @@
+{
+  "$schema": "./private-rpc.schema.json",
+  "nginxConfigPath": "/etc/nginx/x1-validator-private-rpc/nginx.conf",
+  "njsModulePath": "/etc/nginx/x1-validator-private-rpc/x1-validator-private-rpc.js",
+  "startWrapperPath": "/usr/local/libexec/x1-validator-private-rpc/nginx-start",
+  "systemdDropInPath": "/etc/systemd/system/nginx.service.d/x1-validator-private-rpc.conf",
+  "keyHandOffPath": "/run/x1-validator-private-rpc/api-key",
+  "requestTimeoutSeconds": 10
+}

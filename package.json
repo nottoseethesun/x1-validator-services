@@ -1,0 +1,60 @@
+{
+  "name": "x1-validator-services",
+  "version": "0.0.0-dev",
+  "description": "A home for features powered by code that runs on an X1 validator itself",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "prepare": "husky",
+    "check": "node scripts/check.js",
+    "lint": "node scripts/lint.js",
+    "lint:fix": "node scripts/lint.js --fix",
+    "format": "node scripts/format.js --write",
+    "format:check": "node scripts/format.js --check",
+    "test": "node scripts/run-tests.js",
+    "test:coverage": "node scripts/run-tests.js --coverage",
+    "test:watch": "node scripts/run-tests.js --watch",
+    "test:system": "node scripts/test-in-lxd.js",
+    "knip:files": "knip --include files",
+    "audit:deps": "npm audit --audit-level=high --omit=dev",
+    "audit:deps:all": "npm audit --audit-level=high",
+    "audit:security": "node scripts/audit.js --security",
+    "audit:secrets": "node scripts/audit.js --secrets"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "license": "Apache-2.0",
+  "dependencies": {
+    "ajv": "^8.20.0",
+    "commander": "^14.0.3",
+    "dotenv": "^18.0.10",
+    "ora": "^8.2.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@secretlint/secretlint-rule-preset-recommend": "^13.1.0",
+    "eslint": "^10.14.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-n": "^18.5.0",
+    "eslint-plugin-no-secrets": "^2.3.3",
+    "eslint-plugin-security": "^4.2.1",
+    "github-actionlint": "^1.7.12",
+    "globals": "^17.14.0",
+    "husky": "^9.1.7",
+    "knip": "^6.45.1",
+    "madge": "^8.0.0",
+    "markdownlint-cli2": "^0.24.1",
+    "prettier": "^3.10.1",
+    "secretlint": "^13.1.0"
+  },
+  "overrides": {
+    "github-actionlint": {
+      "adm-zip": "^0.6.1"
+    },
+    "markdownlint-cli2": {
+      "katex": "^0.18.2"
+    },
+    "minimatch": "^11.0.1"
+  }
+}

@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "private-rpc.schema.json",
+  "title": "x1-validator-private-rpc settings",
+  "description": "Every setting the tool reads. An override file may set any of them, and nothing else.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "nginxConfigPath",
+    "njsModulePath",
+    "startWrapperPath",
+    "systemdDropInPath",
+    "keyHandOffPath",
+    "requestTimeoutSeconds"
+  ],
+  "properties": {
+    "$schema": {
+      "description": "Points editors at this schema.",
+      "type": "string"
+    },
+    "nginxConfigPath": {
+      "description": "Where the tool writes nginx's main configuration.",
+      "$ref": "#/$defs/systemPath"
+    },
+    "njsModulePath": {
+      "description": "Where the tool installs the api-key check that nginx runs.",
+      "$ref": "#/$defs/systemPath"
+    },
+    "startWrapperPath": {
+      "description": "Where the tool installs the script that starts nginx with the api key.",
+      "$ref": "#/$defs/systemPath"
+    },
+    "systemdDropInPath": {
+      "description": "Where the tool writes the systemd drop-in that starts nginx through the start wrapper.",
+      "$ref": "#/$defs/systemPath"
+    },
+    "keyHandOffPath": {
+      "description": "The memory-only file through which the tool hands nginx the api key at a start.",
+      "$ref": "#/$defs/systemPath"
+    },
+    "requestTimeoutSeconds": {
+      "description": "The time limit of each request the tool makes, and how long it waits for nginx to answer.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 120
+    }
+  },
+  "$defs": {
+    "systemPath": {
+      "description": "An absolute path of letters, digits, dots, dashes, underscores and slashes, safe to write into shell scripts and systemd units.",
+      "type": "string",
+      "pattern": "^/[A-Za-z0-9._/-]+$"
+    }
+  }
+}

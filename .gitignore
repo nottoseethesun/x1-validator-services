@@ -1,0 +1,17 @@
+# Installed packages; `npm ci` recreates them from package-lock.json.
+node_modules/
+
+# Credentials that belong to one install (see README.md, Credentials).
+# Only an example file showing the format is ever tracked.
+.env
+
+# Disposable files: the gate's reports and anything else that may be
+# deleted at any time.
+tmp/
+
+# Notes about the owner's own machines, kept out of the public repo.
+docs/claude/memory/private/
+
+# Each feature's per-install settings; the README explaining them stays.
+x1-validator-private-rpc/app-config/user-configurable/*
+!x1-validator-private-rpc/app-config/user-configurable/README.md

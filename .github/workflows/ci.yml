@@ -1,0 +1,44 @@
+# .github/workflows/ci.yml
+#
+# Runs the gate, `npm run check`, on each Node.js version the project
+# supports. On Node.js 24 the gate runs everything. On 20.0.0, the
+# validator's version, and on 22, it runs the features' tests alone,
+# since the lint, coverage and audit tools need Node.js 24 (see
+# scripts/check.js). Every version runs even when another fails.
+
+name: CI
+run-name: CI on ${{ github.head_ref || github.ref_name }}
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Check (Node.js ${{ matrix.node-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: ["20.0.0", "22", "24"]
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run the gate
+        run: npm run check
