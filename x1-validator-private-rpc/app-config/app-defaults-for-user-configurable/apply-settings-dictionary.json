@@ -1,0 +1,119 @@
+{
+  "_comment": "Every setting apply can change, with the description and type that each entry of apply's record, app-data/what-apply-changed.json, copies. The apply's Record section of docs/engineering.md says how the record works. Not a setting the operator changes.",
+  "nginxServiceMasked": {
+    "description": "Whether systemd's nginx.service is masked, so nothing can start nginx.",
+    "oldValueDatatype": "boolean"
+  },
+  "nginxAptKeyring": {
+    "description": "nginx.org's two pinned signing keys, which apt checks nginx.org's packages with.",
+    "oldValueDatatype": "boolean"
+  },
+  "nginxAptSource": {
+    "description": "apt's entry for nginx.org's package repository.",
+    "oldValueDatatype": "boolean"
+  },
+  "nginxAptPin": {
+    "description": "apt's pin, which prefers nginx.org's nginx packages to Ubuntu's.",
+    "oldValueDatatype": "boolean"
+  },
+  "nginxAccount": {
+    "description": "The nginx account, which nginx's package makes and leaves behind when it's removed.",
+    "oldValueDatatype": "boolean"
+  },
+  "nginxPackage": {
+    "description": "One of nginx.org's packages: nginx, or its njs or ACME module.",
+    "oldValueDatatype": "boolean"
+  },
+  "firewallRule": {
+    "description": "ufw's rule that lets https in, on tcp port 443.",
+    "oldValueDatatype": "boolean"
+  },
+  "vaultFolder": {
+    "description": "A folder apply made to hold the vault.",
+    "oldValueDatatype": "boolean"
+  },
+  "vault": {
+    "description": "The vault, which holds x1-validator-services' secrets, each encrypted with the password.",
+    "oldValueDatatype": "boolean"
+  },
+  "apiKey": {
+    "description": "The api key, encrypted in the vault.",
+    "oldValueDatatype": "boolean"
+  },
+  "savedPasswordFolder": {
+    "description": "A folder apply made to hold the saved password.",
+    "oldValueDatatype": "boolean"
+  },
+  "savedPassword": {
+    "description": "The x1-validator-services password, saved encrypted by systemd-creds, so nginx unlocks itself after a restart.",
+    "oldValueDatatype": "boolean"
+  },
+  "nginxFileFolder": {
+    "description": "A folder apply made to hold one of nginx's files.",
+    "oldValueDatatype": "boolean"
+  },
+  "njsModuleFile": {
+    "description": "The key check, which nginx's njs module runs on each request.",
+    "oldValueDatatype": "boolean"
+  },
+  "nginxConfigFile": {
+    "description": "nginx's configuration for the private rpc.",
+    "oldValueDatatype": "boolean"
+  },
+  "startWrapperFile": {
+    "description": "The start wrapper, which systemd runs to start nginx, and which hands nginx the api key.",
+    "oldValueDatatype": "boolean"
+  },
+  "systemdDropInFile": {
+    "description": "The drop-in, which points systemd's nginx.service at the start wrapper.",
+    "oldValueDatatype": "boolean"
+  },
+  "logrotateRuleFile": {
+    "description": "logrotate's rule for nginx's logs.",
+    "oldValueDatatype": "boolean"
+  },
+  "nginxLogFolder": {
+    "description": "nginx's log folder, which only root and nginx can open.",
+    "oldValueDatatype": "boolean"
+  },
+  "acmeStateFolder": {
+    "description": "nginx's folder for its Let's Encrypt account and certificate.",
+    "oldValueDatatype": "boolean"
+  },
+  "acmeStagingStateFolder": {
+    "description": "nginx's folder for its account and certificate at Let's Encrypt's staging server.",
+    "oldValueDatatype": "boolean"
+  },
+  "nginxServiceEnabled": {
+    "description": "Whether systemd's nginx.service is enabled, so nginx starts at boot.",
+    "oldValueDatatype": "boolean"
+  },
+  "keyHandOffFolder": {
+    "description": "The memory-only folder through which apply and unlock hand nginx the api key.",
+    "oldValueDatatype": "boolean"
+  },
+  "startScriptBackup": {
+    "description": "A copy of x1console's start script, saved before apply added --private-rpc.",
+    "oldValueDatatype": "boolean"
+  },
+  "privateRpcFlag": {
+    "description": "Whether x1console's start script starts the validator with --private-rpc.",
+    "oldValueDatatype": "boolean"
+  },
+  "gitHook": {
+    "description": "x1console's post-merge hook, which runs ensure after an Update X1 Console.",
+    "oldValueDatatype": "boolean"
+  },
+  "toolTmpFolder": {
+    "description": "The tool's tmp/ folder, which holds the cron job's lock.",
+    "oldValueDatatype": "boolean"
+  },
+  "toolLogsFolder": {
+    "description": "The tool's logs/ folder, which holds the scheduled ensure's log.",
+    "oldValueDatatype": "boolean"
+  },
+  "cronLine": {
+    "description": "The crontab line that runs ensure every minute.",
+    "oldValueDatatype": "boolean"
+  }
+}

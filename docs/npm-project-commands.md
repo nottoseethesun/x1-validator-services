@@ -1,126 +1,96 @@
-# npm Project Commands
+# X1 Validator Services — `npm` Project Commands
 
-Run every command from the project root. Each script behind a command also answers `--help` when run by its path, as in `node scripts/check.js --help`.
+Every command defined in `package.json`, what it does, and what to type. Run each one from the project root.
 
-## The Gate
+Companion to [`docs/engineering.md`](engineering.md), which covers how the gate and the scripts work. This file covers how to drive them.
 
-### `npm run check`
+The programs the features ship, such as x1-validator-private-rpc's commands and its nginx upgrade check, aren't npm commands. The feature's README covers them, in [Run](../x1-validator-private-rpc/README.md#run) and [Install](../x1-validator-private-rpc/README.md#install).
 
-Runs every check, then prints a summary. It must pass before every commit and every push. On Node.js 24 or newer it runs everything: lint, formatting, the security pass, the secret scan, the dead-code checks, the audit of the shipped dependencies, the tests and the coverage verdict. On Node.js 20.0.0 and 22 it runs the features' tests only. Reports go to `tmp/check/`.
+---
 
-```bash
-npm run check
-```
+## Table of Contents
 
-## Lint and Format
+- [Passing Flags](#passing-flags)
+- [Getting Help on Any Command](#getting-help-on-any-command)
+- [Developer Tools](#developer-tools)
+- [Test](#test)
+- [Commands That Are Usually Not Run Alone](#commands-that-are-usually-not-run-alone)
+- [See Also](#see-also)
 
-### `npm run lint`
+---
 
-Runs every lint, format and security check that needs nothing but this machine. The pre-commit hook runs it.
+## Passing Flags
 
-```bash
-npm run lint
-```
+Run a command with `npm run <name>`. `test` also works without `run`. Flags for the script go after a `--` separator:
 
-### `npm run lint:fix`
-
-The same checks, with each tool rewriting what it can fix.
-
-```bash
-npm run lint:fix
-```
-
-### `npm run format`
-
-Rewrites the formatting of the project's JavaScript files with Prettier. Run it when the lint reports unformatted code.
-
-```bash
-npm run format
-```
-
-### `npm run format:check`
-
-Reports JavaScript files Prettier would change, without changing them.
-
-```bash
-npm run format:check
-```
-
-### `npm run knip:files`
-
-Reports JavaScript files that nothing imports.
-
-```bash
-npm run knip:files
-```
-
-## Tests
-
-These run the suite alone, for quick runs while working. Only `npm run check` counts before a commit.
-
-### `npm test`
-
-Runs every test once.
-
-```bash
-npm test
-```
-
-### `npm run test:coverage`
-
-Runs every test once, with a coverage summary.
-
-```bash
-npm run test:coverage
-```
-
-### `npm run test:watch`
-
-Reruns the tests on every change.
-
-```bash
-npm run test:watch
-```
-
-### `npm run test:system`
-
-Runs x1-validator-private-rpc's nginx upgrade check end to end in a throwaway Ubuntu 24.04 LXD container, checks that it left the container clean, and deletes the container. It needs LXD on the development machine and network access from the container, takes a few minutes, and isn't part of `npm run check`. With `--keep`, the container stays for a look inside.
-
-```bash
-npm run test:system
+```sh
 npm run test:system -- --keep
 ```
 
-## Security
+The `--` is what tells npm that the rest belongs to the script rather than to npm itself. Without it, `npm run test:system --keep` sets an npm setting, and the script never sees the flag.
 
-### `npm run audit:deps`
+---
 
-Audits the shipped dependencies, and fails on a high or critical advisory.
+## Getting Help on Any Command
 
-```bash
-npm run audit:deps
+Every command that runs one of the project's scripts also takes `--help`, or `-h`. It prints the script's flags and exit codes, and exits without doing anything:
+
+```sh
+npm run check -- --help
+npm run lint -- --help
+npm test -- --help
+npm run test:system -- --help
 ```
 
-### `npm run audit:deps:all`
+The help is made from the flags each script declares, so the two can't drift apart. `knip:files`, `audit:deps` and `audit:deps:all` run knip or npm itself, so `--help` shows that tool's own help instead.
 
-Audits every dependency, dev tools included, and fails on a high or critical advisory.
+---
 
-```bash
-npm run audit:deps:all
-```
+## Developer Tools
 
-### `npm run audit:security`
+Formatting and the code checks a change is written against.
 
-Runs the security lint, `eslint-security.config.js`.
+| Command | Flags | Description | Example |
+| ------- | ----- | ----------- | ------- |
+| `format` | — | Prettier rewrites every JavaScript file it would change. Run it when the lint or the gate reports unformatted JavaScript. For json or yaml, run `lint:fix`. | `npm run format` |
+| `knip:files` | — | Lists every file nothing imports. The gate fails on any. | `npm run knip:files` |
+| `lint` | — | Every lint, format, dead-code and security check that needs nothing but this machine, with a summary. The pre-commit hook runs it. Needs Node.js 22.13 or newer. | `npm run lint` |
+| `lint:fix` | — | The same checks, with each tool rewriting what it can fix. | `npm run lint:fix` |
 
-```bash
-npm run audit:security
-```
+---
 
-### `npm run audit:secrets`
+## Test
 
-Scans for committed credentials with secretlint.
+The gates. `check` runs all of them but the system test, and must pass before every commit and every push.
 
-```bash
-npm run audit:secrets
-```
+| Command | Flags | Description | Example |
+| ------- | ----- | ----------- | ------- |
+| `audit:deps` | — | `npm audit` over the dependencies that ship, failing on a high or critical advisory. The gate runs it. | `npm run audit:deps` |
+| `audit:deps:all` | — | The same audit over every dependency, development tools included. The gate saves this report, and doesn't fail on it. | `npm run audit:deps:all` |
+| `audit:secrets` | — | secretlint, for credentials committed by mistake. | `npm run audit:secrets` |
+| `audit:security` | — | The security lint, `eslint-security.config.js`. | `npm run audit:security` |
+| `check` | — | The full gate, with a summary. On Node.js 22.13 or newer it runs every lint, format, security and dead-code check, the audits, the tests and the coverage verdict. On Node.js 20.0.0 it runs the features' tests alone. See [The Gate](engineering.md#the-gate). | `npm run check` |
+| `format:check` | — | Prettier in check mode: lists the JavaScript files it would change, and changes none. | `npm run format:check` |
+| `test` | — | Every test once, for quick runs while working. Only `check` counts before a commit. | `npm test` |
+| `test:coverage` | — | Every test once, with a coverage summary. | `npm run test:coverage` |
+| `test:system` | `--keep` | x1-validator-private-rpc end to end, in a throwaway LXD container, never on a validator. Not part of `check`. `--keep` leaves the container for a look inside. Its feature's README says what it needs, in [Test](../x1-validator-private-rpc/README.md#test). | `npm run test:system` · `npm run test:system -- --keep` |
+| `test:watch` | — | Runs the tests again on every change. | `npm run test:watch` |
+
+---
+
+## Commands That Are Usually Not Run Alone
+
+npm runs these on its own.
+
+| Command | Flags | Description | Example |
+| ------- | ----- | ----------- | ------- |
+| `prepare` | — | Runs after `npm install` or `npm ci`, and installs the pre-commit hook, which runs `npm run lint`. On a validator, `npm ci --ignore-scripts` skips it, since the hook is a development tool. | automatic |
+
+---
+
+## See Also
+
+- [`docs/engineering.md`](engineering.md): how the gate, the tests and the system test work.
+- [x1-validator-private-rpc's README](../x1-validator-private-rpc/README.md): the feature's own commands, which aren't npm commands.
+- [`CLAUDE.md`](../CLAUDE.md): the conventions every change follows.
+- [`docs/security.md`](security.md): the security checks' exceptions, and the dependency overrides.

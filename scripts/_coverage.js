@@ -129,7 +129,8 @@ export function coverageVerdict(records, rules) {
     problems.push(...highRiskProblems(records, file, rules.highRiskPercent));
   }
   for (const file of rules.expectedFiles) {
-    if (findRecord(records, file) === undefined) {
+    const record = findRecord(records, file);
+    if (record === undefined || record === null) {
       problems.push(`No test loads ${file}, so its coverage is unmeasured.`);
     }
   }
@@ -157,7 +158,7 @@ function findRecord(records, file) {
  */
 function highRiskProblems(records, file, needed) {
   const record = findRecord(records, file);
-  if (record === undefined) {
+  if (record === undefined || record === null) {
     return [`High-risk file ${file} is missing from the coverage report.`];
   }
   const lines = percent(record.linesHit, record.linesFound);

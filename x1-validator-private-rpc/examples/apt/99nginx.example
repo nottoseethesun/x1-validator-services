@@ -1,0 +1,6 @@
+# x1-validator-private-rpc: prefer nginx.org's packages over Ubuntu's own,
+# so that the ACME and njs modules match the installed nginx.
+Package: *
+Pin: origin nginx.org
+Pin: release o=nginx
+Pin-Priority: 900

@@ -1,0 +1,109 @@
+# x1-validator-private-rpc: nginx for a private X1 validator rpc.
+#
+# Written by x1-validator-private-rpc. The nginx service starts it through the
+# tool's start wrapper, which puts the api key in the environment. The
+# packaged /etc/nginx/nginx.conf stays untouched and unused.
+#
+# For a manual setup, replace x1-rpc.example.com with your hostname (one
+# place) and 203.0.113.10 with the validator's public ipv4 address (two places).
+
+user nginx;
+worker_processes 1;
+worker_priority 10;
+pid /run/nginx.pid;
+error_log /var/log/x1-validator-private-rpc/nginx-error.log notice;
+
+load_module modules/ngx_http_js_module.so;
+load_module modules/ngx_http_acme_module.so;
+
+# Keep the api key that the start wrapper puts in the environment.
+env X1_RPC_KEY;
+
+events {
+    worker_connections 1024;
+}
+
+http {
+    server_tokens off;
+    default_type application/octet-stream;
+
+    # The system's dns resolver, used to find the certificate authority.
+    resolver 127.0.0.53 ipv6=off;
+
+    acme_issuer letsencrypt {
+        uri https://acme-v02.api.letsencrypt.org/directory;
+        challenge tls-alpn-01;
+        state_path /var/cache/nginx/acme-letsencrypt;
+        accept_terms_of_service;
+    }
+
+    js_import x1rpc from /etc/nginx/x1-validator-private-rpc/x1-validator-private-rpc.js;
+    js_set $x1_rpc_path x1rpc.forwardPath;
+
+    map $http_upgrade $x1_rpc_backend {
+        websocket 127.0.0.1:8900;
+        default   127.0.0.1:8899;
+    }
+
+    map $http_upgrade $x1_rpc_connection {
+        default upgrade;
+        ''      close;
+    }
+
+    # Logs show <key> in place of anything that looks like a key, as the
+    # client sent it: after any number of slashes, in either case, and
+    # even a character short or long.
+    map $request_uri $x1_rpc_logged_uri {
+        "~^/+[0-9A-Fa-f]{32,}(?<rest>.*)$" "/<key>$rest";
+        default $request_uri;
+    }
+
+    log_format x1_rpc '$time_iso8601 $remote_addr $request_method '
+                      '"$x1_rpc_logged_uri" $status $body_bytes_sent $request_time';
+
+    # One budget for the key's requests, refilled 20 times a second.
+    limit_req_zone $server_name zone=x1_rpc:1m rate=20r/s;
+
+    server {
+        listen 203.0.113.10:443 ssl;
+        http2 on;
+        server_name x1-rpc.example.com;
+
+        acme_certificate letsencrypt;
+        ssl_certificate $acme_certificate;
+        ssl_certificate_key $acme_certificate_key;
+        ssl_certificate_cache max=2;
+
+        access_log /var/log/x1-validator-private-rpc/nginx-access.log x1_rpc;
+
+        # Local-only page: says whether nginx holds a usable key.
+        location = /x1-rpc-gate {
+            allow 203.0.113.10;
+            deny all;
+            access_log off;
+            js_content x1rpc.gatePage;
+        }
+
+        location / {
+            # Critical errors only, so an rpc outage never logs a request.
+            error_log /var/log/x1-validator-private-rpc/nginx-error-keyed.log crit;
+            # Request bodies of at most 10 KB, held in memory; larger gets 413.
+            client_max_body_size 10k;
+            client_body_buffer_size 10k;
+            # 20 keyed requests a second, plus a burst of 20 more; the rest get 429.
+            limit_req zone=x1_rpc burst=20 nodelay;
+            limit_req_status 429;
+            if ($x1_rpc_path = "") {
+                return 403;
+            }
+            rewrite ^ $x1_rpc_path break;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection $x1_rpc_connection;
+            proxy_read_timeout 3600s;
+            # Never write a response to a temporary file on disk.
+            proxy_max_temp_file_size 0;
+            proxy_pass http://$x1_rpc_backend;
+        }
+    }
+}

@@ -1,0 +1,8 @@
+# x1-validator-private-rpc: every minute, check that the rpc is still private,
+# put --private-rpc back after "Update X1 Console", and send Telegram alerts.
+# apply installs this line for you. To install it by hand, as the validator's
+# user, run crontab -e and paste the line below. First make its two folders,
+# which git doesn't track:
+#   mkdir -p ~/x1-validator-services/x1-validator-private-rpc/tmp ~/x1-validator-services/x1-validator-private-rpc/logs
+# flock skips a run while the previous one is still going.
+* * * * * flock -n $HOME/x1-validator-services/x1-validator-private-rpc/tmp/ensure.lock $HOME/.nvm/versions/node/v20.0.0/bin/node $HOME/x1-validator-services/x1-validator-private-rpc/src/cli.js ensure --quiet >> $HOME/x1-validator-services/x1-validator-private-rpc/logs/ensure.log 2>&1

@@ -6,17 +6,19 @@
  * commit and every push. Every check runs even after one fails, and a
  * summary at the end lists them all.
  *
- * On Node.js 24 or newer it runs the whole gate: the lint, format and
- * security checks of scripts/_gate-stages.js; the audit of the shipped
- * dependencies; a saved audit report of every dependency, dev tools
- * included; the shipped-settings tests; the rest of the suite with
- * coverage; and the coverage verdict of scripts/_coverage.js.
+ * On Node.js 22.13 or newer it runs the whole gate:
+ *
+ * - the lint, format and security checks of scripts/_gate-stages.js
+ * - the audit of the shipped dependencies
+ * - a saved audit report of every dependency, dev tools included
+ * - the shipped-settings tests, then the rest of the suite with coverage
+ * - the coverage verdict of scripts/_coverage.js
  *
  * On older versions, down to Node.js 20.0.0, it runs the features' tests
- * alone. The lint, coverage and audit tools need Node.js 24, and the
- * tests of the project's own tooling load those tools. The features'
- * tests are the full check of what runs on the validator, whose Node.js
- * is 20.0.0.
+ * alone. The lint, coverage and audit tools need Node.js 22.13 or newer,
+ * and the tests of the project's own tooling load those tools. The
+ * features' tests are the full check of what runs on the validator,
+ * whose Node.js is 20.0.0.
  *
  * Reports go to tmp/check/, which is disposable. Run it with `--help` for
  * its usage and exit codes.
@@ -39,24 +41,18 @@ import {
   splitConfigValueTests,
 } from "./_test-files.js";
 import {
-  checkScriptArgs,
   projectRoot,
   runCaptured,
   runInherited,
+  scriptProgram,
 } from "./_tools.js";
 import { COVERAGE_TARGETS } from "./lint-targets.js";
 
-const USAGE = `Usage: node scripts/check.js
-
-Runs the gate: on Node.js 24 or newer, every lint, format, security,
-audit, test and coverage check; on older versions, the features' tests.
-
-Exit codes:
-  0  every check passed
-  1  at least one check failed`;
-
-/** The oldest Node.js major version that runs the whole gate. */
-const FULL_GATE_NODE_MAJOR = 24;
+/**
+ * The oldest Node.js that runs the whole gate, as major and minor: the
+ * oldest 22 that ESLint supports, which the other tools accept too.
+ */
+const FULL_GATE_NODE = [22, 13];
 
 /** The minimum share of all measured lines the tests must cover. */
 const MIN_LINE_PERCENT = 80;
@@ -67,27 +63,49 @@ const HIGH_RISK_PERCENT = 95;
 /**
  * Files held to HIGH_RISK_PERCENT each, as paths from the project's root:
  * the ones whose failure would hurt the validator or leak the api key.
- * They are the api-key check nginx runs; the text of the files the tool
- * installs into nginx, systemd and apt; and the trust in nginx.org's
- * signing key, with the reading of the key files apt already has.
+ * They are:
+ *
+ * - the api-key check nginx runs, and nginx's configuration, which also
+ *   hides the key in nginx's logs
+ * - the text of the files the tool installs into nginx, systemd and apt
+ * - the trust in nginx.org's signing key, with the reading of the key
+ *   files apt already has
+ * - the key's making, its encryption in the vault, and the output that
+ *   hides it
+ * - the edits to the validator's start script
+ * - apply's record of what it changed, and undo-apply, which puts back
+ *   only what the record says
  * @type {string[]}
  */
 const HIGH_RISK_FILES = [
   "x1-validator-private-rpc/src/njs/x1-validator-private-rpc.js",
+  "x1-validator-private-rpc/src/cli/render-nginx.js",
   "x1-validator-private-rpc/src/lib/render-host-files.js",
   "x1-validator-private-rpc/src/lib/nginx-repo.js",
   "x1-validator-private-rpc/src/lib/nginx-org.js",
+  "x1-validator-private-rpc/src/lib/api-key.js",
+  "x1-validator-private-rpc/src/cli/vault.js",
+  "x1-validator-private-rpc/src/cli/log.js",
+  "x1-validator-private-rpc/src/cli/start-script.js",
+  "x1-validator-private-rpc/src/cli/turn-private-rpc.js",
+  "x1-validator-private-rpc/src/cli/what-apply-changed.js",
+  "x1-validator-private-rpc/src/cli/undo-apply.js",
 ];
 
 /** Where the gate writes its reports, relative to the project's root. */
 const REPORT_DIR = path.join("tmp", "check");
 
 /**
- * Reads the major version of the Node.js running the gate.
- * @returns {number}
+ * Tells whether the Node.js running the gate is new enough for the
+ * whole gate.
+ * @returns {boolean}
  */
-function nodeMajor() {
-  return Number.parseInt(process.versions.node.split(".")[0], 10);
+function runsWholeGate() {
+  const [major, minor] = process.versions.node
+    .split(".")
+    .map((part) => Number.parseInt(part, 10));
+  const [oldestMajor, oldestMinor] = FULL_GATE_NODE;
+  return major > oldestMajor || (major === oldestMajor && minor >= oldestMinor);
 }
 
 /**
@@ -143,15 +161,15 @@ function judgeCoverage(root, lcovPath) {
     console.error("The test run wrote no coverage report.");
     return { name, passed: false };
   }
-  const verdict = coverageVerdict(
-    parseLcov(fs.readFileSync(lcovPath, "utf8")),
-    {
-      minLinePercent: MIN_LINE_PERCENT,
-      highRiskFiles: HIGH_RISK_FILES,
-      highRiskPercent: HIGH_RISK_PERCENT,
-      expectedFiles: [...moduleFiles(root), ...installedFiles(root)],
-    },
-  );
+  const lcov = fs.readFileSync(lcovPath, "utf8");
+  const records = parseLcov(lcov);
+  const expectedFiles = [...moduleFiles(root), ...installedFiles(root)];
+  const verdict = coverageVerdict(records, {
+    minLinePercent: MIN_LINE_PERCENT,
+    highRiskFiles: HIGH_RISK_FILES,
+    highRiskPercent: HIGH_RISK_PERCENT,
+    expectedFiles,
+  });
   console.log(`Line coverage: ${verdict.linePercent.toFixed(2)}%`);
   for (const problem of verdict.problems) {
     console.error(problem);
@@ -202,21 +220,27 @@ function saveFullAudit(root) {
  * verdict.
  */
 function main() {
-  checkScriptArgs(process.argv.slice(2), [], USAGE);
+  scriptProgram(
+    "scripts/check.js",
+    "Runs the gate: on Node.js 22.13 or newer, every lint, format, security, " +
+      "audit, test and coverage check; on older versions, the features' tests.",
+    ["0  every check passed", "1  at least one check failed"],
+  ).parse();
   const root = projectRoot();
   fs.mkdirSync(path.join(root, REPORT_DIR), { recursive: true });
   for (const folder of removeLeftoverTestTempFolders()) {
     console.log(`Removed a dead test run's folder: ${folder}`);
   }
   let results;
-  if (nodeMajor() >= FULL_GATE_NODE_MAJOR) {
+  if (runsWholeGate()) {
     results = runStages([...lintStages({ fix: false }), auditShippedStage()]);
     results.push(saveFullAudit(root));
-    results.push(...runTests(root, { coverage: true }));
+    const testResults = runTests(root, { coverage: true });
+    results.push(...testResults);
   } else {
     console.log(
       `Node.js ${process.versions.node}: running the features' tests ` +
-        `only. The whole gate needs Node.js ${FULL_GATE_NODE_MAJOR}.`,
+        `only. The whole gate needs Node.js ${FULL_GATE_NODE.join(".")}.`,
     );
     results = runTests(root, { coverage: false });
   }

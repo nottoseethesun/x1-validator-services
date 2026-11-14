@@ -23,9 +23,9 @@
  * so tests pass a stand-in.
  */
 
-import crypto from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { makeApiKey } from "../../src/lib/api-key.js";
 import {
   installedVersion,
   installVersions,
@@ -33,7 +33,12 @@ import {
   purgePackages,
 } from "../../src/lib/apt.js";
 import { mustSucceed } from "../../src/lib/command-result.js";
-import { NGINX_PACKAGES, pickUpgradePair } from "../../src/lib/nginx-org.js";
+import { GATE_PAGE_PATH } from "../../src/lib/gate-page.js";
+import {
+  NGINX_PACKAGES,
+  NGINX_UNIT,
+  pickUpgradePair,
+} from "../../src/lib/nginx-org.js";
 import {
   addNginxRepository,
   removeNginxRepository,
@@ -48,11 +53,7 @@ import { showUnit, systemctl, systemdVersion } from "../../src/lib/systemd.js";
 import { machineProblems, upgradeProblems } from "./judge.js";
 import { renderTestNginxConfig } from "./render-test-config.js";
 
-const UNIT = "nginx.service";
 const UNIT_STATE = ["ActiveState", "InvocationID", "MainPID"];
-
-/** The pause between two questions to nginx or systemd. */
-const POLL_INTERVAL_MS = 250;
 
 /** What the check reports when Ctrl-C stopped it. */
 const STOPPED = "Stopped because Ctrl-C was pressed.";
@@ -81,7 +82,8 @@ const STOPPED = "Stopped because Ctrl-C was pressed.";
 /**
  * Stops the check, so the undo steps run, when Ctrl-C was pressed.
  * @param {Context} context  The run.
- * @throws {Error} When Ctrl-C was pressed.
+ * @throws {Error} When Ctrl-C was pressed, since only an error stops the
+ *   steps and still runs the undo steps.
  */
 function stopIfInterrupted(context) {
   if (context.isInterrupted()) {
@@ -118,7 +120,8 @@ function shippedFile(relative) {
  *   code name.
  */
 function readMachine(host) {
-  const osRelease = parseOsRelease(host.readText("/etc/os-release"));
+  const osReleaseText = host.readText("/etc/os-release");
+  const osRelease = parseOsRelease(osReleaseText);
   return {
     isRoot: host.isRoot(),
     osRelease,
@@ -189,7 +192,8 @@ async function installPreviousRelease(context, codename) {
       action: () => {
         // nginx's package creates the user; a stop before that leaves none.
         if (hasNginxUser()) {
-          mustSucceed(host.sudo("userdel", ["nginx"]), "Removing nginx's user");
+          const removed = host.sudo("userdel", ["nginx"]);
+          mustSucceed(removed, "Removing nginx's user");
         }
       },
       byHand: "sudo userdel nginx",
@@ -214,11 +218,11 @@ async function installPreviousRelease(context, codename) {
   stopIfInterrupted(context);
   const pair = pickUpgradePair(offeredVersions(host, NGINX_PACKAGES));
   report("Masking nginx, so the package's default site never starts.");
-  systemctl(host, ["mask", UNIT]);
+  systemctl(host, ["mask", NGINX_UNIT]);
   undo.push({
     what: "Unmasking nginx",
-    action: () => systemctl(host, ["unmask", UNIT]),
-    byHand: `sudo systemctl unmask ${UNIT}`,
+    action: () => systemctl(host, ["unmask", NGINX_UNIT]),
+    byHand: `sudo systemctl unmask ${NGINX_UNIT}`,
   });
   undo.push({
     what: "Removing nginx and its modules",
@@ -253,9 +257,11 @@ function installTestFiles(context, port) {
     renderTestNginxConfig({ port, njsModulePath: settings.njsModulePath }),
     "0644",
   );
+  const validatorUser = host.userName();
+  const nodeBin = host.nodePath();
   const wrapper = renderStartWrapper({
-    validatorUser: host.userName(),
-    nodeBin: host.nodePath(),
+    validatorUser,
+    nodeBin,
     toolCli: shippedFile("src/cli.js"),
     nginxConfigPath: settings.nginxConfigPath,
     keyHandOffPath: settings.keyHandOffPath,
@@ -286,21 +292,17 @@ function startNginx(context) {
     trackNewFolders(context, folder);
     host.makeRootDir(folder, "0700");
   }
-  writeTracked(
-    context,
-    settings.keyHandOffPath,
-    crypto.randomBytes(32).toString("hex"),
-    "0600",
-  );
+  const key = makeApiKey();
+  writeTracked(context, settings.keyHandOffPath, key, "0600");
   report("Starting nginx under systemd, through the start wrapper.");
   systemctl(host, ["daemon-reload"]);
-  systemctl(host, ["unmask", UNIT]);
+  systemctl(host, ["unmask", NGINX_UNIT]);
   undo.push({
     what: "Stopping nginx",
-    action: () => systemctl(host, ["stop", UNIT]),
-    byHand: `sudo systemctl stop ${UNIT}`,
+    action: () => systemctl(host, ["stop", NGINX_UNIT]),
+    byHand: `sudo systemctl stop ${NGINX_UNIT}`,
   });
-  systemctl(host, ["start", UNIT]);
+  systemctl(host, ["start", NGINX_UNIT]);
 }
 
 /**
@@ -313,7 +315,7 @@ function startNginx(context) {
 async function readGate(host, port, timeoutMs) {
   try {
     const response = await host.httpGet(
-      `http://127.0.0.1:${port}/x1-rpc-gate`,
+      `http://127.0.0.1:${port}${GATE_PAGE_PATH}`,
       timeoutMs,
     );
     return response.status === 200
@@ -332,7 +334,7 @@ async function readGate(host, port, timeoutMs) {
 function timing({ host, settings }) {
   return {
     timeoutMs: settings.requestTimeoutSeconds * 1000,
-    intervalMs: POLL_INTERVAL_MS,
+    intervalMs: settings.upgradeCheckPollMs,
     now: host.now,
     sleep: host.sleep,
   };
@@ -382,7 +384,7 @@ async function waitForUnlocked(context, port) {
  */
 async function upgradeAndObserve(context, port, newest) {
   const { host } = context;
-  const before = showUnit(host, UNIT, UNIT_STATE);
+  const before = showUnit(host, NGINX_UNIT, UNIT_STATE);
   const oldMain = `/proc/${before.get("MainPID")}`;
   await longStep(
     context,
@@ -391,7 +393,7 @@ async function upgradeAndObserve(context, port, newest) {
     () => installVersions(host, newest),
   );
   const { answer: after } = await pollUntil(
-    async () => showUnit(host, UNIT, UNIT_STATE),
+    async () => showUnit(host, NGINX_UNIT, UNIT_STATE),
     (state) =>
       state.get("MainPID") !== before.get("MainPID") ||
       state.get("ActiveState") !== "active",
@@ -427,7 +429,8 @@ async function runSteps(context) {
     return refusals;
   }
   report("Asking for sudo, which the next steps need.");
-  mustSucceed(host.sudo("true", []), "Getting sudo");
+  const asked = host.sudo("true", []);
+  mustSucceed(asked, "Getting sudo");
   stopIfInterrupted(context);
   const pair = await installPreviousRelease(context, facts.codename);
   stopIfInterrupted(context);
@@ -449,7 +452,8 @@ async function runSteps(context) {
         `answer was ${gate}.`,
     ];
   }
-  return upgradeProblems(await upgradeAndObserve(context, port, pair.newest));
+  const observed = await upgradeAndObserve(context, port, pair.newest);
+  return upgradeProblems(observed);
 }
 
 /**

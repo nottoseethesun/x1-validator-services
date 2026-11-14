@@ -6,7 +6,7 @@
  * name nginx.org's repository. Names that nginx.org decides
  * are constants here, not settings: its signing key's address and the
  * two fingerprints the tool trusts, its repository, the three packages,
- * and the apt files its instructions name.
+ * the systemd unit they install, and the apt files its instructions name.
  *
  * Each module package is built for one exact nginx version, which leads
  * its version string: `1.30.5+1.0.1-1~noble` is njs 1.0.1 built for
@@ -49,6 +49,7 @@ export const NGINX_PACKAGES = [
   "nginx-module-njs",
   "nginx-module-acme",
 ];
+export const NGINX_UNIT = "nginx.service";
 
 /**
  * @typedef {object} PackageVersion
@@ -123,10 +124,11 @@ export function parseAptPolicy(text) {
     if (/^\S+:$/.test(line)) {
       name = line.slice(0, -1);
       version = null;
-    } else if (listed !== undefined) {
+    } else if (listed !== undefined && listed !== null) {
       version = listed;
     } else if (
       source !== undefined &&
+      source !== null &&
       NGINX_REPOSITORY.test(source) &&
       name !== null &&
       version !== null
@@ -171,7 +173,7 @@ function oneLineEntries(text) {
       {
         uris: [rest.split(/\s+/)[0]],
         signedBy:
-          signedBy === undefined
+          signedBy === undefined || signedBy === null
             ? []
             : signedBy.slice("signed-by=".length).split(","),
       },
@@ -284,7 +286,8 @@ export function newestFirst(a, b) {
  * @param {string} nginxVersion  The nginx version, such as
  *   `1.30.5-1~noble`.
  * @returns {PackageVersion}
- * @throws {Error} When nginx.org has no build of the module for it.
+ * @throws {Error} When nginx.org has no build of the module for it, since
+ *   nginx can't load a module built for another version.
  */
 function moduleFor(entries, name, nginxVersion) {
   const upstream = nginxVersion.split("-")[0];
@@ -306,7 +309,8 @@ function moduleFor(entries, name, nginxVersion) {
  * @returns {{previous: PackageVersion[], newest: PackageVersion[]}} Each
  *   set lists nginx first, then its modules.
  * @throws {Error} When nginx.org offers fewer than two nginx versions,
- *   or lacks a module build for one of them.
+ *   or lacks a module build for one of them, since the upgrade can't be
+ *   tried without both sets.
  */
 export function pickUpgradePair(entries) {
   const versions = [

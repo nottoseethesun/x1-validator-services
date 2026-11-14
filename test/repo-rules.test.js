@@ -12,6 +12,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
+import path from "node:path";
 import { test } from "node:test";
 import securityPlugin from "eslint-plugin-security";
 import mainConfig from "../eslint.config.js";
@@ -20,6 +21,7 @@ import securityConfig, {
 } from "../eslint-security.config.js";
 import { projectRoot } from "../scripts/_tools.js";
 import { JS_TARGETS, SECURITY_TARGETS } from "../scripts/lint-targets.js";
+import { featurePaths } from "../x1-validator-private-rpc/src/cli/feature-paths.js";
 
 test("the pre-commit hook runs the lint and nothing else", () => {
   const hookUrl = new URL("../.husky/pre-commit", import.meta.url);
@@ -27,8 +29,17 @@ test("the pre-commit hook runs the lint and nothing else", () => {
 });
 
 test("git ignores secrets, private notes and disposable output", () => {
+  const paths = featurePaths();
+  const featureFiles = [
+    paths.envPath,
+    paths.statePath,
+    paths.whatApplyChangedPath,
+    paths.alertStatePath,
+    paths.ensureLogPath,
+    paths.lockPath,
+  ].map((filePath) => path.relative(projectRoot(), filePath));
   for (const file of [
-    ".env",
+    ...featureFiles,
     "tmp/check/lcov.info",
     "docs/claude/memory/private/owner-machine.md",
     "node_modules/commander/package.json",

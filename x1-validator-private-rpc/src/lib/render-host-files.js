@@ -3,22 +3,27 @@
  * @description
  * Writes out, as text, the system files the tool installs besides
  * nginx's configuration: nginx.org's apt source and pin, the start
- * wrapper systemd runs to start nginx, and the systemd drop-in that
- * points nginx.service at the wrapper. Every function is pure; the
- * caller writes the text where it belongs.
+ * wrapper systemd runs to start nginx, the systemd drop-in that points
+ * nginx.service at the wrapper, and the logrotate rule for nginx's logs.
+ * Every function is pure; the caller writes the text where it belongs.
  *
  * The wrapper starts nginx with the api key in its environment, never in
  * a file. It takes the key from the memory-only file that `unlock` left a
- * moment before, and deletes that file; or, with a saved password,
- * decrypts the key as the validator's user. It passes on only a
- * well-formed key, 64 lower-case hex characters, so a bad one leaves
- * nginx locked rather than unprotected.
+ * moment before, and deletes that file. Or, with a saved password, it
+ * decrypts the key as the validator's account. It passes on only a
+ * well-formed key, in the format src/lib/api-key.js gives, so a bad one
+ * leaves nginx locked rather than unprotected.
  */
 
+import { API_KEY_HEX_DIGITS } from "./api-key.js";
 import { NGINX_KEYRING_PATH, NGINX_REPOSITORY_URL } from "./nginx-org.js";
 
-/** The name systemd gives the saved password inside the service. */
-const PASSWORD_CREDENTIAL = "x1-validator-services-password";
+/**
+ * The name systemd keeps the saved password under. The password is
+ * encrypted under it, and the drop-in and the start wrapper name it, so
+ * all three must agree.
+ */
+export const PASSWORD_CREDENTIAL = "x1-validator-services-password";
 
 /**
  * Quotes a value for a POSIX shell, so the shell reads it as one word,
@@ -26,7 +31,7 @@ const PASSWORD_CREDENTIAL = "x1-validator-services-password";
  * @param {string} value  The value.
  * @returns {string} The value in single quotes.
  */
-function shellQuote(value) {
+export function shellQuote(value) {
   return `'${value.replaceAll("'", "'\\''")}'`;
 }
 
@@ -90,20 +95,20 @@ PASSWORD_CREDENTIAL="${PASSWORD_CREDENTIAL}"
 
 key=""
 if [ -f "$KEY_HANDOFF" ]; then
-    # The unlock or rotate-key command left the key here a moment ago.
+    # apply or unlock left the key here a moment ago.
     key=$(cat "$KEY_HANDOFF")
     rm -f "$KEY_HANDOFF"
 elif [ -n "\${CREDENTIALS_DIRECTORY:-}" ] && [ -r "$CREDENTIALS_DIRECTORY/$PASSWORD_CREDENTIAL" ]; then
-    # Saved password: decrypt as the validator's user, never as root.
+    # Saved password: decrypt as the validator's account, never as root.
     key=$(runuser -u "$VALIDATOR_USER" -- "$NODE_BIN" "$TOOL_CLI" decrypt-key --password-stdin \\
         < "$CREDENTIALS_DIRECTORY/$PASSWORD_CREDENTIAL") || key=""
 fi
 
-# Pass on only a well-formed key: 64 lower-case hex characters.
+# Pass on only a well-formed key: ${API_KEY_HEX_DIGITS} lower-case hex characters.
 case "$key" in
     *[!0-9a-f]*) key="" ;;
 esac
-if [ "\${#key}" -ne 64 ]; then
+if [ "\${#key}" -ne ${API_KEY_HEX_DIGITS} ]; then
     key=""
     echo "x1-validator-private-rpc: no usable api key; nginx starts locked and answers 403" >&2
 fi
@@ -132,10 +137,43 @@ export function renderDropIn({ startWrapperPath, passwordCredentialPath }) {
   ];
   if (passwordCredentialPath !== null) {
     lines.push(
-      "# The saved password: systemd decrypts it into a memory-only folder",
-      "# that only this service can read.",
+      "# Only when the password is saved: systemd decrypts it into a memory-only",
+      "# folder that only this service can read.",
       `LoadCredentialEncrypted=${PASSWORD_CREDENTIAL}:${passwordCredentialPath}`,
     );
   }
   return `${lines.join("\n")}\n`;
+}
+
+/**
+ * Writes the logrotate rule for the private rpc's nginx logs: daily,
+ * compressed, keeping the configured number of days. After each rotation
+ * it sends nginx USR1, as the packaged rule does, so nginx reopens its
+ * logs and writes to the new files.
+ * @param {object} values  What the rule needs.
+ * @param {string} values.nginxLogDir  Where nginx writes the logs.
+ * @param {number} values.logRetentionDays  How many days to keep.
+ * @param {string} values.logrotateRulePath  Where the rule goes.
+ * @returns {string} The file's text.
+ */
+export function renderLogrotateRule(values) {
+  const { nginxLogDir, logRetentionDays, logrotateRulePath } = values;
+  return `# x1-validator-private-rpc: rotate the private rpc's nginx logs daily and
+# keep ${logRetentionDays} days of them. Copy to ${logrotateRulePath}
+${nginxLogDir}/*.log {
+    daily
+    rotate ${logRetentionDays}
+    missingok
+    notifempty
+    compress
+    delaycompress
+    create 0640 nginx adm
+    sharedscripts
+    postrotate
+        if [ -f /run/nginx.pid ]; then
+            kill -USR1 "$(cat /run/nginx.pid)"
+        fi
+    endscript
+}
+`;
 }

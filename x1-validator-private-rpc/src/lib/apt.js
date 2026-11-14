@@ -65,10 +65,8 @@ export function installedVersion(host, name) {
  * @returns {Promise<void>}
  */
 export async function updatePackageLists(host) {
-  mustSucceed(
-    await host.sudoAsync("apt", [...NO_SCRIPT_WARNING, "update"]),
-    "Refreshing apt's package lists",
-  );
+  const updated = await host.sudoAsync("apt", [...NO_SCRIPT_WARNING, "update"]);
+  mustSucceed(updated, "Refreshing apt's package lists");
 }
 
 /**
@@ -78,10 +76,8 @@ export async function updatePackageLists(host) {
  * @returns {import("./nginx-org.js").PackageVersion[]}
  */
 export function offeredVersions(host, names) {
-  const result = mustSucceed(
-    host.run("apt", [...NO_SCRIPT_WARNING, "policy", ...names]),
-    "Listing the package versions apt offers",
-  );
+  const listed = host.run("apt", [...NO_SCRIPT_WARNING, "policy", ...names]);
+  const result = mustSucceed(listed, "Listing the package versions apt offers");
   return parseAptPolicy(result.stdout);
 }
 
@@ -96,18 +92,14 @@ export function offeredVersions(host, names) {
  */
 export async function installVersions(host, packages) {
   const pins = packages.map(({ name, version }) => `${name}=${version}`);
-  mustSucceed(
-    await host.sudoAsync(
-      "env",
-      withoutQuestions([
-        "install",
-        "--yes",
-        "--no-install-recommends",
-        ...pins,
-      ]),
-    ),
-    `Installing ${pins.join(" ")}`,
-  );
+  const command = withoutQuestions([
+    "install",
+    "--yes",
+    "--no-install-recommends",
+    ...pins,
+  ]);
+  const installed = await host.sudoAsync("env", command);
+  mustSucceed(installed, `Installing ${pins.join(" ")}`);
 }
 
 /**
@@ -117,8 +109,25 @@ export async function installVersions(host, packages) {
  * @returns {Promise<void>}
  */
 export async function purgePackages(host, names) {
-  mustSucceed(
-    await host.sudoAsync("env", withoutQuestions(["purge", "--yes", ...names])),
-    `Removing ${names.join(" ")}`,
-  );
+  const command = withoutQuestions(["purge", "--yes", ...names]);
+  const purged = await host.sudoAsync("env", command);
+  mustSucceed(purged, `Removing ${names.join(" ")}`);
+}
+
+/**
+ * Installs the newest versions apt offers of some packages, together, so
+ * apt picks module builds that match the nginx it installs.
+ * @param {object} host  The host.
+ * @param {string[]} names  The packages.
+ * @returns {Promise<void>}
+ */
+export async function installPackages(host, names) {
+  const command = withoutQuestions([
+    "install",
+    "--yes",
+    "--no-install-recommends",
+    ...names,
+  ]);
+  const installed = await host.sudoAsync("env", command);
+  mustSucceed(installed, `Installing ${names.join(" ")}`);
 }

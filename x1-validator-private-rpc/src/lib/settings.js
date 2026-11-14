@@ -37,6 +37,17 @@ export function defaultConfigDir() {
 }
 
 /**
+ * Finds the folder of the shipped defaults, which also holds the
+ * dictionary of the settings apply changes.
+ * @param {string} [configDir]  The `app-config` folder; the feature's own
+ *   unless a caller passes another.
+ * @returns {string} Its path.
+ */
+export function shippedDefaultsDir(configDir = defaultConfigDir()) {
+  return path.join(configDir, DEFAULTS_FOLDER);
+}
+
+/**
  * Finds the operator's override file.
  * @param {string} [configDir]  The `app-config` folder; the feature's own
  *   unless a caller passes another.
@@ -74,9 +85,10 @@ function refuseUnreadFiles(overridePath) {
  * Reads a json file, saying which file is broken when it doesn't parse.
  * @param {string} filePath  The file.
  * @returns {unknown} Its content.
- * @throws {Error} When the file isn't valid json.
+ * @throws {Error} When the file isn't valid json, naming the file, since
+ *   json's own message doesn't.
  */
-function readJson(filePath) {
+export function readJson(filePath) {
   const text = fs.readFileSync(filePath, "utf8");
   try {
     return JSON.parse(text);
@@ -139,13 +151,13 @@ export function settingsProblems(schema, settings, overridePath) {
  * @returns {object} The settings, each key holding its value.
  * @throws {Error} Listing every problem, when a file is broken, a file
  *   the tool doesn't read sits beside the override, or a setting is
- *   wrong or unknown.
+ *   wrong or unknown, so no command runs on settings the operator didn't
+ *   mean.
  */
 export function loadSettings(configDir = defaultConfigDir()) {
-  const schema = readJson(path.join(configDir, DEFAULTS_FOLDER, SCHEMA_FILE));
-  const defaults = readJson(
-    path.join(configDir, DEFAULTS_FOLDER, SETTINGS_FILE),
-  );
+  const defaultsDir = shippedDefaultsDir(configDir);
+  const schema = readJson(path.join(defaultsDir, SCHEMA_FILE));
+  const defaults = readJson(path.join(defaultsDir, SETTINGS_FILE));
   const overridePath = overrideFilePath(configDir);
   refuseUnreadFiles(overridePath);
   const overrides = fs.existsSync(overridePath) ? readJson(overridePath) : {};

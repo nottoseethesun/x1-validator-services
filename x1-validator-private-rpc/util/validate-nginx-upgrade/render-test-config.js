@@ -9,6 +9,8 @@
  * a usable key.
  */
 
+import { GATE_PAGE_PATH } from "../../src/lib/gate-page.js";
+
 /**
  * Writes the test configuration.
  * @param {{port: number, njsModulePath: string}} values  The port on
@@ -39,7 +41,7 @@ http {
     server {
         listen 127.0.0.1:${port};
 
-        location = /x1-rpc-gate {
+        location = ${GATE_PAGE_PATH} {
             allow 127.0.0.1;
             deny all;
             js_content x1rpc.gatePage;

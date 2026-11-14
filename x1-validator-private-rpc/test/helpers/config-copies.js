@@ -45,10 +45,20 @@ export function copyShippedConfig(overrideText) {
 }
 
 /**
+ * Loads the shipped settings, from a copy with no override.
+ * @returns {object}
+ */
+export function shippedSettings() {
+  const { configDir } = copyShippedConfig();
+  return loadSettings(configDir);
+}
+
+/**
  * Changes one shipped value to another the schema accepts. Each part of
- * a path gets `changed-` in front, so no folder of the changed path
- * exists on a stock system, and no shipped path or folder appears
- * inside a changed one. A number goes up by one.
+ * a path, a file name or a url gets `changed-` in front, so no folder of
+ * a changed path exists on a stock system, and no shipped path or folder
+ * appears inside a changed one. A url's scheme and a home folder's `~`
+ * stay. A number goes up by one.
  * @param {string} name  The setting.
  * @param {unknown} value  Its shipped value.
  * @returns {unknown} The changed value.
@@ -57,9 +67,10 @@ export function copyShippedConfig(overrideText) {
  */
 function changedValue(name, value) {
   if (typeof value === "string") {
+    const keep = (part) => part === "" || part === "~" || part.endsWith(":");
     return value
       .split("/")
-      .map((part) => (part === "" ? part : `changed-${part}`))
+      .map((part) => (keep(part) ? part : `changed-${part}`))
       .join("/");
   }
   if (typeof value === "number") {
@@ -74,7 +85,7 @@ function changedValue(name, value) {
  * @returns {{shipped: object, changed: object}} The two sets of settings.
  */
 export function shippedAndChangedSettings() {
-  const shipped = loadSettings(copyShippedConfig().configDir);
+  const shipped = shippedSettings();
   const override = Object.fromEntries(
     Object.entries(shipped).map(([name, value]) => [
       name,

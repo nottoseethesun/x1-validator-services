@@ -2,30 +2,43 @@
  * @file x1-validator-private-rpc/test/render-host-files.test.js
  * @description
  * Tests the text of the system files the tool installs: nginx.org's apt
- * source and pin, the start wrapper and the systemd drop-in.
+ * source and pin, the start wrapper, the systemd drop-in and the
+ * logrotate rule.
  */
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { featurePaths } from "../src/cli/feature-paths.js";
+import { API_KEY_HEX_DIGITS } from "../src/lib/api-key.js";
 import {
   NGINX_KEYRING_PATH,
   NGINX_REPOSITORY_URL,
 } from "../src/lib/nginx-org.js";
 import {
+  PASSWORD_CREDENTIAL,
   renderAptPin,
   renderAptSource,
   renderDropIn,
+  renderLogrotateRule,
   renderStartWrapper,
 } from "../src/lib/render-host-files.js";
+import { shippedAndChangedSettings } from "./helpers/config-copies.js";
 
-const WRAPPER_VALUES = {
-  validatorUser: "validator",
-  nodeBin: "/home/validator/.nvm/versions/node/v20.0.0/bin/node",
-  toolCli:
-    "/home/validator/x1-validator-services/x1-validator-private-rpc/src/cli.js",
-  nginxConfigPath: "/etc/nginx/x1-validator-private-rpc/nginx.conf",
-  keyHandOffPath: "/run/x1-validator-private-rpc/api-key",
-};
+/**
+ * Makes the start wrapper's values, with each setting changed from its
+ * shipped value, so a test sees the wrapper use the values it's given.
+ * @returns {object}
+ */
+function wrapperValues() {
+  const { changed } = shippedAndChangedSettings();
+  return {
+    validatorUser: "validator",
+    nodeBin: "/home/validator/.nvm/versions/node/v20.0.0/bin/node",
+    toolCli: featurePaths().toolCli,
+    nginxConfigPath: changed.nginxConfigPath,
+    keyHandOffPath: changed.keyHandOffPath,
+  };
+}
 
 test("the apt source is a deb822 entry naming the release and the pinned keyring", () => {
   assert.deepEqual(renderAptSource("noble").split("\n").slice(1), [
@@ -45,47 +58,61 @@ test("the apt pin prefers nginx.org's packages", () => {
 });
 
 test("the start wrapper quotes its values and starts nginx with its config", () => {
-  const wrapper = renderStartWrapper(WRAPPER_VALUES);
+  const values = wrapperValues();
+  const wrapper = renderStartWrapper(values);
+  const lines = wrapper.split("\n");
   assert.ok(wrapper.startsWith("#!/bin/sh\n"));
   assert.match(wrapper, /^VALIDATOR_USER='validator'$/m);
-  assert.match(
-    wrapper,
-    /^KEY_HANDOFF='\/run\/x1-validator-private-rpc\/api-key'$/m,
-  );
+  assert.ok(lines.includes(`KEY_HANDOFF='${values.keyHandOffPath}'`), wrapper);
+  assert.ok(lines.includes(`NGINX_CONF='${values.nginxConfigPath}'`), wrapper);
   assert.match(wrapper, /\*\[!0-9a-f\]\*\) key="" ;;/);
-  assert.match(wrapper, /if \[ "\$\{#key\}" -ne 64 \]; then/);
+  assert.ok(
+    wrapper.includes(`if [ "\${#key}" -ne ${API_KEY_HEX_DIGITS} ]; then`),
+  );
   assert.ok(wrapper.endsWith('exec /usr/sbin/nginx -c "$NGINX_CONF"\n'));
 });
 
 test("the start wrapper keeps a quote inside a value as part of the value", () => {
   const wrapper = renderStartWrapper({
-    ...WRAPPER_VALUES,
+    ...wrapperValues(),
     validatorUser: "a'b",
   });
   assert.match(wrapper, /^VALIDATOR_USER='a'\\''b'$/m);
 });
 
 test("the drop-in starts nginx through the wrapper", () => {
+  const { changed } = shippedAndChangedSettings();
   const dropIn = renderDropIn({
-    startWrapperPath: "/usr/local/libexec/x1-validator-private-rpc/nginx-start",
+    startWrapperPath: changed.startWrapperPath,
     passwordCredentialPath: null,
   });
-  assert.match(dropIn, /^ExecStart=$/m);
-  assert.match(
-    dropIn,
-    /^ExecStart=\/usr\/local\/libexec\/x1-validator-private-rpc\/nginx-start$/m,
-  );
+  const lines = dropIn.split("\n");
+  assert.ok(lines.includes("ExecStart="), dropIn);
+  assert.ok(lines.includes(`ExecStart=${changed.startWrapperPath}`), dropIn);
   assert.doesNotMatch(dropIn, /LoadCredentialEncrypted/);
 });
 
 test("with a saved password, the drop-in loads it as a credential", () => {
-  const dropIn = renderDropIn({
-    startWrapperPath: "/usr/local/libexec/x1-validator-private-rpc/nginx-start",
-    passwordCredentialPath:
-      "/etc/credstore.encrypted/x1-validator-services-password",
+  const { changed } = shippedAndChangedSettings();
+  const dropIn = renderDropIn(changed);
+  const credential = `${PASSWORD_CREDENTIAL}:${changed.passwordCredentialPath}`;
+  assert.ok(
+    dropIn.split("\n").includes(`LoadCredentialEncrypted=${credential}`),
+    dropIn,
+  );
+});
+
+test("the logrotate rule keeps the configured days of the configured logs", () => {
+  const rule = renderLogrotateRule({
+    nginxLogDir: "/srv/logs/rpc",
+    logRetentionDays: 30,
+    logrotateRulePath: "/etc/logrotate.d/rpc",
   });
   assert.match(
-    dropIn,
-    /^LoadCredentialEncrypted=x1-validator-services-password:\/etc\/credstore\.encrypted\/x1-validator-services-password$/m,
+    rule,
+    /^# keep 30 days of them\. Copy to \/etc\/logrotate\.d\/rpc$/m,
   );
+  assert.match(rule, /^\/srv\/logs\/rpc\/\*\.log \{$/m);
+  assert.match(rule, /^ {4}rotate 30$/m);
+  assert.match(rule, /kill -USR1 "\$\(cat \/run\/nginx\.pid\)"/);
 });

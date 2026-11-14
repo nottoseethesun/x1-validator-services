@@ -4,34 +4,35 @@
  * @description
  * Backs `npm run audit:security` and `npm run audit:secrets`: the
  * security lint and the secret scan on their own, the same stages
- * `npm run lint` and the gate run. Run it with `--help` for its usage
+ * `npm run lint` and the gate run. Run it with `--help` for its options
  * and exit codes.
  */
 
+import { Option } from "commander";
 import { secretlintStage, securityLintStage } from "./_gate-stages.js";
-import { checkScriptArgs, runInherited } from "./_tools.js";
-
-const USAGE = `Usage: node scripts/audit.js --security|--secrets
-
-Runs the security lint (--security) or the secret scan (--secrets).
-
-Exit codes:
-  0  clean
-  1  bad arguments, or a problem found`;
+import { runInherited, scriptProgram } from "./_tools.js";
 
 /**
- * Runs the pass the argument names, and exits with its code.
+ * Runs the pass the option names, and exits with its code.
  */
 function main() {
-  const args = process.argv.slice(2);
-  checkScriptArgs(args, ["--security", "--secrets"], USAGE);
-  if (args.length !== 1) {
-    console.error(USAGE);
-    process.exit(1);
+  const program = scriptProgram(
+    "scripts/audit.js",
+    "Runs the security lint, or the secret scan.",
+    ["0  clean", "1  bad arguments, or a problem found"],
+  )
+    .addOption(
+      new Option("--security", "run the security lint").conflicts("secrets"),
+    )
+    .option("--secrets", "run the secret scan");
+  program.parse();
+  const { security, secrets } = program.opts();
+  if (security !== true && secrets !== true) {
+    program.error("error: give --security or --secrets.");
   }
-  const stage =
-    args[0] === "--security" ? securityLintStage() : secretlintStage();
-  process.exit(runInherited(stage.command, stage.args));
+  const stage = security === true ? securityLintStage() : secretlintStage();
+  const code = runInherited(stage.command, stage.args);
+  process.exit(code);
 }
 
 main();

@@ -9,22 +9,21 @@
  */
 
 import { entryPointFiles, moduleFiles } from "./_project-files.js";
-import { checkScriptArgs, projectRoot } from "./_tools.js";
+import { projectRoot, scriptProgram } from "./_tools.js";
 import { findUnusedSrcModules } from "./_unused-src-modules.js";
-
-const USAGE = `Usage: node scripts/check-unused-src-modules.js
-
-Fails when a module under a feature's src/ is loaded by no entry point.
-
-Exit codes:
-  0  every source module is reached from an entry point
-  1  at least one isn't; each is listed`;
 
 /**
  * Walks from the entry points and reports the modules never reached.
  */
 async function main() {
-  checkScriptArgs(process.argv.slice(2), [], USAGE);
+  scriptProgram(
+    "scripts/check-unused-src-modules.js",
+    "Fails when a module under a feature's src/ is loaded by no entry point.",
+    [
+      "0  every source module is reached from an entry point",
+      "1  at least one isn't; each is listed",
+    ],
+  ).parse();
   const root = projectRoot();
   const entries = entryPointFiles(root);
   const modules = moduleFiles(root);

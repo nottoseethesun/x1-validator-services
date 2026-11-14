@@ -1,0 +1,34 @@
+#!/bin/sh
+# x1-validator-private-rpc: start nginx with the rpc api key in its
+# environment, never in a file. Written by the tool; systemd runs it as root.
+set -u
+
+VALIDATOR_USER='VALIDATOR_USER'
+NODE_BIN='/home/VALIDATOR_USER/.nvm/versions/node/v20.0.0/bin/node'
+TOOL_CLI='/home/VALIDATOR_USER/x1-validator-services/x1-validator-private-rpc/src/cli.js'
+NGINX_CONF='/etc/nginx/x1-validator-private-rpc/nginx.conf'
+KEY_HANDOFF='/run/x1-validator-private-rpc/api-key'
+PASSWORD_CREDENTIAL="x1-validator-services-password"
+
+key=""
+if [ -f "$KEY_HANDOFF" ]; then
+    # apply or unlock left the key here a moment ago.
+    key=$(cat "$KEY_HANDOFF")
+    rm -f "$KEY_HANDOFF"
+elif [ -n "${CREDENTIALS_DIRECTORY:-}" ] && [ -r "$CREDENTIALS_DIRECTORY/$PASSWORD_CREDENTIAL" ]; then
+    # Saved password: decrypt as the validator's account, never as root.
+    key=$(runuser -u "$VALIDATOR_USER" -- "$NODE_BIN" "$TOOL_CLI" decrypt-key --password-stdin \
+        < "$CREDENTIALS_DIRECTORY/$PASSWORD_CREDENTIAL") || key=""
+fi
+
+# Pass on only a well-formed key: 64 lower-case hex characters.
+case "$key" in
+    *[!0-9a-f]*) key="" ;;
+esac
+if [ "${#key}" -ne 64 ]; then
+    key=""
+    echo "x1-validator-private-rpc: no usable api key; nginx starts locked and answers 403" >&2
+fi
+
+export X1_RPC_KEY="$key"
+exec /usr/sbin/nginx -c "$NGINX_CONF"

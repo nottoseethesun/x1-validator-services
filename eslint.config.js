@@ -11,10 +11,10 @@
  * equality, no `var`, no comment that switches Prettier off, no
  * `Math.random()`, no classes, no imports inside functions and no
  * re-exports. eslint-plugin-n fails an import that doesn't resolve, and
- * any Node.js API or syntax newer than the oldest version `engines` in
+ * any Node.js api or syntax newer than the oldest version `engines` in
  * package.json allows, which is the validator's Node.js 20.0.0. Files
- * that only ever run in the full gate, on Node.js 24, are checked
- * against Node.js 24 instead.
+ * that only ever run in the full gate, on Node.js 22.13 or newer, are
+ * checked against Node.js 22.13 instead.
  *
  * The security rules run in a pass of their own, eslint-security.config
  * .js. Their plugins are registered here too, so a one-line exception
@@ -134,7 +134,7 @@ export default [
   },
   {
     files: FULL_GATE_ONLY_TARGETS,
-    settings: { n: { version: ">=24.0.0" } },
+    settings: { n: { version: ">=22.13.0" } },
   },
   {
     /*-

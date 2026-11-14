@@ -4,34 +4,40 @@
  * @description
  * Backs `npm run format` and `npm run format:check`: Prettier over the
  * project's JavaScript files, the same stage `npm run lint` runs. Run
- * `npm run format` to fix a formatting failure from the lint or the
- * gate; nothing rewrites files at commit time. Run it with `--help` for
- * its usage and exit codes.
+ * `npm run format` to fix a JavaScript formatting failure from the lint
+ * or the gate, and `npm run lint:fix` for json or yaml; nothing rewrites
+ * files at commit time. Run it with `--help` for its options and exit
+ * codes.
  */
 
+import { Option } from "commander";
 import { prettierStage } from "./_gate-stages.js";
-import { checkScriptArgs, runInherited } from "./_tools.js";
-
-const USAGE = `Usage: node scripts/format.js --check|--write
-
-Checks, or rewrites, the formatting of the project's JavaScript files.
-
-Exit codes:
-  0  every file is formatted, or was rewritten
-  1  bad arguments, or unformatted files`;
+import { runInherited, scriptProgram } from "./_tools.js";
 
 /**
- * Runs Prettier in the mode the argument names, and exits with its code.
+ * Runs Prettier in the mode the option names, and exits with its code.
  */
 function main() {
-  const args = process.argv.slice(2);
-  checkScriptArgs(args, ["--check", "--write"], USAGE);
-  if (args.length !== 1) {
-    console.error(USAGE);
-    process.exit(1);
+  const program = scriptProgram(
+    "scripts/format.js",
+    "Checks, or rewrites, the formatting of the project's JavaScript files.",
+    [
+      "0  every file is formatted, or was rewritten",
+      "1  bad arguments, or unformatted files",
+    ],
+  )
+    .addOption(
+      new Option("--check", "report unformatted files").conflicts("write"),
+    )
+    .option("--write", "rewrite unformatted files");
+  program.parse();
+  const { check, write } = program.opts();
+  if (check !== true && write !== true) {
+    program.error("error: give --check or --write.");
   }
-  const stage = prettierStage("js", { write: args[0] === "--write" });
-  process.exit(runInherited(stage.command, stage.args));
+  const stage = prettierStage("js", { write: write === true });
+  const code = runInherited(stage.command, stage.args);
+  process.exit(code);
 }
 
 main();

@@ -2,9 +2,9 @@
  * @file x1-validator-private-rpc/test/validate-nginx-upgrade.test.js
  * @description
  * Tests the nginx upgrade check on a fake host that plays a validator,
- * from helpers/fake-validator.js: the order of its steps, its verdict in each way the upgrade can go,
- * and its clean-up, which must remove everything it added even when a
- * step fails. Every scenario runs with each setting changed from its
+ * from helpers/fake-validator.js: the order of its steps, its verdict in
+ * each way the upgrade can go, and its clean-up, which must remove
+ * everything it added even when a step fails. Every scenario runs with each setting changed from its
  * shipped value, so a step that used a default instead would show. It
  * also tests the check's decisions and test configuration on their own,
  * and runs the real entry point for its help.
@@ -32,6 +32,15 @@ import { fakeValidator } from "./helpers/fake-validator.js";
 
 /** Text in the command line of the step that removes the packages. */
 const PURGE = "purge --yes nginx";
+
+/** The path settings the upgrade check reads; the rest belong to apply. */
+const PATHS_THE_CHECK_USES = [
+  "nginxConfigPath",
+  "njsModulePath",
+  "startWrapperPath",
+  "systemdDropInPath",
+  "keyHandOffPath",
+];
 
 /**
  * The settings every scenario runs with.
@@ -134,13 +143,11 @@ test("uses every configured setting, and never a shipped value instead", async (
     used.push(call.path ?? [call.command, ...call.args].join(" "));
   }
   const text = used.join("\n");
-  for (const [name, value] of Object.entries(shipped)) {
-    if (typeof value === "string") {
-      for (const shippedPath of [value, path.dirname(value)]) {
-        assert.ok(!text.includes(shippedPath), `${name}: ${shippedPath} used`);
-      }
-      assert.ok(text.includes(changed[name]), `${name} was never used`);
+  for (const name of PATHS_THE_CHECK_USES) {
+    for (const shippedPath of [shipped[name], path.dirname(shipped[name])]) {
+      assert.ok(!text.includes(shippedPath), `${name}: ${shippedPath} used`);
     }
+    assert.ok(text.includes(changed[name]), `${name} was never used`);
   }
   assert.ok(timeouts.length > 0);
   for (const timeoutMs of timeouts) {
@@ -368,9 +375,16 @@ test("waits out a connection dropped while the old nginx shuts down", async () =
       return { status: 200, body: "unlocked\n" };
     },
   });
+  const pauses = [];
+  const sleep = validator.host.sleep;
+  validator.host.sleep = (ms) => {
+    pauses.push(ms);
+    return sleep(ms);
+  };
   const { result } = await runCheck(validator.host);
   assert.equal(dropped, true);
   assert.deepEqual(result, { passed: true, problems: [], leftovers: [] });
+  assert.deepEqual(pauses, [testSettings().upgradeCheckPollMs]);
 });
 
 test("fails when the gate page never answers after the upgrade", async () => {
@@ -462,18 +476,12 @@ test("names every way nginx can fail the upgrade", () => {
 });
 
 test("the test configuration listens on 127.0.0.1 alone, with the key", () => {
-  const config = renderTestNginxConfig({
-    port: 18080,
-    njsModulePath:
-      "/etc/nginx/x1-validator-private-rpc/x1-validator-private-rpc.js",
-  });
+  const { njsModulePath } = testSettings();
+  const config = renderTestNginxConfig({ port: 18080, njsModulePath });
   assert.match(config, /^\s*listen 127\.0\.0\.1:18080;$/m);
   assert.match(config, /^env X1_RPC_KEY;$/m);
   assert.match(config, /^pid \/run\/nginx\.pid;$/m);
-  assert.match(
-    config,
-    /js_import x1rpc from \/etc\/nginx\/x1-validator-private-rpc\/x1-validator-private-rpc\.js;/,
-  );
+  assert.ok(config.includes(`js_import x1rpc from ${njsModulePath};`), config);
 });
 
 test("the real entry point prints its help with exit code 0", () => {

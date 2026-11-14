@@ -40,9 +40,9 @@ export function makeTestTempFolder(purpose) {
   if (madeFolders.size === 0) {
     process.once("exit", removeMadeFolders);
   }
-  const folder = fs.mkdtempSync(
-    path.join(os.tmpdir(), `${PREFIX}${purpose}-${process.pid}-`),
-  );
+  const tempRoot = os.tmpdir();
+  const prefix = path.join(tempRoot, `${PREFIX}${purpose}-${process.pid}-`);
+  const folder = fs.mkdtempSync(prefix);
   madeFolders.add(folder);
   return folder;
 }
@@ -62,12 +62,12 @@ function isRunning(pid) {
 }
 
 /**
- * Removes the test folders of processes that are no longer running.
- * @param {string} [tempRoot]  The folder to look in; the system's
- *   temporary folder unless a test passes another.
+ * Removes the test folders, in the system's temporary folder, of
+ * processes that are no longer running.
  * @returns {string[]} The folders it removed.
  */
-export function removeLeftoverTestTempFolders(tempRoot = os.tmpdir()) {
+export function removeLeftoverTestTempFolders() {
+  const tempRoot = os.tmpdir();
   const removed = [];
   for (const name of fs.readdirSync(tempRoot)) {
     const pid = Number.parseInt(name.split("-").at(-2) ?? "", 10);

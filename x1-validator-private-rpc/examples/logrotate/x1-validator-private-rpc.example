@@ -1,0 +1,17 @@
+# x1-validator-private-rpc: rotate the private rpc's nginx logs daily and
+# keep 7 days of them. Copy to /etc/logrotate.d/x1-validator-private-rpc
+/var/log/x1-validator-private-rpc/*.log {
+    daily
+    rotate 7
+    missingok
+    notifempty
+    compress
+    delaycompress
+    create 0640 nginx adm
+    sharedscripts
+    postrotate
+        if [ -f /run/nginx.pid ]; then
+            kill -USR1 "$(cat /run/nginx.pid)"
+        fi
+    endscript
+}

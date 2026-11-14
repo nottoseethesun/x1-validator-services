@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "kdf": "pbkdf2",
+  "kdfParams": {
+    "digest": "sha512",
+    "iterations": 600000,
+    "saltHex": "750a50bc662b2be57188ef6a21a77cea"
+  },
+  "cipher": "aes-256-gcm",
+  "ivHex": "17d68249f1e051d0d57d0871",
+  "authTagHex": "02760974068668664754fa5b97d0ebbe",
+  "ciphertextHex": "a8dc15d1fa920df7e38d3d04720978d9d8b783797dd2ccf095138a70ceb6e567e0c91788aa0a0a38b680ec7c092ef68c1452bc4e9d175f7ab1649428424ae251"
+}

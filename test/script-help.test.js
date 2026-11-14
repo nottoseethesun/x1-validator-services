@@ -2,7 +2,7 @@
  * @file test/script-help.test.js
  * @description
  * Tests that every script the project runs by its path answers `--help`
- * and `-h` with its usage on stdout and exit code 0, and refuses an
+ * and `-h` with its help on stdout and exit code 0, and refuses an
  * argument it doesn't take with exit code 1. Helper modules, whose names
  * start with an underscore, and the shared file lists are left out: they
  * are never run by their path.
@@ -47,17 +47,18 @@ test("there are scripts to check", () => {
 });
 
 for (const script of runnableScripts()) {
-  test(`${script} answers --help and -h with its usage`, () => {
+  test(`${script} answers --help and -h with its help`, () => {
     for (const flag of ["--help", "-h"]) {
       const result = runScript(script, [flag]);
       assert.equal(result.status, 0, `${flag} exit code`);
       assert.match(result.stdout, /^Usage: node scripts\//);
+      assert.match(result.stdout, /\nExit codes:\n {2}\S/);
     }
   });
 
   test(`${script} refuses an argument it doesn't take`, () => {
     const result = runScript(script, ["--no-such-option"]);
     assert.equal(result.status, 1);
-    assert.match(result.stderr, /Unknown argument: --no-such-option/);
+    assert.match(result.stderr, /unknown option '--no-such-option'/);
   });
 }

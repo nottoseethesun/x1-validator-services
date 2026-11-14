@@ -1,0 +1,6 @@
+#!/bin/sh
+# x1-validator-private-rpc: after "Update X1 Console" pulls new commits,
+# put --private-rpc back into start_validator.sh. Never fails the pull.
+# apply installs this hook for you. To install it by hand, copy it to
+# ~/x1console/.git/hooks/post-merge and make it executable.
+"$HOME/.nvm/versions/node/v20.0.0/bin/node" "$HOME/x1-validator-services/x1-validator-private-rpc/src/cli.js" ensure --quiet --from-git-hook || true

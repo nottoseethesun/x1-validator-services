@@ -41,10 +41,8 @@ export function parseShow(text) {
  * @returns {number|null} The version, or null when systemctl prints none.
  */
 export function systemdVersion(host) {
-  const result = mustSucceed(
-    host.run("systemctl", ["--version"]),
-    "Asking systemd for its version",
-  );
+  const answered = host.run("systemctl", ["--version"]);
+  const result = mustSucceed(answered, "Asking systemd for its version");
   return parseSystemdVersion(result.stdout);
 }
 
@@ -56,11 +54,22 @@ export function systemdVersion(host) {
  * @returns {Map<string, string>} Each property's name and value.
  */
 export function showUnit(host, unit, names) {
-  const result = mustSucceed(
-    host.run("systemctl", ["show", unit, `--property=${names.join(",")}`]),
-    `Reading the state of ${unit}`,
-  );
+  const property = `--property=${names.join(",")}`;
+  const shown = host.run("systemctl", ["show", unit, property]);
+  const result = mustSucceed(shown, `Reading the state of ${unit}`);
   return parseShow(result.stdout);
+}
+
+/**
+ * Reads a unit's state at boot, as `systemctl is-enabled` prints it.
+ * @param {object} host  The host.
+ * @param {string} unit  The unit, such as `nginx.service`.
+ * @returns {string} Such as `enabled`, `disabled` or `masked`; empty
+ *   when systemd has no such unit.
+ */
+export function unitFileState(host, unit) {
+  const answered = host.run("systemctl", ["is-enabled", unit]);
+  return answered.stdout.trim();
 }
 
 /**
@@ -70,8 +79,6 @@ export function showUnit(host, unit, names) {
  *   `["mask", "nginx.service"]`.
  */
 export function systemctl(host, args) {
-  mustSucceed(
-    host.sudo("systemctl", args),
-    `Running systemctl ${args.join(" ")}`,
-  );
+  const result = host.sudo("systemctl", args);
+  mustSucceed(result, `Running systemctl ${args.join(" ")}`);
 }

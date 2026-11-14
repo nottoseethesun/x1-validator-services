@@ -61,11 +61,9 @@ async function main() {
   });
   let result;
   try {
-    result = await validateNginxUpgrade({
-      host: createHost(),
-      settings: loadSettings(),
-      ...terminal,
-    });
+    const host = createHost();
+    const settings = loadSettings();
+    result = await validateNginxUpgrade({ host, settings, ...terminal });
   } catch (error) {
     result = { passed: false, problems: [error.message], leftovers: [] };
   }

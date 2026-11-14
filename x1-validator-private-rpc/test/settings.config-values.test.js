@@ -39,6 +39,20 @@ test("the shipped defaults pass their schema", () => {
   );
 });
 
+test("the example override, merged over the shipped defaults, passes", () => {
+  assert.deepEqual(
+    settingsProblems(
+      shipped("private-rpc.schema.json"),
+      {
+        ...shipped("private-rpc.json"),
+        ...shipped("private-rpc.example.json"),
+      },
+      "(example)",
+    ),
+    [],
+  );
+});
+
 test("every setting the schema accepts has a type or range rule", () => {
   const schema = shipped("private-rpc.schema.json");
   for (const [name, rule] of Object.entries(schema.properties)) {

@@ -8,32 +8,28 @@
  * scripts/_gate-stages.js gives, then prints a summary. With `--fix`, each
  * tool rewrites what it can fix and reports the rest.
  *
- * The tools need Node.js 24 or newer; see scripts/check.js. Run it with
+ * The tools need Node.js 22.13 or newer; see scripts/check.js. Run it with
  * `--help` for its usage and exit codes.
  */
 
 import { lintStages } from "./_gate-stages.js";
 import { printSummary, runStages } from "./_run-stages.js";
-import { checkScriptArgs } from "./_tools.js";
-
-const USAGE = `Usage: node scripts/lint.js [--fix]
-
-Runs every lint, format and security check that needs nothing but this
-machine. With --fix, each tool rewrites what it can fix.
-
-Exit codes:
-  0  every check passed
-  1  at least one check failed`;
+import { scriptProgram } from "./_tools.js";
 
 /**
  * Runs the lint stages and exits with the verdict.
  */
 function main() {
-  const args = process.argv.slice(2);
-  checkScriptArgs(args, ["--fix"], USAGE);
-  const passed = printSummary(
-    runStages(lintStages({ fix: args.includes("--fix") })),
-  );
+  const program = scriptProgram(
+    "scripts/lint.js",
+    "Runs every lint, format and security check that needs nothing but " +
+      "this machine.",
+    ["0  every check passed", "1  at least one check failed"],
+  ).option("--fix", "have each tool rewrite what it can fix");
+  program.parse();
+  const { fix } = program.opts();
+  const results = runStages(lintStages({ fix: fix === true }));
+  const passed = printSummary(results);
   process.exit(passed ? 0 : 1);
 }
 

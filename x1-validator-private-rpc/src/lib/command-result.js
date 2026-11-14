@@ -22,7 +22,8 @@
  * @param {string} what  The step, in words, such as "Masking nginx".
  * @returns {CommandResult} The same result.
  * @throws {Error} When the command exited with a code other than 0, naming
- *   the step, the code and the command's stderr.
+ *   the step, the code and the command's stderr, so a failed step stops
+ *   the run there with its reason, rather than going on as if it worked.
  */
 export function mustSucceed(result, what) {
   if (result.status !== 0) {

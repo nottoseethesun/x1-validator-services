@@ -3,22 +3,42 @@
  * @description
  * Tests the api-key check that nginx runs, loaded into Node.js as it is:
  * which request paths it forwards and which it refuses, which keys it
- * counts as usable, and what its two nginx handlers do.
+ * counts as usable, and what its two nginx handlers do. Its copy of the
+ * key's pattern must be the one the rest of the tool uses.
  */
 
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import { test } from "node:test";
+import {
+  API_KEY_HEX_DIGITS,
+  API_KEY_PATTERN,
+  makeApiKey,
+} from "../src/lib/api-key.js";
 import keyCheck from "../src/njs/x1-validator-private-rpc.js";
 
-const KEY = "0123456789abcdef".repeat(4);
+/** A well-formed key with every hex letter in it, so case shows. */
+const KEY = "0123456789abcdef".repeat(API_KEY_HEX_DIGITS / 16);
 
 const MALFORMED_KEYS = [
   "",
-  KEY.slice(0, 63),
+  KEY.slice(0, -1),
   `${KEY}0`,
   KEY.toUpperCase(),
-  `${KEY.slice(0, 63)}g`,
+  `${KEY.slice(0, -1)}g`,
 ];
+
+test("its key pattern is the tool's, so it accepts the keys apply makes", () => {
+  const source = new URL(
+    "../src/njs/x1-validator-private-rpc.js",
+    import.meta.url,
+  );
+  const text = fs.readFileSync(source, "utf8");
+  assert.ok(text.includes(`const KEY_PATTERN = /^${API_KEY_PATTERN}$/;`));
+  const key = makeApiKey();
+  assert.equal(keyCheck.gateFor(key), "unlocked");
+  assert.equal(keyCheck.pathFor(`/${key}/health`, key), "/health");
+});
 
 test("forwards the rest of the path after the exact key", () => {
   assert.equal(keyCheck.pathFor(`/${KEY}`, KEY), "/");
@@ -29,7 +49,7 @@ test("forwards the rest of the path after the exact key", () => {
 test("refuses a path that isn't the key followed by a slash or nothing", () => {
   assert.equal(keyCheck.pathFor(`/${KEY}x`, KEY), "");
   assert.equal(keyCheck.pathFor(`/${KEY.toUpperCase()}`, KEY), "");
-  assert.equal(keyCheck.pathFor(`/${KEY.slice(0, 63)}`, KEY), "");
+  assert.equal(keyCheck.pathFor(`/${KEY.slice(0, -1)}`, KEY), "");
   assert.equal(keyCheck.pathFor("/", KEY), "");
 });
 
