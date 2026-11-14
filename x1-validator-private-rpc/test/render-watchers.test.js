@@ -1,9 +1,9 @@
 /**
  * @file x1-validator-private-rpc/test/render-watchers.test.js
  * @description
- * Tests the two watchers that run `ensure`: x1console's git hook, which
- * can never fail a pull, and which is known as the tool's whatever paths
- * it names; and the crontab line, which runs every minute under flock.
+ * Tests the two watchers that run `ensure`. The tool's git hook can never
+ * fail a pull, and is known as the tool's whatever paths it names. The
+ * crontab line runs every minute under flock.
  * Each names its paths quoted for the shell, and the cron line refuses a
  * path that cron would cut short.
  */
@@ -16,7 +16,7 @@ import {
   renderGitHook,
 } from "../src/cli/render-watchers.js";
 
-// Any paths will do; the spaces show each is quoted for the shell.
+// Any paths will do. The spaces show each is quoted for the shell.
 const PATHS = {
   nodeBin: "/opt/node js/bin/node",
   toolCli: "/opt/a tool/cli.js",

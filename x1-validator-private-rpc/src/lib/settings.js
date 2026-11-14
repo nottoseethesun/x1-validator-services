@@ -2,7 +2,7 @@
  * @file x1-validator-private-rpc/src/lib/settings.js
  * @description
  * Loads the tool's settings. The shipped defaults hold the one value of
- * each setting; the operator's override file holds only what they
+ * each setting. The operator's override file holds only what they
  * change, and is merged over the defaults setting by setting. The
  * merged settings are checked against the shipped schema before any is
  * used: every problem is listed at once, each naming the setting, what
@@ -39,7 +39,7 @@ export function defaultConfigDir() {
 /**
  * Finds the folder of the shipped defaults, which also holds the
  * dictionary of the settings apply changes.
- * @param {string} [configDir]  The `app-config` folder; the feature's own
+ * @param {string} [configDir]  The `app-config` folder, the feature's own
  *   unless a caller passes another.
  * @returns {string} Its path.
  */
@@ -49,7 +49,7 @@ export function shippedDefaultsDir(configDir = defaultConfigDir()) {
 
 /**
  * Finds the operator's override file.
- * @param {string} [configDir]  The `app-config` folder; the feature's own
+ * @param {string} [configDir]  The `app-config` folder, the feature's own
  *   unless a caller passes another.
  * @returns {string} Its path.
  */
@@ -100,6 +100,31 @@ export function readJson(filePath) {
 }
 
 /**
+ * Reads the shipped schema, which holds every setting's rules, such as
+ * the form a hostname must have.
+ * @param {string} [configDir]  The `app-config` folder, the feature's own
+ *   unless a caller passes another.
+ * @returns {object} The schema.
+ */
+export function readSchema(configDir = defaultConfigDir()) {
+  return readJson(path.join(shippedDefaultsDir(configDir), SCHEMA_FILE));
+}
+
+/**
+ * Tells whether a hostname has the form the schema asks of the
+ * `hostname` setting, so a hostname typed in follows the same rule.
+ * @param {string} hostname  The hostname.
+ * @param {string} [configDir]  The `app-config` folder, the feature's own
+ *   unless a caller passes another.
+ * @returns {boolean}
+ */
+export function isHostname(hostname, configDir = defaultConfigDir()) {
+  const ajv = new Ajv2020({ strict: true });
+  const schema = readSchema(configDir);
+  return ajv.validate(schema.properties.hostname, hostname);
+}
+
+/**
  * Describes one schema problem in the operator's words.
  * @param {object} error  One of Ajv's errors.
  * @param {object} settings  The merged settings.
@@ -131,7 +156,7 @@ function describeProblem(error, settings, overridePath) {
  * @param {object} settings  The merged settings.
  * @param {string} overridePath  The operator's override file, for the
  *   messages.
- * @returns {string[]} One message per problem; none when they pass.
+ * @returns {string[]} One message per problem, or none when they pass.
  */
 export function settingsProblems(schema, settings, overridePath) {
   const ajv = new Ajv2020({ allErrors: true, strict: true });
@@ -146,7 +171,7 @@ export function settingsProblems(schema, settings, overridePath) {
 
 /**
  * Loads, merges and checks the settings.
- * @param {string} [configDir]  The `app-config` folder; the feature's own
+ * @param {string} [configDir]  The `app-config` folder, the feature's own
  *   unless a test passes another.
  * @returns {object} The settings, each key holding its value.
  * @throws {Error} Listing every problem, when a file is broken, a file
@@ -156,7 +181,7 @@ export function settingsProblems(schema, settings, overridePath) {
  */
 export function loadSettings(configDir = defaultConfigDir()) {
   const defaultsDir = shippedDefaultsDir(configDir);
-  const schema = readJson(path.join(defaultsDir, SCHEMA_FILE));
+  const schema = readSchema(configDir);
   const defaults = readJson(path.join(defaultsDir, SETTINGS_FILE));
   const overridePath = overrideFilePath(configDir);
   refuseUnreadFiles(overridePath);

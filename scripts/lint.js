@@ -8,7 +8,7 @@
  * scripts/_gate-stages.js gives, then prints a summary. With `--fix`, each
  * tool rewrites what it can fix and reports the rest.
  *
- * The tools need Node.js 22.13 or newer; see scripts/check.js. Run it with
+ * The tools need Node.js 22.13 or newer. See scripts/check.js. Run it with
  * `--help` for its usage and exit codes.
  */
 
@@ -25,12 +25,12 @@ function main() {
     "Runs every lint, format and security check that needs nothing but " +
       "this machine.",
     ["0  every check passed", "1  at least one check failed"],
-  ).option("--fix", "have each tool rewrite what it can fix");
+  ).option("--fix", "have each tool rewrite what it can fix", false);
   program.parse();
   const { fix } = program.opts();
   const results = runStages(lintStages({ fix: fix === true }));
   const passed = printSummary(results);
-  process.exit(passed ? 0 : 1);
+  process.exit(passed === true ? 0 : 1);
 }
 
 main();

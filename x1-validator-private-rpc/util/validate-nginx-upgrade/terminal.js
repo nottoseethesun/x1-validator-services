@@ -4,7 +4,7 @@
  * How the nginx upgrade check talks to the person at the terminal: its
  * progress lines, a spinner beside each long step, its answer to Ctrl-C,
  * and the outcome with its exit code. index.js hands in the process for
- * Ctrl-C, its stdout, and ora for the spinner; tests hand in stand-ins.
+ * Ctrl-C, its stdout, and ora for the spinner. Tests hand in stand-ins.
  */
 
 const PREFIX = "[validate-nginx-upgrade]";
@@ -34,7 +34,7 @@ export function createTerminal({ stdout, signals, makeSpinner }) {
     spinner?.render();
   };
   signals.on("SIGINT", () => {
-    if (!interrupted) {
+    if (interrupted === false) {
       interrupted = true;
       report(
         "Ctrl-C: stopping after this step, then removing everything the " +
@@ -42,10 +42,10 @@ export function createTerminal({ stdout, signals, makeSpinner }) {
       );
     }
   });
-  // ora needs a terminal that reports its width; it never stops otherwise.
+  // ora needs a terminal that reports its width. It never stops otherwise.
   const canSpin = stdout.isTTY === true && stdout.columns > 0;
   const wait = async (line, work) => {
-    if (!canSpin) {
+    if (canSpin === false) {
       report(line);
       return work();
     }
@@ -70,7 +70,7 @@ export function createTerminal({ stdout, signals, makeSpinner }) {
  * @returns {number} The exit code: 0 when it passed, 1 otherwise.
  */
 export function reportOutcome(result, report) {
-  if (result.passed) {
+  if (result.passed === true) {
     report("Passed: an apt upgrade of nginx keeps the gated rpc unlocked.");
     return 0;
   }

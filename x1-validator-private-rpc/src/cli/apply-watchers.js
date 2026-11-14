@@ -6,16 +6,16 @@
  * which x1console's `git stash` leaves alone, and keeps the script's
  * mode. The validator takes the flag at its next start.
  *
- * The seventh installs what keeps the flag in place: x1console's git
- * hook, which runs ensure after an Update X1 Console pulls new commits,
- * and, when the operator agrees, the cron job that runs ensure every
- * minute. It makes the two folders the cron line needs, which git
- * doesn't track: without logs/ the line never runs, and without tmp/
- * its flock fails. The cron line goes in the way Autopilot adds its
- * own: the whole table is read, the one line added, and the table
- * written back, so Autopilot's jobs stay. A post-merge hook the tool
- * didn't write stays as it is, and the cron job covers for it. Last, it
- * sends a test alert when x1console's Telegram files are there.
+ * The seventh installs what keeps the flag in place: the tool's git hook
+ * in x1console's checkout, which runs ensure after an Update X1 Console
+ * pulls new commits, and, when the operator agrees, the cron job that
+ * runs ensure every minute. It makes the two folders the cron line
+ * needs, which git doesn't track. Without logs/ the line never runs, and
+ * without tmp/ its flock fails. The cron line goes in the way Autopilot
+ * adds its own: the whole table is read, the one line added, and the
+ * table written back, so Autopilot's jobs stay. Another program's git
+ * hook stays as it is, and the cron job covers for it. Last, it sends a
+ * test alert when x1console's Telegram files are there.
  *
  * A later apply may find its own hook or cron line from an earlier run,
  * naming an old path to Node.js or to the tool. It replaces them, rather
@@ -25,7 +25,7 @@
  */
 
 import path from "node:path";
-import { homePath } from "./feature-paths.js";
+import { gitHookPathOf } from "./feature-paths.js";
 import {
   isToolHook,
   renderCronLine,
@@ -56,7 +56,7 @@ export async function editStartScript(context) {
   const flagKey = `privateRpcFlag:${scriptPath}`;
   const original = host.readText(scriptPath);
   const { text, changed } = addPrivateRpc(original, scriptPath);
-  if (!changed) {
+  if (changed === false) {
     log.info(
       "start script",
       "The validator's command carries --private-rpc already.",
@@ -80,24 +80,24 @@ export async function editStartScript(context) {
 }
 
 /**
- * Installs x1console's post-merge hook, or replaces the one an earlier
- * apply wrote, unless another program's hook is there.
+ * Installs the tool's git hook in x1console's checkout, or
+ * replaces the one an earlier apply wrote, unless another program's hook
+ * is there.
  * @param {object} context  The run.
  * @returns {Promise<void>}
  */
 async function installHook(context) {
   const { host, settings, paths, record, change, log } = context;
   const homeDir = host.homeDir();
-  const x1consoleDir = homePath(settings.x1consoleDir, homeDir);
-  const hooks = path.join(x1consoleDir, ".git", "hooks");
-  const hookPath = path.join(hooks, "post-merge");
+  const hookPath = gitHookPathOf(settings, homeDir);
+  const hooks = path.dirname(hookPath);
   const key = `gitHook:${hookPath}`;
   const nodeBin = host.nodePath();
   const hook = renderGitHook({ nodeBin, toolCli: paths.toolCli });
   if (!host.exists(hooks)) {
     log.problem(
       "watchers",
-      `${hooks} is missing, so there is no git hook; the cron job covers for it.`,
+      `${hooks} is missing, so there is no git hook. The cron job covers for it.`,
     );
     return;
   }
@@ -106,10 +106,10 @@ async function installHook(context) {
     record(found(key));
     return;
   }
-  if (present !== null && !isToolHook(present)) {
+  if (present !== undefined && present !== null && !isToolHook(present)) {
     log.problem(
       "watchers",
-      `${hookPath} is another program's hook, so it stays; the cron job covers for it.`,
+      `${hookPath} is another program's hook, so it stays. The cron job covers for it.`,
     );
     return;
   }
@@ -153,12 +153,12 @@ async function installCronLine(context) {
   const kept = entries.filter((entry) => !ours.includes(entry));
   const replacing = kept.length < entries.length;
   const wanted =
-    context.dryRun ||
-    replacing ||
+    context.dryRun === true ||
+    replacing === true ||
     (await prompts.confirm(
       "Install the cron job that runs ensure every minute?",
     ));
-  if (!wanted) {
+  if (wanted === false) {
     log.info(
       "watchers",
       "No cron job: run ensure yourself after each Update X1 Console.",
@@ -182,9 +182,10 @@ async function installCronLine(context) {
   }
   const rest = kept.join("\n");
   const separator = rest === "" || rest.endsWith("\n") ? "" : "\n";
-  const what = replacing
-    ? "replace the line that runs ensure in the crontab"
-    : "add the line that runs ensure to the crontab";
+  const what =
+    replacing === true
+      ? "replace the line that runs ensure in the crontab"
+      : "add the line that runs ensure to the crontab";
   await change("watchers", what, () => {
     const written = host.run("crontab", ["-"], {
       input: `${rest}${separator}${line}\n`,
@@ -208,10 +209,10 @@ export async function installWatchers(context) {
   await installHook(context);
   await installCronLine(context);
   const telegram = readTelegram(host, settings);
-  if (telegram === null) {
+  if (telegram === undefined || telegram === null) {
     log.info(
       "watchers",
-      "x1console's Telegram files are missing, so alerts are off; ensure only logs.",
+      "x1console's Telegram files are missing, so alerts are off, and ensure only logs.",
     );
     return;
   }

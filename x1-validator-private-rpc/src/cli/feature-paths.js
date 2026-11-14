@@ -27,11 +27,11 @@ import { fileURLToPath } from "node:url";
  * @property {string} whatApplyChangedPath  apply's record of what it
  *   changed.
  * @property {string} alertStatePath  The last state of ensure's checks.
- * @property {string} tmpDir  Disposable files; holds the lock.
- * @property {string} lockPath  The lock flock holds during a scheduled
- *   ensure.
- * @property {string} logsDir  The scheduled ensure's log folder.
- * @property {string} ensureLogPath  The scheduled ensure's log.
+ * @property {string} tmpDir  Disposable files, ensure's lock among them.
+ * @property {string} lockPath  ensure's lock, which flock holds while the
+ *   cron job's ensure runs.
+ * @property {string} logsDir  The folder of ensure's log.
+ * @property {string} ensureLogPath  ensure's log.
  * @property {string} envPath  The project's `.env`.
  */
 
@@ -66,7 +66,7 @@ export function featurePaths() {
 
 /**
  * Turns a setting's path that starts with `~/` into one in the account's
- * home folder; other paths stay as they are.
+ * home folder. Other paths stay as they are.
  * @param {string} value  The setting's path.
  * @param {string} homeDir  The account's home folder, from its passwd
  *   entry, not from $HOME.
@@ -86,4 +86,15 @@ export function homePath(value, homeDir) {
 export function startScriptPathOf(settings, homeDir) {
   const x1consoleDir = homePath(settings.x1consoleDir, homeDir);
   return path.join(x1consoleDir, settings.startScriptFile);
+}
+
+/**
+ * Finds the tool's git hook, in x1console's checkout.
+ * @param {object} settings  The tool's settings: x1consoleDir.
+ * @param {string} homeDir  The account's home folder.
+ * @returns {string}
+ */
+export function gitHookPathOf(settings, homeDir) {
+  const x1consoleDir = homePath(settings.x1consoleDir, homeDir);
+  return path.join(x1consoleDir, ".git", "hooks", "post-merge");
 }

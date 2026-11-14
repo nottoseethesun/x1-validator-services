@@ -13,7 +13,8 @@
  * The checks reach nginx on the public address, with the tls server
  * name and the Host header set to the hostname, so they work whatever
  * the dns record says. With Let's Encrypt's staging service they trust
- * the staging roots the tool ships; otherwise Node.js's usual roots.
+ * the staging roots the tool ships. Otherwise they trust Node.js's usual
+ * roots.
  */
 
 import fs from "node:fs";
@@ -41,7 +42,8 @@ export function stagingRoots() {
  * @property {string} address  The public address.
  * @property {string} hostname  The rpc's hostname.
  * @property {number} timeoutMs  How long to wait for each answer.
- * @property {string} [ca]  The roots to trust; Node.js's own when absent.
+ * @property {string} [ca]  The roots to trust, or Node.js's own when
+ *   absent.
  */
 
 /**
@@ -56,7 +58,7 @@ export function targetOf(setup, settings) {
     address: setup.publicIp,
     hostname: setup.hostname,
     timeoutMs: settings.requestTimeoutSeconds * 1000,
-    ...(setup.staging ? { ca: stagingRoots() } : {}),
+    ...(setup.staging === true ? { ca: stagingRoots() } : {}),
   };
 }
 
@@ -72,18 +74,41 @@ export function askNginx(host, target, urlPath) {
 }
 
 /**
+ * Asks for the gate page, which says whether nginx holds a usable key,
+ * and keeps the certificate nginx served with it.
+ * @param {object} host  The host.
+ * @param {Target} target  Where to ask.
+ * @returns {Promise<{gate: string, certificate: object|null,
+ *   failure: string}>} `unlocked`, `locked`, or what came instead. The
+ *   certificate, or null with no answer. Why no answer came, or "" when
+ *   one did.
+ */
+export async function askGate(host, target) {
+  try {
+    const answer = await askNginx(host, target, GATE_PAGE_PATH);
+    return {
+      gate:
+        answer.status === 200 ? answer.body.trim() : `http ${answer.status}`,
+      certificate: answer.certificate,
+      failure: "",
+    };
+  } catch (error) {
+    return {
+      gate: `no answer (${error.message})`,
+      certificate: null,
+      failure: error.message,
+    };
+  }
+}
+
+/**
  * Reads the gate page, which says whether nginx holds a usable key.
  * @param {object} host  The host.
  * @param {Target} target  Where to ask.
  * @returns {Promise<string>} `unlocked`, `locked`, or what came instead.
  */
 export async function readGate(host, target) {
-  try {
-    const answer = await askNginx(host, target, GATE_PAGE_PATH);
-    return answer.status === 200 ? answer.body.trim() : `http ${answer.status}`;
-  } catch (error) {
-    return `no answer (${error.message})`;
-  }
+  return (await askGate(host, target)).gate;
 }
 
 /**
@@ -139,7 +164,7 @@ export async function waitForUnlocked(host, target, waitMs, pollMs) {
  * @param {object} host  The host.
  * @param {Target} target  Where to ask.
  * @param {string} key  The api key.
- * @returns {Promise<string[]>} What failed; nothing when all passed.
+ * @returns {Promise<string[]>} What failed, or nothing when all passed.
  */
 export async function requestPathProblems(host, target, key) {
   const problems = [];

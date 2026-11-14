@@ -5,13 +5,14 @@
  * validator while the running one lacks the flag, even on a run that
  * finds the flag already in the start script after an earlier run
  * stopped short. It says nothing about a restart once the running
- * validator carries the flag.
+ * validator carries the flag. A dry run says the restart a real run
+ * would need, and not to restart now.
  */
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { runApply } from "../src/cli/apply.js";
-import { RESTART_HOW } from "../src/cli/start-script.js";
+import { RESTART_HOW, RESTART_STEPS } from "../src/cli/start-script.js";
 import { loadSettings } from "../src/lib/settings.js";
 import { commandRun, PASSWORD } from "./helpers/applied-validator.js";
 import { copyShippedConfig } from "./helpers/config-copies.js";
@@ -23,12 +24,13 @@ import { scriptedPrompts } from "./helpers/scripted-prompts.js";
  * @param {object} host  The fake host.
  * @param {object} settings  The settings.
  * @param {object} prompts  The answers.
+ * @param {boolean} [dryRun]  Whether it's a dry run.
  * @returns {Promise<{code: number, lines: string[]}>}
  */
-async function apply(host, settings, prompts) {
+async function apply(host, settings, prompts, dryRun = false) {
   const run = commandRun(host, settings, {
     prompts,
-    options: { yes: false, dryRun: false, acmeStaging: false },
+    options: { yes: false, dryRun, acmeStaging: false },
   });
   const code = await runApply(run);
   return { code, lines: run.lines };
@@ -90,4 +92,17 @@ test("once the running validator carries the flag, apply says nothing about a re
   );
   assert.equal(code, 0, lines.join("\n"));
   assert.equal(saysRestart(lines), false);
+});
+
+test("a dry run says the restart a real run would need, and not to restart now", async () => {
+  const { host, settings } = freshValidator();
+  const { code, lines } = await apply(host, settings, scriptedPrompts(), true);
+  assert.equal(code, 0, lines.join("\n"));
+  assert.equal(saysRestart(lines), false);
+  assert.ok(
+    lines.includes(
+      `[hand-over] The running validator lacks --private-rpc. Since this is a dry run, you will not restart it from x1console, but in a real run, you would restart it: ${RESTART_STEPS}`,
+    ),
+    lines.join("\n"),
+  );
 });

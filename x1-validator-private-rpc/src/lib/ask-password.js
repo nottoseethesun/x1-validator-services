@@ -1,9 +1,10 @@
 /**
- * @file x1-validator-private-rpc/src/cli/ask-password.js
+ * @file x1-validator-private-rpc/src/lib/ask-password.js
  * @description
- * A prompt on the terminal for a secret, such as the password, that
- * shows nothing of what is typed: LP Ranger's src/lib/ask-password.js,
- * as an ES module. The prompt goes to stderr, so stdout stays clean.
+ * A prompt on the terminal for a secret, such as the password or the api
+ * key, that shows nothing of what is typed: LP Ranger's
+ * src/lib/ask-password.js, as an ES module. The prompt goes to stderr, so
+ * stdout stays clean. The commands and check-my-private-rpc share it.
  *
  * Node has no option that hides what is typed, so this gives readline an
  * output that shows nothing. With `terminal: true`, readline turns off

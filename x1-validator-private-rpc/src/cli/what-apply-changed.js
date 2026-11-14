@@ -16,8 +16,8 @@
  * - `applyChangedThisFromItsPreviousValue`: whether apply changed it, or
  *   found it already as it needed it and left it.
  * - `applyChangedThisValueAtThisTimestampMS`: when apply changed it, in
- *   milliseconds since 1970; -1 when apply never changed it. It's always
- *   there, so an entry without it is a damaged one.
+ *   milliseconds since 1970, or -1 when apply never changed it. It's
+ *   always there, so an entry without it is a damaged one.
  * - `oldValue`: its value before apply, as text.
  * - `oldValueDatatype`: how to read the old value, from the dictionary:
  *   `string`, `integer` or `boolean`.
@@ -41,7 +41,7 @@ import { readJson, shippedDefaultsDir } from "../lib/settings.js";
  * @property {boolean} applyChangedThisFromItsPreviousValue  Whether apply
  *   changed it.
  * @property {number} applyChangedThisValueAtThisTimestampMS  When apply
- *   changed it; NEVER_CHANGED when it never did.
+ *   changed it, or NEVER_CHANGED when it never did.
  * @property {string} oldValue  Its value before apply, as text.
  * @property {"string"|"integer"|"boolean"} oldValueDatatype  The old
  *   value's type.
@@ -55,7 +55,8 @@ import { readJson, shippedDefaultsDir } from "../lib/settings.js";
  */
 
 /**
- * @typedef {object} Observation  A setting as apply found and left it.
+ * @typedef {object} Observation  A setting's value before one of apply's
+ *   steps, and after it.
  * @property {string} key  The setting's name, with its target when it
  *   has one.
  * @property {string|number|boolean} oldValue  Its value before apply.
@@ -84,12 +85,12 @@ function isEntry(entry) {
   const readable = READABLE.get(entry?.oldValueDatatype);
   const changed = entry?.applyChangedThisFromItsPreviousValue;
   const at = entry?.applyChangedThisValueAtThisTimestampMS;
-  const timed = changed ? at >= 0 : at === NEVER_CHANGED;
+  const timed = changed === true ? at >= 0 : at === NEVER_CHANGED;
   return (
     typeof entry?.description === "string" &&
     typeof changed === "boolean" &&
     Number.isInteger(at) &&
-    timed &&
+    timed === true &&
     typeof entry.oldValue === "string" &&
     readable !== undefined &&
     readable !== null &&
@@ -100,7 +101,7 @@ function isEntry(entry) {
 /**
  * Finds the shipped dictionary of the settings apply changes, among the
  * shipped defaults.
- * @param {string} [configDir]  The `app-config` folder; the feature's own
+ * @param {string} [configDir]  The `app-config` folder, the feature's own
  *   unless a caller passes another.
  * @returns {string}
  */
@@ -113,7 +114,7 @@ export function applySettingsDictionaryPath(configDir) {
  * Reads the shipped dictionary of the settings apply changes. Its keys
  * that start with `_`, such as `_comment`, explain the file, and aren't
  * settings.
- * @param {string} [configDir]  The `app-config` folder; the feature's own
+ * @param {string} [configDir]  The `app-config` folder, the feature's own
  *   unless a caller passes another.
  * @returns {Map<string, Meaning>} Each setting's meaning, by its name.
  * @throws {Error} When an entry lacks a description or a known type, so
@@ -145,7 +146,7 @@ export function loadApplySettingsDictionary(configDir) {
  * @param {object} host  The host.
  * @param {string} recordPath  The record's file.
  * @returns {Map<string, Entry>|null} Each setting's entry, in the order
- *   apply recorded them; null when there is no record.
+ *   apply recorded them, or null when there is no record.
  * @throws {Error} When the file isn't a record this tool wrote, so
  *   undo-apply never acts on a damaged one.
  */
@@ -162,8 +163,8 @@ export function readRecord(host, recordPath) {
   }
   const isObject =
     typeof parsed === "object" && parsed !== null && !Array.isArray(parsed);
-  const entries = isObject ? Object.entries(parsed) : [];
-  if (!isObject || !entries.every(([, entry]) => isEntry(entry))) {
+  const entries = isObject === true ? Object.entries(parsed) : [];
+  if (isObject === false || !entries.every(([, entry]) => isEntry(entry))) {
     throw new Error(`${recordPath} isn't a record this tool wrote.`);
   }
   return new Map(entries);
@@ -241,7 +242,7 @@ export function found(key) {
 /**
  * Names a value's type, as the record writes it.
  * @param {unknown} value  The value.
- * @returns {string} `string`, `integer` or `boolean`; otherwise the
+ * @returns {string} `string`, `integer` or `boolean`, or otherwise the
  *   value's own type, which no setting has.
  */
 function datatypeOf(value) {
@@ -281,8 +282,9 @@ export function recorder(host, recordPath, record, dictionary) {
     const kept =
       known !== undefined &&
       known !== null &&
-      (known.applyChangedThisFromItsPreviousValue || !changed);
-    if (kept) {
+      (known.applyChangedThisFromItsPreviousValue === true ||
+        changed === false);
+    if (kept === true) {
       return;
     }
     const now = host.now();
@@ -291,28 +293,11 @@ export function recorder(host, recordPath, record, dictionary) {
     record.set(key, {
       description: meaning.description,
       applyChangedThisFromItsPreviousValue: changed,
-      applyChangedThisValueAtThisTimestampMS: changed ? now : NEVER_CHANGED,
+      applyChangedThisValueAtThisTimestampMS:
+        changed === true ? now : NEVER_CHANGED,
       oldValue: String(oldValue),
       oldValueDatatype: meaning.oldValueDatatype,
     });
     writeRecord(host, recordPath, record);
   };
-}
-
-/**
- * Lists the folders that writing into a folder would create, outermost
- * first, so the change that writes there can record them, and undo-apply
- * can remove them again.
- * @param {object} host  The host.
- * @param {string} folder  The folder written into.
- * @returns {string[]}
- */
-export function foldersToMake(host, folder) {
-  const missing = [];
-  let current = folder;
-  while (!host.exists(current) && current !== path.dirname(current)) {
-    missing.unshift(current);
-    current = path.dirname(current);
-  }
-  return missing;
 }

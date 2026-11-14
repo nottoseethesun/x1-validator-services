@@ -8,24 +8,19 @@
  * and the lines that go with them go to stderr, so stdout stays clean.
  */
 
-import readline from "node:readline";
-import { askPassword } from "./ask-password.js";
+import { askLine } from "../lib/ask-line.js";
+import { askPassword } from "../lib/ask-password.js";
 
 /**
- * Asks a yes-or-no question; anything but y or yes is no.
+ * Asks a yes-or-no question. Anything but y or yes is no.
  * @param {string} question  The question.
  * @param {{input: import("node:stream").Readable,
  *   output: import("node:stream").Writable}} streams  Where it's asked.
  * @returns {Promise<boolean>}
  */
-function askYesNo(question, { input, output }) {
-  return new Promise((resolve) => {
-    const lineReader = readline.createInterface({ input, output });
-    lineReader.question(`${question} [y/N] `, (answer) => {
-      lineReader.close();
-      resolve(/^(y|yes)$/i.test(answer.trim()));
-    });
-  });
+async function askYesNo(question, streams) {
+  const answer = await askLine(`${question} [y/N] `, streams);
+  return /^(y|yes)$/i.test(answer.trim());
 }
 
 /**
@@ -56,7 +51,7 @@ export function createPrompts({
 }) {
   const streams = { input, output };
   return {
-    confirm: async (question) => yes || askYesNo(question, streams),
+    confirm: async (question) => yes === true || askYesNo(question, streams),
     ask: (question) => askYesNo(question, streams),
     password: (prompt) => askPassword(prompt, streams),
     say: (line) => output.write(`${line}\n`),

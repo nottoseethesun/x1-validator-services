@@ -1,10 +1,13 @@
 /**
  * @file x1-validator-private-rpc/test/checks.test.js
  * @description
- * Tests ensure's judgments on captured output: ss's listeners, with an
- * interface's suffix, ipv6 and a process; the rpc held by 127.0.0.1
- * alone or not; nginx on the public address's port 443 alone or not;
- * the certificate's name and days left; and the gate page's answers.
+ * Tests ensure's judgments on captured output:
+ *
+ * - ss's listeners, with an interface's suffix, ipv6 and a process
+ * - the rpc held by 127.0.0.1 alone or not
+ * - nginx on the public address's port 443 alone or not
+ * - the certificate's name and days left
+ * - the gate page's answers
  */
 
 import assert from "node:assert/strict";

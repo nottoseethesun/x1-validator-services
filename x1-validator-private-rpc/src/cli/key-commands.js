@@ -91,7 +91,7 @@ export async function runUrl(run) {
  */
 export async function runDecryptKey(run) {
   const { host, settings, stdinText, stdoutIsTerminal, write, err } = run;
-  if (stdoutIsTerminal) {
+  if (stdoutIsTerminal === true) {
     err("decrypt-key: refusing to print the key to a terminal.");
     return 1;
   }

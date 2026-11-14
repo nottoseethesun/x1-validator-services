@@ -4,7 +4,8 @@
  * Builds the tool's command-line program with commander. What the tool
  * is for, its version, its commands and their options are declared here
  * once, and commander makes both the help text and the parsing from that
- * one declaration, so the two can't drift apart.
+ * one declaration, so the two can't drift apart. Each on/off option
+ * defaults to false, so a command always gets a boolean for it.
  *
  * The program is built inside a function, never as the module loads, so
  * each test can build a fresh one and parse an argument list of its own.
@@ -15,6 +16,7 @@
 
 import { readFileSync } from "node:fs";
 import { Command } from "commander";
+import { showDisclaimer } from "../lib/disclaimer.js";
 import { createHost } from "../lib/host.js";
 import { loadSettings, overrideFilePath } from "../lib/settings.js";
 import { runApply } from "./apply.js";
@@ -40,9 +42,22 @@ export const EXIT_CODES = [
   "",
   "Exit codes:",
   "  0  success, or every check ok",
-  "  1  a stage failed, a check found a problem, you answered no and the",
-  "     command stopped, or another error, and the output says which",
+  "  1  a stage failed, a check found a problem, you declined the",
+  "     disclaimer, you answered no and the command stopped, or another",
+  "     error, and the output says which",
 ].join("\n");
+
+/**
+ * Whether a command's run shows the disclaimer first: each run that can
+ * change the system, when a person runs it. url, decrypt-key and a dry
+ * run change nothing. ensure can, but cron and the tool's git hook run
+ * it, with nobody at the terminal to answer.
+ */
+const SHOWS_DISCLAIMER = {
+  always: () => true,
+  never: () => false,
+  unlessDryRun: (options) => options.dryRun === false,
+};
 
 /**
  * Reads the project's version from the root package.json, which it finds
@@ -62,6 +77,9 @@ export function projectVersion() {
  * @property {() => string} overridePath  Finds the operator's file.
  * @property {() => object} paths  Finds the feature's own paths.
  * @property {() => import("./log.js").Log} log  Makes the logger.
+ * @property {(host: object) => string} showDisclaimer  Shows the
+ *   disclaimer, and gives "" once it's affirmed, or why the run can't go
+ *   on.
  * @property {(yes: boolean) => import("./prompts.js").Prompts} prompts
  *   Makes the prompts.
  * @property {(line: string) => void} out  Prints a line on stdout.
@@ -70,6 +88,8 @@ export function projectVersion() {
  * @property {() => string} stdin  Reads stdin whole.
  * @property {() => boolean} stdoutIsTerminal  Whether stdout is one.
  * @property {(code: number) => void} setExitCode  Sets the exit code.
+ * @property {(callback: () => void) => void} atExit  Runs a callback as
+ *   the process exits, however it ends: Ctrl-C at a prompt included.
  */
 
 /**
@@ -83,6 +103,7 @@ export function realMakers() {
     overridePath: () => overrideFilePath(),
     paths: () => featurePaths(),
     log: () => createLog(),
+    showDisclaimer: (host) => showDisclaimer(host),
     prompts: (yes) => createPrompts({ yes }),
     out: (line) => console.log(line),
     err: (line) => console.error(line),
@@ -92,35 +113,49 @@ export function realMakers() {
     setExitCode: (code) => {
       process.exitCode = code;
     },
+    atExit: (callback) => process.once("exit", callback),
   };
 }
 
 /**
- * Makes a command's action. It gathers what the command works with, runs
- * it, and sets the exit code. An error prints its reason on stderr and
- * exits 1, without a stack trace.
+ * Makes a command's action. It shows the disclaimer first when the run
+ * can change the system, gathers what the command works with, runs it,
+ * and sets the exit code. A declined disclaimer stops the run before it
+ * does anything, with exit code 1. An error prints its reason on stderr
+ * and exits 1, without a stack trace.
  * @param {Makers} makers  The makers.
  * @param {string} name  The command.
  * @param {(run: object) => Promise<number>} work  The command's work.
+ * @param {(options: object) => boolean} showsDisclaimer  Whether a run
+ *   with these options shows the disclaimer first.
  * @returns {(options: object) => Promise<void>}
  */
-function action(makers, name, work) {
+function action(makers, name, work, showsDisclaimer) {
   return async (options) => {
     const log = makers.log();
     let code;
     try {
-      const run = {
-        host: makers.host(),
-        settings: makers.settings(),
-        overridePath: makers.overridePath(),
-        paths: makers.paths(),
-        log,
-        prompts: makers.prompts(options.yes === true),
-        out: makers.out,
-        err: makers.err,
-        options,
-      };
-      code = await work(run);
+      const host = makers.host();
+      const refusal = showsDisclaimer(options)
+        ? makers.showDisclaimer(host)
+        : "";
+      if (refusal === "") {
+        code = await work({
+          host,
+          settings: makers.settings(),
+          overridePath: makers.overridePath(),
+          paths: makers.paths(),
+          log,
+          prompts: makers.prompts(options.yes === true),
+          out: makers.out,
+          err: makers.err,
+          atExit: makers.atExit,
+          options,
+        });
+      } else {
+        log.info(name, `${refusal} Nothing changed.`);
+        code = 1;
+      }
     } catch (error) {
       log.problem(name, error.message);
       code = 1;
@@ -140,63 +175,94 @@ function addCommands(program, makers) {
     .description(
       "make the rpc private and put it behind nginx, asking before each stage",
     )
-    .option("-y, --yes", "skip the confirmations, never a password or a choice")
-    .option("--dry-run", "print every change apply would make, and make none")
+    .option(
+      "-y, --yes",
+      "skip the confirmations, never a password or a choice",
+      false,
+    )
+    .option(
+      "--dry-run",
+      "print every change apply would make, and make none",
+      false,
+    )
     .option(
       "--acme-staging",
       "get the certificate from Let's Encrypt's staging service, for a first run",
+      false,
     )
-    .action(action(makers, "apply", runApply));
+    .action(action(makers, "apply", runApply, SHOWS_DISCLAIMER.unlessDryRun));
   program
     .command("ensure")
     .description(
       "put --private-rpc back after an update, check the setup and send alerts",
     )
-    .option("-q, --quiet", "print only what changed and the alerts sent")
+    .option("-q, --quiet", "print only what changed and the alerts sent", false)
     .option(
       "--from-git-hook",
-      "run without waiting out an update, as git's hook",
+      "run as the tool's git hook, without waiting out an update",
+      false,
     )
-    .action(action(makers, "ensure", runEnsure));
+    .action(action(makers, "ensure", runEnsure, SHOWS_DISCLAIMER.never));
   program
     .command("undo-apply")
     .description("undo what apply did, newest step first")
-    .option("--dry-run", "print every step, and change nothing")
-    .action(action(makers, "undo-apply", runUndoApply));
+    .option("--dry-run", "print every step, and change nothing", false)
+    .action(
+      action(makers, "undo-apply", runUndoApply, SHOWS_DISCLAIMER.unlessDryRun),
+    );
   program
     .command("turn-off-private-rpc")
     .description(
       "take --private-rpc out of the start script, and keep ensure from putting it back",
     )
-    .option("-y, --yes", "skip the confirmation")
-    .action(action(makers, "turn-off-private-rpc", runTurnOffPrivateRpc));
+    .option("-y, --yes", "skip the confirmation", false)
+    .action(
+      action(
+        makers,
+        "turn-off-private-rpc",
+        runTurnOffPrivateRpc,
+        SHOWS_DISCLAIMER.always,
+      ),
+    );
   program
     .command("turn-on-private-rpc")
     .description(
       "put --private-rpc back into the start script, for ensure to keep there",
     )
-    .action(action(makers, "turn-on-private-rpc", runTurnOnPrivateRpc));
+    .action(
+      action(
+        makers,
+        "turn-on-private-rpc",
+        runTurnOnPrivateRpc,
+        SHOWS_DISCLAIMER.always,
+      ),
+    );
   program
     .command("unlock")
     .description("ask for the password, and restart nginx with the key")
-    .action(action(makers, "unlock", runUnlock));
+    .action(action(makers, "unlock", runUnlock, SHOWS_DISCLAIMER.always));
   program
     .command("url")
     .description("ask for the password, and print the rpc's full urls")
-    .action(action(makers, "url", runUrl));
+    .action(action(makers, "url", runUrl, SHOWS_DISCLAIMER.never));
   program
     .command("decrypt-key", { hidden: true })
     .requiredOption("--password-stdin", "read the password from stdin")
     .action(
-      action(makers, "decrypt-key", (run) => {
-        const decryptRun = {
-          ...run,
-          stdinText: makers.stdin(),
-          stdoutIsTerminal: makers.stdoutIsTerminal(),
-          write: makers.write,
-        };
-        return runDecryptKey(decryptRun);
-      }),
+      action(
+        makers,
+        "decrypt-key",
+        (run) => {
+          const decryptRun = {
+            ...run,
+            stdinText: makers.stdin(),
+            stdoutIsTerminal: makers.stdoutIsTerminal(),
+            write: makers.write,
+          };
+          return runDecryptKey(decryptRun);
+        },
+        SHOWS_DISCLAIMER.never,
+      ),
     );
 }
 

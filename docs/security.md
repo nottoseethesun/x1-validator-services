@@ -22,8 +22,8 @@ The gate fails on a high or critical advisory in the shipped dependencies. Advis
 
 - `github-actionlint` takes `adm-zip` 0.6.1 or newer. Its own range is `^0.5.16`.
 - `markdownlint-cli2` takes `katex` 0.18.2 or newer. `micromark-extension-math`'s range is `^0.16.0`.
-- Every package takes `minimatch` 11.0.1 or newer. ESLint, and `@typescript-eslint/typescript-estree`, which `madge` pulls in, ask for `minimatch` 10. The override covers the whole tree, because npm 9 refuses the lockfile when the override names only ESLint and madge. The lockfile must install under npm 9 too, as [CLAUDE.md](../CLAUDE.md) says. ESLint and madge are the only packages that use `minimatch`, so the wider override changes nothing else.
+- Every package takes `minimatch` 11.0.1 or newer. ESLint, and `@typescript-eslint/typescript-estree`, which madge pulls in, ask for `minimatch` 10. The override covers the whole tree, because `npm` 9 refuses the lockfile when the override names only ESLint and madge. The lockfile must install under `npm` 9 too, as [CLAUDE.md](../CLAUDE.md) says. ESLint and madge are the only packages that use `minimatch`, so the wider override changes nothing else.
 
-The CI job on Node.js 20.0.0 and `npm run test:system` both prove that npm 9 accepts the lockfile.
+The CI job on Node.js 20.0.0 and `npm run test:system` both prove that `npm` 9 accepts the lockfile.
 
 No known advisory is left unfixed.

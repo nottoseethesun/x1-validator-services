@@ -1,7 +1,7 @@
 /**
  * @file x1-validator-private-rpc/test/helpers/rpc-standin.js
  * @description
- * A stand-in for Tachyon's rpc, for the LXD system test; never for a
+ * A stand-in for Tachyon's rpc, for the LXD system test, never for a
  * validator. It listens on an address's port 8899 for json-rpc and
  * `/health`, and on port 8900 for websocket clients, as the validator's
  * rpc does: on every interface without `--private-rpc`, or on 127.0.0.1

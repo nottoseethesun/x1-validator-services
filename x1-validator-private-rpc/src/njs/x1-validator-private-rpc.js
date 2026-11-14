@@ -10,7 +10,7 @@
  * malformed key refuses every request. gatePage answers the local-only status
  * page with "unlocked" or "locked", and never with the key itself.
  *
- * The tool installs this file into nginx as it is; no Node.js entry point
+ * The tool installs this file into nginx as it is. No Node.js entry point
  * loads it. So it keeps its own copy of the key's pattern, which its test
  * holds to the one in src/lib/api-key.js. pathFor and gateFor are pure, so
  * Node's test runner can test them directly.

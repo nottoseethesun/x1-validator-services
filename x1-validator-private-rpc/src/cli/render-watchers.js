@@ -5,8 +5,8 @@
  * `--private-rpc` back into x1console's start script after an Update X1
  * Console takes it out, and sends the tool's alerts:
  *
- * - The git hook, x1console's `.git/hooks/post-merge`, which git runs
- *   after a pull that brings in new commits. It always exits 0, so it can
+ * - The tool's git hook, `.git/hooks/post-merge` in x1console's checkout,
+ *   which git runs after a pull that brings in new commits. It always exits 0, so it can
  *   never fail an x1console update.
  * - The cron line, which runs `ensure` every minute and covers a pull
  *   that brought nothing new and so ran no hook. flock skips a run while
@@ -20,7 +20,7 @@
 import { shellQuote } from "../lib/render-host-files.js";
 
 /**
- * Writes x1console's post-merge hook.
+ * Writes the tool's git hook, for x1console's checkout.
  * @param {{nodeBin: string, toolCli: string}} values  The Node.js and the
  *   tool's `src/cli.js`, by full path.
  * @returns {string} The hook's text.
@@ -43,7 +43,7 @@ ${shellQuote(nodeBin)} ${shellQuote(toolCli)} ensure --quiet --from-git-hook || 
 export function isToolHook(text) {
   const command = text.split("\n").at(-2) ?? "";
   const words = /^('(?:[^']|'\\'')*') ('(?:[^']|'\\'')*') /.exec(command);
-  if (words === null) {
+  if (words === undefined || words === null) {
     return false;
   }
   const [nodeBin, toolCli] = words

@@ -89,7 +89,7 @@ const PRIORITY = /^-?\d+$/;
  * amd64 Packages`.
  * @param {string} line  The line.
  * @returns {{version?: string, source?: string}} The version a version
- *   line names, or the source a source line names; nothing for any other
+ *   line names, the source a source line names, or nothing for any other
  *   line.
  */
 function readPolicyLine(line) {
@@ -130,7 +130,9 @@ export function parseAptPolicy(text) {
       source !== undefined &&
       source !== null &&
       NGINX_REPOSITORY.test(source) &&
+      name !== undefined &&
       name !== null &&
+      version !== undefined &&
       version !== null
     ) {
       entries.push({ name, version });
@@ -143,8 +145,8 @@ export function parseAptPolicy(text) {
 /**
  * @typedef {object} SourceEntry
  * @property {string[]} uris  The repositories the entry names.
- * @property {string[]} signedBy  What its signed-by option names: key
- *   files or fingerprints; nothing when it has no such option.
+ * @property {string[]} signedBy  What its signed-by option names, key
+ *   files or fingerprints, or nothing when it has no such option.
  */
 
 /**
@@ -231,11 +233,11 @@ function deb822Entries(text) {
  *   `.sources` files are, rather than the one-line format of `.list`
  *   files.
  * @returns {string[][]} For each entry naming nginx.org's repository,
- *   the absolute paths of the key files it names; empty when it names
- *   none.
+ *   the absolute paths of the key files it names, or an empty list when
+ *   it names none.
  */
 export function nginxOrgKeyFiles(text, deb822) {
-  const entries = deb822 ? deb822Entries(text) : oneLineEntries(text);
+  const entries = deb822 === true ? deb822Entries(text) : oneLineEntries(text);
   return entries
     .filter((entry) => entry.uris.some((uri) => NGINX_REPOSITORY.test(uri)))
     .map((entry) => entry.signedBy.filter((value) => value.startsWith("/")));

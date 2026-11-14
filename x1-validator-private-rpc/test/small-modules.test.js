@@ -6,8 +6,8 @@
  *
  * - the logger's tags and masking
  * - the tool's state, which refuses a damaged file
- * - the Cronitor check-in, with its retry and a url that never reaches
- *   the log
+ * - the Cronitor check-in, tried as many times as the settings say, with
+ *   a url that never reaches the log
  * - x1console's Telegram files and the plain-text send
  * - the prompts, with --yes answering only confirmations
  * - the key stage's TPM2 explanations, and the password's length and
@@ -25,9 +25,9 @@ import {
 } from "../src/cli/apply-key.js";
 import { featurePaths, homePath } from "../src/cli/feature-paths.js";
 import { checkIn, CRONITOR_URL, cronitorUrl } from "../src/cli/heartbeat.js";
-import { createLog, maskSecret } from "../src/cli/log.js";
+import { createLog } from "../src/cli/log.js";
 import { createPrompts } from "../src/cli/prompts.js";
-import { readState } from "../src/cli/state.js";
+import { emptyState, readState } from "../src/cli/state.js";
 import {
   CHAT_ID_FILE,
   readTelegram,
@@ -35,6 +35,7 @@ import {
   TOKEN_FILE,
 } from "../src/cli/telegram.js";
 import { encryptSecret } from "../src/cli/vault.js";
+import { maskSecret } from "../src/lib/mask-secret.js";
 import { shippedAndChangedSettings } from "./helpers/config-copies.js";
 import { createFakeHost } from "./helpers/fake-host.js";
 import { scriptedPrompts } from "./helpers/scripted-prompts.js";
@@ -70,7 +71,7 @@ test("the logger tags each line, and masks what it's told to hide", () => {
   assert.equal(maskSecret(key), "…abab");
 });
 
-test("the tool's state: none before apply, a damaged file refused", () => {
+test("the tool's state: none before apply, a damaged file refused, and a field newer than the file filled in", () => {
   const host = createFakeHost({ respond: () => undefined });
   const { statePath } = featurePaths();
   assert.equal(readState(host, statePath), null);
@@ -82,9 +83,19 @@ test("the tool's state: none before apply, a damaged file refused", () => {
   assert.throws(() => readState(host, statePath), {
     message: /isn't a state this tool wrote/,
   });
+  // Written before savedPasswordStale existed.
+  const older = { ...emptyState(), privateRpc: "on" };
+  delete older.savedPasswordStale;
+  host.files.set(statePath, JSON.stringify(older));
+  assert.deepEqual(readState(host, statePath), {
+    ...emptyState(),
+    privateRpc: "on",
+  });
 });
 
-test("the Cronitor url comes from .env, and the check-in retries once", async () => {
+test("the Cronitor url comes from .env, and the check-in is tried as many times as the settings say", async () => {
+  // A changed count, so code that kept the shipped one would show.
+  const tries = shippedAndChangedSettings().changed.cronitorCheckInTries;
   const fetched = [];
   let answers = [500, 200];
   const host = createFakeHost({
@@ -99,18 +110,22 @@ test("the Cronitor url comes from .env, and the check-in retries once", async ()
   host.files.set(envPath, `${CRONITOR_URL}=\n`);
   assert.equal(cronitorUrl(host, envPath), null);
   const { log, lines } = readableLog();
-  assert.equal(await checkIn(host, { envPath, log, timeoutMs: 1000 }), null);
+  const values = { envPath, log, timeoutMs: 1000, tries };
+  assert.equal(await checkIn(host, values), null);
   host.files.set(envPath, `${CRONITOR_URL}=${CRONITOR}\n`);
-  assert.equal(await checkIn(host, { envPath, log, timeoutMs: 1000 }), true);
+  assert.equal(await checkIn(host, values), true);
   assert.deepEqual(fetched, [
     `${CRONITOR}?state=complete`,
     `${CRONITOR}?state=complete`,
   ]);
   assert.deepEqual(lines, [
-    "ERR [heartbeat] Cronitor's check-in, try 1 of 2, answered http 500.",
+    `ERR [heartbeat] Cronitor's check-in, try 1 of ${tries}, answered http 500.`,
   ]);
-  answers = [502, 503];
-  assert.equal(await checkIn(host, { envPath, log, timeoutMs: 1000 }), false);
+  // Every try fails, then a good answer, so more tries would succeed.
+  answers = Array.from({ length: tries }, () => 503);
+  fetched.length = 0;
+  assert.equal(await checkIn(host, values), false);
+  assert.equal(fetched.length, tries);
   assert.equal(lines.join("\n").includes("SECRETKEY"), false);
 });
 
@@ -211,15 +226,20 @@ test("a password may be typed as many times as the settings say, and the last wr
   });
 });
 
-test("a new password needs as many characters as the settings say, typed the same twice", async () => {
-  // Changed values, so code that kept the shipped ones would show.
+test("a new password needs as many characters as the settings say, typed the same twice, within as many tries", async () => {
+  /*-
+   * Changed values, so code that kept the shipped ones would show. The
+   * good pair comes on the last try, after failed tries of both kinds,
+   * so code that allowed fewer tries would stop first.
+   */
   const { changed } = shippedAndChangedSettings();
   const length = changed.passwordMinLength;
   const short = "s".repeat(length - 1);
   const long = "l".repeat(length);
-  const prompts = scriptedPrompts({
-    passwords: [short, short, long, `${long}!`, long, long],
-  });
+  const failed = Array.from({ length: changed.passwordTries - 1 }, (_, n) =>
+    n % 2 === 0 ? [short, short] : [long, `${long}!`],
+  ).flat();
+  const prompts = scriptedPrompts({ passwords: [...failed, long, long] });
   assert.equal(await askNewPassword(prompts, changed), long);
   assert.ok(
     prompts.asked.includes(
@@ -227,10 +247,12 @@ test("a new password needs as many characters as the settings say, typed the sam
     ),
   );
   assert.ok(prompts.asked.includes("The two passwords differ."));
-  const unlucky = Array.from(
-    { length: changed.passwordTries * 2 },
-    () => short,
-  );
+  // A good pair after the last try, so code that allowed more would take it.
+  const unlucky = [
+    ...Array.from({ length: changed.passwordTries * 2 }, () => short),
+    long,
+    long,
+  ];
   await assert.rejects(
     askNewPassword(scriptedPrompts({ passwords: unlucky }), changed),
     { message: "No usable password was typed." },

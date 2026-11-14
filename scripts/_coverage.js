@@ -40,10 +40,14 @@ export function parseLcov(text) {
         branchesFound: 0,
         branchesHit: 0,
       };
-    } else if (tag === "end_of_record" && current !== null) {
+    } else if (
+      tag === "end_of_record" &&
+      current !== undefined &&
+      current !== null
+    ) {
       records.push(current);
       current = null;
-    } else if (current !== null) {
+    } else if (current !== undefined && current !== null) {
       addLcovFigure(current, tag, value);
     }
   }
@@ -154,7 +158,7 @@ function findRecord(records, file) {
  * @param {FileCoverage[]} records  The report's files.
  * @param {string} file  The file's path ending.
  * @param {number} needed  The share it needs, for lines and branches.
- * @returns {string[]} One message per shortfall; none when it passes.
+ * @returns {string[]} One message per shortfall, or none when it passes.
  */
 function highRiskProblems(records, file, needed) {
   const record = findRecord(records, file);

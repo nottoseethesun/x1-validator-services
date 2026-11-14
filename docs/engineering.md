@@ -1,13 +1,13 @@
 # X1 Validator Services — Engineering Reference
 
-This is the reference for the engineering every feature shares: the gate and each of its checks, the lists of files the checks read, the rules every test follows, the LXD system test, the scripts behind the npm commands, and CI.
+This is the reference for the engineering every feature shares. It covers the gate and each of its checks, the lists of files the checks read, and the rules every test follows. It also covers the LXD system test, the scripts behind the `npm` commands, and CI.
 
 Each feature's own design is in its folder. For x1-validator-private-rpc, read [`architecture.md`](../x1-validator-private-rpc/docs/architecture.md), then [`engineering.md`](../x1-validator-private-rpc/docs/engineering.md).
 
 Other references:
 
 - [`CLAUDE.md`](../CLAUDE.md): the conventions, where this project differs from LP Ranger's, and the repository's layout.
-- [`docs/npm-project-commands.md`](npm-project-commands.md): every npm command, and what to type.
+- [`docs/npm-project-commands.md`](npm-project-commands.md): every `npm` command, and what to type.
 - [`docs/security.md`](security.md): the security checks' exceptions, and the dependency overrides.
 
 ---
@@ -46,20 +46,20 @@ On Node.js 22.13 or newer, in this order:
 | Stage | Tool | What fails it |
 | --- | --- | --- |
 | Lint (JavaScript) | ESLint, with `eslint.config.js` | Any error or warning |
-| Lint (Markdown) | markdownlint-cli2 | Any rule broken |
+| Lint (Markdown) | `markdownlint-cli2` | Any rule broken |
 | Format (JavaScript), Format (json), Format (yaml) | Prettier, in check mode | A file Prettier would change |
-| Lint (GitHub Actions) | actionlint | A mistake in a workflow |
-| Dead code (unused files) | knip, files only | A file nothing reaches |
+| Lint (GitHub Actions) | `actionlint` | A mistake in a workflow |
+| Dead code (unused files) | `knip`, files only | A file nothing reaches |
 | Dead code (modules only tests load) | `scripts/check-unused-src-modules.js` | A source module no entry point loads |
 | Security lint | ESLint, with `eslint-security.config.js` | Any error or warning |
-| Secret scan | secretlint | A credential in the files |
+| Secret scan | `secretlint` | A credential in the files |
 | Audit (shipped dependencies) | `npm audit`, runtime dependencies alone | A high or critical advisory |
 | Audit (all dependencies, report only) | `npm audit`, every dependency | Never: it saves a report |
 | Tests (shipped settings) | Node.js's test runner | A shipped value its tests refuse |
 | Tests | Node.js's test runner, with coverage | Any failing test |
 | Coverage | `scripts/_coverage.js` | See [Coverage](#coverage) |
 
-Every stage but the tests and the coverage verdict is written down once, as data, in `scripts/_gate-stages.js`. `scripts/_run-stages.js` runs them, except the audit of every dependency, which `scripts/check.js` runs itself to save its report. `npm run lint` runs the stages from the JavaScript lint through the secret scan, and `scripts/format.js` and `scripts/audit.js` run one stage each. Two npm scripts spell out a stage's command again: `knip:files`, and `audit:deps`, which the Security Audit workflow runs.
+Every stage but the tests and the coverage verdict is written down once, as data, in `scripts/_gate-stages.js`. `scripts/_run-stages.js` runs them, except the audit of every dependency, which `scripts/check.js` runs itself to save its report. `npm run lint` runs the stages from the JavaScript lint through the secret scan, and `scripts/format.js` and `scripts/audit.js` run one stage each. Two `npm` scripts spell out a stage's command again: `knip:files`, and `audit:deps`, which the Security Audit workflow runs.
 
 First of all, the gate removes any test folder left behind by a test run that died. [Tests](#tests) says how it tells those folders apart.
 
@@ -69,19 +69,19 @@ On Node.js 20.0.0, the gate runs the features' tests alone. The lint, coverage a
 
 ### Reports
 
-The gate writes its reports to `tmp/check/`, which git ignores: `lcov.info`, the tests' coverage, and `npm-audit-all.json`, the audit of every dependency. Each run replaces them.
+The gate writes its reports to `tmp/check/`, which `git` ignores: `lcov.info`, the tests' coverage, and `npm-audit-all.json`, the audit of every dependency. Each run replaces them.
 
 ---
 
 ## File Lists
 
-`scripts/lint-targets.js` holds the file lists the checks share: ESLint's, Prettier's for JavaScript, the security lint's, the secret scan's, Markdown lint's, the dead-code checks', the test runner's and the coverage report's. Prettier's json and yaml globs sit in `scripts/_gate-stages.js`. knip adds the scripts, the lint rules and its project glob, in `knip.config.js`.
+`scripts/lint-targets.js` holds the file lists the checks share: ESLint's, Prettier's for JavaScript, the security lint's, the secret scan's, Markdown lint's, the dead-code checks', the test runner's and the coverage report's. Prettier's json and yaml globs sit in `scripts/_gate-stages.js`. `knip` adds the scripts, the lint rules and its project glob, in `knip.config.js`.
 
 Every list is built from `FEATURES`, the names of the feature folders, so a new feature joins every check by being named there. Within a feature, the lists rely on three kinds of file, which `scripts/_project-files.js` finds:
 
 - **Entry points**: the programs a person or a scheduler starts by their path. They sit directly in a feature's `src/` or `util/`, or in a `util/` tool's folder, as `index.js`.
 - **Modules**: the files entry points load, in folders under `src/`, and a tool's other files.
-- **Installed files**: files a feature copies into another program, such as nginx's njs module. No entry point loads them.
+- **Installed files**: files a feature copies into another program, such as `nginx`'s njs module. No entry point loads them.
 
 ---
 
@@ -101,7 +101,7 @@ The measured files are each feature's `src/` and `util/`: the code that runs on 
 
 Two checks, since neither catches everything alone:
 
-- **knip**, files only, fails on a file nothing imports. It counts tests as entry points, so it passes a module that only tests load.
+- **`knip`**, files only, fails on a file nothing imports. It counts tests as entry points, so it passes a module that only tests load.
 - **`scripts/check-unused-src-modules.js`** starts from the entry points alone, with madge, and fails on every source module it never reaches: code that runs in the tests and never on the validator.
 
 An exported function nothing imports is fine. Only whole files are judged.
@@ -125,27 +125,29 @@ Every test follows the same rules:
 
 ## The System Test
 
-`npm run test:system` runs x1-validator-private-rpc end to end on a real Ubuntu 24.04 system, with systemd, in a throwaway LXD container on the development machine. It never runs on a validator, and it isn't part of the gate. What it needs before it runs is in the feature README's [Test](../x1-validator-private-rpc/README.md#test) section.
+`npm run test:system` runs x1-validator-private-rpc end to end on a real Ubuntu 24.04 system, with `systemd`, in a throwaway LXD container on the development machine. It never runs on a validator, and it isn't part of the gate. What it needs before it runs is in the feature README's [Test](../x1-validator-private-rpc/README.md#test) section.
 
 `scripts/test-in-lxd.js` sets the container up the way a validator is set up:
 
 1. It launches the container, and waits for it to finish booting.
-2. It copies in Node.js 20.0.0, from nvm's download cache when there is one.
+2. It copies in Node.js 20.0.0, from `nvm`'s download cache when there is one.
 3. It copies in `package.json`, the lockfile and the feature's folder, without the operator's own settings, and installs the runtime dependencies, as a validator's install does.
-4. It runs the tool's commands as the container's ordinary user, who has sudo, as a validator's account does.
+4. It runs the tool's commands as the container's ordinary user, who has `sudo`, as a validator's account does.
+
+A command that asks anything runs in a real terminal, which `script` makes, and its prompts are answered as they appear. The disclaimer's dialog is one of them: once `whiptail` draws its Decline button, the test presses the left arrow and Enter, to affirm it.
 
 Then it runs two phases:
 
-- **The nginx upgrade check.** It runs `util/validate-nginx-upgrade/index.js`, which must pass, and must leave the container as it found it.
-- **apply and the commands after it**, in `scripts/_lxd-apply-phase.js`. Pebble, Let's Encrypt's test server, stands in for Let's Encrypt, and a stand-in rpc plays the validator's. A git checkout plays x1console, where the settings put it. The commands' prompts are answered through a real terminal. It checks:
-  - the request path, the firewall rule, the rate limit and nginx's logs
+- **The `nginx` upgrade check.** It runs `util/validate-nginx-upgrade/index.js`, which must pass, and must leave the container as it found it.
+- **apply and the commands after it**, in `scripts/_lxd-apply-phase.js`. Pebble, Let's Encrypt's test server, stands in for Let's Encrypt, and a stand-in rpc plays the validator's. A `git` checkout plays `x1console`, where the settings put it. It checks:
+  - the request path, the firewall rule, the rate limit and `nginx`'s logs
   - `ensure`'s failure while the rpc is still public, and every one of its verdicts after the validator's restart
-  - the flag's return after `git stash`, and `unlock` after nginx comes back locked
+  - the flag's return after `git stash`, and `unlock` after `nginx` comes back locked
   - both commands that switch private rpc, and a saved password
   - that `undo-apply` leaves the container as `apply` found it
-  - last, that a firewall rule for port 443 with a comment, added while ufw is off, survives an `apply` stopped after its firewall stage, then `undo-apply`
+  - last, that a firewall rule for port 443 with a comment, added while `ufw` is off, survives an `apply` stopped after its firewall stage, then `undo-apply`
 
-Both phases decide what counts as left behind the same way, through `scripts/_lxd.js`. The paths come from the app: every absolute path in the settings the tool loads in the container, nginx.org's repository files, the folders above them all, and the nginx package and its user. The second phase adds the tool's own paths in the user's home and in the feature's folder. Whatever of those exists after a phase, and didn't before it, is a leftover. The second phase also checks that the firewall rule, the cron line and nginx's mask are gone, and that x1console's checkout is as committed. It reads the firewall rule from the rules the `ufw` command added, which ufw lists even while it's off, as it is in the container.
+Both phases decide what counts as left behind the same way, through `scripts/_lxd.js`. The paths come from the app: every absolute path in the settings the tool loads in the container, nginx.org's repository files, the folders above them all, and the `nginx` package and its user. The second phase adds the tool's own paths in the user's home and in the feature's folder. Whatever of those exists after a phase, and didn't before it, is a leftover. The second phase also checks that the firewall rule, the `cron` line and `nginx`'s mask are gone, and that `x1console`'s checkout is as committed. It reads the firewall rule from the rules the `ufw` command added, which `ufw` lists even while it's off, as it is in the container.
 
 The test deletes the container at the end. With `--keep`, it stays, for a look inside.
 
@@ -155,7 +157,7 @@ The test deletes the container at the end. With `--keep`, it stays, for a look i
 
 Each script run by its path declares its options with commander, through `scriptProgram` in `scripts/_tools.js`. So each one answers `--help` and `-h` with help made from its own options, and its exit codes, on stdout, with exit code 0. It refuses an option it doesn't take, on stderr, with exit code 1. `test/script-help.test.js` checks both, for every script run by its path.
 
-Files whose names start with an underscore are helper modules, never run by their path. `scripts/_tools.js` also finds each tool's command in `node_modules/.bin`, never through npx, and finds the project's root from its own location, so the working directory never matters.
+Files whose names start with an underscore are helper modules, never run by their path. `scripts/_tools.js` also finds each tool's command in `node_modules/.bin`, never through `npx`, and finds the project's root from its own location, so the working directory never matters.
 
 ---
 

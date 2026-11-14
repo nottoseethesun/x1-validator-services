@@ -41,7 +41,7 @@ function withoutQuestions(args) {
  */
 export function parseDpkgQuery(text) {
   const match = /^install ok installed (\S+)$/.exec(text.trim());
-  return match === null ? null : match[1];
+  return match === undefined || match === null ? null : match[1];
 }
 
 /**

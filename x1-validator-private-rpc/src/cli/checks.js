@@ -14,13 +14,12 @@
  * - The gate page says unlocked.
  * - The certificate is valid for the hostname, with enough days left.
  *
- * Reading the machine goes through the host; every judgment is a pure
+ * Reading the machine goes through the host. Every judgment is a pure
  * function of what was read, so tests feed it captured output.
  */
 
-import { GATE_PAGE_PATH } from "../lib/gate-page.js";
 import { NGINX_UNIT } from "../lib/nginx-org.js";
-import { askNginx } from "./nginx-gate.js";
+import { askGate } from "./nginx-gate.js";
 import { readStartScript } from "./start-script.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -36,8 +35,8 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  * Reads the listening sockets in `ss -ltnH` or `ss -ltnpH` output.
  * @param {string} text  The output.
  * @returns {{address: string, port: number, pid: number|null}[]} Each
- *   socket's local address, without an interface's `%name` suffix; its
- *   port; and its process, when ss names one.
+ *   socket's local address without an interface's `%name` suffix, its
+ *   port, and its process when ss names one.
  */
 export function parseListeners(text) {
   return text
@@ -51,7 +50,10 @@ export function parseListeners(text) {
       return {
         address: local.slice(0, colon).split("%")[0],
         port: Number.parseInt(local.slice(colon + 1), 10),
-        pid: pid === null ? null : Number.parseInt(pid[1], 10),
+        pid:
+          pid === undefined || pid === null
+            ? null
+            : Number.parseInt(pid[1], 10),
       };
     });
 }
@@ -60,7 +62,7 @@ export function parseListeners(text) {
  * Judges the rpc's listeners: only 127.0.0.1 may hold the rpc port and
  * the websocket port.
  * @param {{address: string, port: number}[]} listeners  Their sockets.
- * @param {number} rpcPort  The rpc port; the websocket's is the next.
+ * @param {number} rpcPort  The rpc port. The websocket's is the next one.
  * @returns {Check}
  */
 export function judgeRpcListeners(listeners, rpcPort) {
@@ -79,10 +81,11 @@ export function judgeRpcListeners(listeners, rpcPort) {
   const listening = listeners.some((socket) => socket.port === rpcPort);
   return {
     name: "rpc-private",
-    status: listening ? "ok" : "unknown",
-    detail: listening
-      ? "The rpc listens on 127.0.0.1 alone."
-      : "Nothing listens on the rpc port: the validator isn't running.",
+    status: listening === true ? "ok" : "unknown",
+    detail:
+      listening === true
+        ? "The rpc listens on 127.0.0.1 alone."
+        : "Nothing listens on the rpc port: the validator isn't running.",
   };
 }
 
@@ -101,12 +104,13 @@ export function judgeNginxListeners(listeners, publicIp) {
   const right = listeners.some(
     (socket) => socket.port === 443 && socket.address === publicIp,
   );
-  if (wrong.length > 0 || !right) {
+  if (wrong.length > 0 || right === false) {
     const found = listeners.map((socket) => `${socket.address}:${socket.port}`);
+    const held = found.length === 0 ? "nothing" : found.join(", ");
     return {
       name: "nginx-listens",
       status: "problem",
-      detail: `Port 80 or 443 is held other than as ${publicIp}:443 alone: ${found.join(", ") || "nothing"}.`,
+      detail: `Port 80 or 443 is held other than as ${publicIp}:443 alone: ${held}.`,
     };
   }
   return {
@@ -129,7 +133,7 @@ export function judgeNginxListeners(listeners, publicIp) {
  */
 export function judgeCertificate(certificate, values) {
   const { hostname, now, warningDays, failure } = values;
-  if (certificate === null) {
+  if (certificate === undefined || certificate === null) {
     return {
       name: "certificate",
       status: "problem",
@@ -141,13 +145,14 @@ export function judgeCertificate(certificate, values) {
     .split(",")
     .map((name) => name.trim())
     .includes(`DNS:${hostname}`);
-  const good = named && daysLeft >= warningDays;
+  const good = named === true && daysLeft >= warningDays;
   return {
     name: "certificate",
-    status: good ? "ok" : "problem",
-    detail: named
-      ? `The certificate has ${daysLeft} days left.`
-      : `The certificate isn't for ${hostname}.`,
+    status: good === true ? "ok" : "problem",
+    detail:
+      named === true
+        ? `The certificate has ${daysLeft} days left.`
+        : `The certificate isn't for ${hostname}.`,
   };
 }
 
@@ -178,7 +183,9 @@ export function judgeGate(gate) {
 export function runningFlag(host, rpcPort) {
   const listed = host.run("ss", ["-ltnpH", `sport = :${rpcPort}`]);
   const sockets = parseListeners(listed.stdout);
-  const pid = sockets.find((socket) => socket.pid !== null)?.pid;
+  const pid = sockets.find(
+    (socket) => socket.pid !== undefined && socket.pid !== null,
+  )?.pid;
   if (pid === undefined || pid === null) {
     return {
       name: "flag-running",
@@ -190,10 +197,11 @@ export function runningFlag(host, rpcPort) {
   const flagged = words.includes("--private-rpc");
   return {
     name: "flag-running",
-    status: flagged ? "ok" : "problem",
-    detail: flagged
-      ? "The running validator carries --private-rpc."
-      : "The running validator lacks --private-rpc; restart it to take the flag.",
+    status: flagged === true ? "ok" : "problem",
+    detail:
+      flagged === true
+        ? "The running validator carries --private-rpc."
+        : "The running validator lacks --private-rpc. Restart it to take the flag.",
   };
 }
 
@@ -218,8 +226,9 @@ function wrapperPaths(host, wrapperPath) {
     detail:
       missing.length === 0
         ? "The start wrapper's Node.js and src/cli.js exist."
-        : "A path in the start wrapper is gone; a saved-password start will " +
-          "leave nginx locked. Run apply again to write them anew.",
+        : "A path in the start wrapper is gone, so a start with the saved " +
+          "password will leave nginx locked. Run apply again to write the " +
+          "paths anew.",
   };
 }
 
@@ -240,17 +249,7 @@ export async function runChecks(context) {
     flagInScript = false;
   }
   const active = host.run("systemctl", ["is-active", NGINX_UNIT]).stdout.trim();
-  let gate;
-  let certificate = null;
-  let failure = "";
-  try {
-    const answer = await askNginx(host, target, GATE_PAGE_PATH);
-    gate = answer.status === 200 ? answer.body.trim() : `http ${answer.status}`;
-    certificate = answer.certificate;
-  } catch (error) {
-    gate = `no answer (${error.message})`;
-    failure = error.message;
-  }
+  const { gate, certificate, failure } = await askGate(host, target);
   const rpcListed = host.run("ss", [
     "-ltnH",
     `( sport = :${setup.rpcPort} or sport = :${setup.rpcPort + 1} )`,
@@ -265,10 +264,11 @@ export async function runChecks(context) {
   return [
     {
       name: "flag-in-script",
-      status: flagInScript ? "ok" : "problem",
-      detail: flagInScript
-        ? "The start script carries --private-rpc."
-        : "The start script lacks --private-rpc.",
+      status: flagInScript === true ? "ok" : "problem",
+      detail:
+        flagInScript === true
+          ? "The start script carries --private-rpc."
+          : "The start script lacks --private-rpc.",
     },
     runningFlag(host, setup.rpcPort),
     judgeRpcListeners(rpcSockets, setup.rpcPort),
@@ -276,7 +276,7 @@ export async function runChecks(context) {
     {
       name: "nginx-active",
       status: active === "active" ? "ok" : "problem",
-      detail: `nginx is ${active || "unknown"}.`,
+      detail: `nginx is ${active === "" ? "unknown" : active}.`,
     },
     judgeNginxListeners(webSockets, setup.publicIp),
     judgeGate(gate),

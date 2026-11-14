@@ -20,10 +20,10 @@ function main() {
     "scripts/run-tests.js",
     "Runs the test suite alone, for quick runs while working. " +
       "npm run check is the gate.",
-    ["the test runner's own; 0 when every test passed"],
+    ["the test runner's own, which is 0 when every test passed"],
   )
-    .option("--coverage", "add a coverage summary")
-    .option("--watch", "run the tests again on every change");
+    .option("--coverage", "add a coverage summary", false)
+    .option("--watch", "run the tests again on every change", false);
   program.parse();
   const { coverage, watch } = program.opts();
   const options = [];

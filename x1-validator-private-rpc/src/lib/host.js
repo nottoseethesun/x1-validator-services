@@ -4,7 +4,7 @@
  * The real host. Every effect the tool has outside its own process goes
  * through these functions:
  *
- * - running commands, with or without sudo
+ * - running commands, with or without sudo, or on the person's terminal
  * - writing and removing files root owns, and files the tool's own
  *   account owns, and reading files
  * - http and https requests, json posts, and https requests to an
@@ -49,7 +49,7 @@ const USER_AGENT = "x1-validator-private-rpc";
  * @param {string} command  The program.
  * @param {string[]} args  Its arguments, passed without a shell.
  * @param {{input?: string|Buffer, binary?: boolean}} options  Text for
- *   its standard input, if any; and whether its stdout is binary data.
+ *   its standard input, if any, and whether its stdout is binary data.
  * @returns {import("./command-result.js").CommandResult} With stdout as
  *   a Buffer when `binary` is set.
  */
@@ -61,21 +61,38 @@ function runCommand(command, args, { input, binary = false }) {
       "pipe",
       "pipe",
     ],
-    encoding: binary ? "buffer" : "utf8",
+    encoding: binary === true ? "buffer" : "utf8",
     maxBuffer: 64 * 1024 * 1024,
   });
   if (result.error !== undefined && result.error !== null) {
     return {
       status: 127,
-      stdout: binary ? Buffer.alloc(0) : "",
+      stdout: binary === true ? Buffer.alloc(0) : "",
       stderr: result.error.message,
     };
   }
   return {
     status: result.status ?? 1,
     stdout: result.stdout,
-    stderr: binary ? result.stderr.toString("utf8") : result.stderr,
+    stderr: binary === true ? result.stderr.toString("utf8") : result.stderr,
   };
+}
+
+/**
+ * Runs a program on the person's terminal and waits for it, such as
+ * whiptail drawing a dialog. It reads the keyboard from stdin and draws
+ * on stderr, so stdout stays clean. As with runCommand, a program that
+ * can't start gets exit code 127.
+ * @param {string} command  The program.
+ * @param {string[]} args  Its arguments, passed without a shell.
+ * @returns {number} Its exit code.
+ */
+function runOnTerminal(command, args) {
+  const result = spawnSync(command, args, { stdio: [0, 2, 2] });
+  if (result.error !== undefined && result.error !== null) {
+    return 127;
+  }
+  return result.status ?? 1;
 }
 
 /**
@@ -260,9 +277,9 @@ function postJson(url, body, timeoutMs) {
  * @property {number} status  The http status.
  * @property {string} body  The answer's text.
  * @property {{validTo: number, altNames: string, issuer: string}}
- *   certificate  The server's certificate: when it expires, in
- *   milliseconds since 1970; its subject alternative names; and its
- *   issuer's organization.
+ *   certificate  The server's certificate. validTo is when it expires,
+ *   in milliseconds since 1970. altNames lists its subject alternative
+ *   names, and issuer names its issuer's organization.
  */
 
 /**
@@ -276,7 +293,7 @@ function postJson(url, body, timeoutMs) {
  * @param {string} target.path  The path, such as `/x1-rpc-gate`.
  * @param {number} target.timeoutMs  How long to wait.
  * @param {string} [target.ca]  The certificate authorities to trust, in
- *   pem; Node.js's own list unless given.
+ *   pem. Node.js's own list is used unless it's given.
  * @returns {Promise<TlsAnswer>}
  */
 function tlsGet({ address, port, hostname, path: urlPath, timeoutMs, ca }) {
@@ -383,6 +400,7 @@ export function createHost({ sudoPrefix = ["sudo"] } = {}) {
     sudo,
     sudoAsync: (command, args) =>
       runCommandAsync(sudoPrefix[0], sudoArgs(command, args)),
+    runOnTerminal,
     writeRootFile: (filePath, content, mode) =>
       writeRootFile(sudo, filePath, content, mode),
     // A group, when given, owns the folder too.

@@ -14,7 +14,8 @@
  * authority goes into the system's store, which nginx's ACME module
  * trusts by default, and into NODE_EXTRA_CA_CERTS for the tool's own
  * checks. The commands' prompts are answered through a real terminal,
- * made by `script`, as a person would answer them.
+ * made by `script`, as a person would answer them, the disclaimer's
+ * dialog among them.
  *
  * It checks the outcome after each step: apply's working request path,
  * its firewall rule, and logs that hold no key and that the validator's
@@ -33,17 +34,19 @@
  * app: the settings the tool loads there, and the tool's own paths.
  */
 
-import { spawn } from "node:child_process";
 import path from "node:path";
 import { HTTPS_RULE } from "../x1-validator-private-rpc/src/cli/apply-install.js";
 import {
   featurePaths,
+  gitHookPathOf,
   homePath,
 } from "../x1-validator-private-rpc/src/cli/feature-paths.js";
 import { API_KEY_HEX_DIGITS } from "../x1-validator-private-rpc/src/lib/api-key.js";
 import { NGINX_UNIT } from "../x1-validator-private-rpc/src/lib/nginx-org.js";
 import { overrideFilePath } from "../x1-validator-private-rpc/src/lib/settings.js";
 import {
+  AFFIRM_DISCLAIMER,
+  answerInTerminal,
   asRoot,
   asRootCaptured,
   asUser,
@@ -67,7 +70,6 @@ const PEBBLE_VERSION = "v2.10.3";
 const NODE_CA = "/opt/pebble/node-ca.pem";
 const PASSWORD = "a long password for the system test";
 const STANDIN = `${GUEST_PROJECT}/x1-validator-private-rpc/test/helpers/rpc-standin.js`;
-const COMMAND_TIMEOUT_MS = 10 * 60 * 1000;
 const FLAG_LINE = "--rpc-port 8899 --private-rpc \\";
 
 /** Installs Pebble, trusts its certificate authorities, and starts it. */
@@ -138,46 +140,16 @@ git diff --cached --quiet || git -c user.name=test -c user.email=test@example.in
 }
 
 /**
- * Runs a command in the container as its user, in a real terminal, and
- * answers its prompts as each one appears.
+ * Runs a command in the container as its user, in a real terminal, with
+ * NODE_EXTRA_CA_CERTS set, and answers its prompts as each one appears.
  * @param {string} name  The container.
  * @param {string} command  The command, as the shell reads it.
  * @param {[string, string][]} answers  Each prompt's text, and its answer.
  * @returns {Promise<{code: number, output: string}>}
  */
 function withAnswers(name, command, answers) {
-  return new Promise((resolve) => {
-    const child = spawn(
-      "lxc",
-      asUserArgs(name, ["script", "-qfec", command, "/dev/null"], {
-        NODE_EXTRA_CA_CERTS: NODE_CA,
-      }),
-      { stdio: ["pipe", "pipe", "inherit"] },
-    );
-    let output = "";
-    let unread = "";
-    let next = 0;
-    const timer = setTimeout(() => child.kill(), COMMAND_TIMEOUT_MS);
-    child.stdout.on("data", (chunk) => {
-      process.stdout.write(chunk);
-      output += chunk;
-      unread += chunk;
-      let [prompt, reply] = answers.at(next) ?? [];
-      while (
-        prompt !== undefined &&
-        prompt !== null &&
-        unread.includes(prompt)
-      ) {
-        unread = unread.slice(unread.indexOf(prompt) + prompt.length);
-        child.stdin.write(reply);
-        next += 1;
-        [prompt, reply] = answers.at(next) ?? [];
-      }
-    });
-    child.on("close", (code) => {
-      clearTimeout(timer);
-      resolve({ code: code ?? 1, output });
-    });
+  return answerInTerminal(name, command, answers, {
+    NODE_EXTRA_CA_CERTS: NODE_CA,
   });
 }
 
@@ -237,9 +209,9 @@ function startRpc(name, address, isPrivate) {
     "--gid=ubuntu",
     "/opt/node/bin/node",
     STANDIN,
-    isPrivate ? "127.0.0.1" : "0.0.0.0",
+    isPrivate === true ? "127.0.0.1" : "0.0.0.0",
     address,
-    ...(isPrivate ? ["--private-rpc"] : []),
+    ...(isPrivate === true ? ["--private-rpc"] : []),
   ]);
   mustPass(started, "Starting the rpc stand-in");
   const listening = asRoot(name, [
@@ -257,8 +229,8 @@ function startRpc(name, address, isPrivate) {
  * @param {boolean} holds  Whether it holds.
  */
 function expect(failures, what, holds) {
-  console.log(`${holds ? "ok  " : "FAIL"}  ${what}`);
-  if (!holds) {
+  console.log(`${holds === true ? "ok  " : "FAIL"}  ${what}`);
+  if (holds === false) {
     failures.push(what);
   }
 }
@@ -384,10 +356,9 @@ function checkLogs(name, key, settings, failures) {
  */
 function guestPathsOf(settings) {
   const local = featurePaths();
-  const x1consoleDir = homePath(settings.x1consoleDir, GUEST_HOME);
   return [
     homePath(settings.vaultPath, GUEST_HOME),
-    path.posix.join(x1consoleDir, ".git", "hooks", "post-merge"),
+    gitHookPathOf(settings, GUEST_HOME),
     ...[
       local.tmpDir,
       local.logsDir,
@@ -485,12 +456,15 @@ async function checkKeepsOperatorRule(name, watched, failures) {
   mustPass(added, "Adding the operator's firewall rule");
   const cli = guestCli();
   const stopped = await withAnswers(name, `node ${cli} apply`, [
+    AFFIRM_DISCLAIMER,
     ["Stage 2 of 8", "y\n"],
     ["Stage 3 of 8", "y\n"],
     ["Stage 4 of 8", "n\n"],
   ]);
   const foundRule = recordFoundRule(name);
-  const undone = tool(name, ["undo-apply"]);
+  const undone = await withAnswers(name, `node ${cli} undo-apply`, [
+    AFFIRM_DISCLAIMER,
+  ]);
   const left = leftovers(name, watched.paths, watched.before);
   for (const item of left) {
     console.error(`Left behind: ${item}`);
@@ -499,8 +473,8 @@ async function checkKeepsOperatorRule(name, watched, failures) {
     failures,
     "undo-apply leaves a firewall rule that was there before apply, comment and all, while ufw is off",
     stopped.code === 1 &&
-      foundRule &&
-      undone === 0 &&
+      foundRule === true &&
+      undone.code === 0 &&
       left.length === 0 &&
       ufwHolds(name, operatorRule),
   );
@@ -524,6 +498,7 @@ export async function runApplyPhase(name, settingsOf) {
   const before = existingPaths(name, paths);
   const watched = { paths, before };
   const applied = await withAnswers(name, `node ${cli} apply --yes`, [
+    AFFIRM_DISCLAIMER,
     ["A new x1-validator-services password: ", `${PASSWORD}\n`],
     ["The same password again: ", `${PASSWORD}\n`],
     ["Save the password", "n\n"],
@@ -610,6 +585,7 @@ export async function runApplyPhase(name, settingsOf) {
     locked === 1,
   );
   const unlocked = await withAnswers(name, `node ${cli} unlock`, [
+    AFFIRM_DISCLAIMER,
     ["password: ", `${PASSWORD}\n`],
   ]);
   const afterUnlock = tool(name, ["ensure", "--quiet"]);
@@ -618,12 +594,16 @@ export async function runApplyPhase(name, settingsOf) {
     "unlock opens nginx again",
     unlocked.code === 0 && afterUnlock === 0,
   );
-  const turnedOff = tool(name, ["turn-off-private-rpc", "--yes"]);
+  const turnedOff = await withAnswers(
+    name,
+    `node ${cli} turn-off-private-rpc --yes`,
+    [AFFIRM_DISCLAIMER],
+  );
   const offScript = readScript(name, settings);
   expect(
     failures,
     "turn-off-private-rpc takes --private-rpc out",
-    turnedOff === 0 && !offScript.includes(FLAG_LINE),
+    turnedOff.code === 0 && !offScript.includes(FLAG_LINE),
   );
   startRpc(name, address, false);
   const whileOff = tool(name, ["ensure"]);
@@ -633,12 +613,14 @@ export async function runApplyPhase(name, settingsOf) {
     "while private rpc is off, ensure accepts a public rpc and leaves the flag out",
     whileOff === 0 && !leftOut.includes(FLAG_LINE),
   );
-  const turnedOn = tool(name, ["turn-on-private-rpc"]);
+  const turnedOn = await withAnswers(name, `node ${cli} turn-on-private-rpc`, [
+    AFFIRM_DISCLAIMER,
+  ]);
   const onScript = readScript(name, settings);
   expect(
     failures,
     "turn-on-private-rpc puts --private-rpc back",
-    turnedOn === 0 && onScript.includes(FLAG_LINE),
+    turnedOn.code === 0 && onScript.includes(FLAG_LINE),
   );
   startRpc(name, address, true);
   expect(
@@ -647,6 +629,7 @@ export async function runApplyPhase(name, settingsOf) {
     everyCheckOk(name),
   );
   const saving = await withAnswers(name, `node ${cli} apply --yes`, [
+    AFFIRM_DISCLAIMER,
     ["password: ", `${PASSWORD}\n`],
     ["Save the password", "y\n"],
   ]);
@@ -659,6 +642,7 @@ export async function runApplyPhase(name, settingsOf) {
     saving.code === 0 && unlockedItself === 0,
   );
   const reapplied = await withAnswers(name, `node ${cli} apply --yes`, [
+    AFFIRM_DISCLAIMER,
     ["password: ", `${PASSWORD}\n`],
     ["Save the password", "y\n"],
   ]);
@@ -668,8 +652,8 @@ export async function runApplyPhase(name, settingsOf) {
     reapplied.code === 0 && !reapplied.output.includes("Save the password"),
   );
   const undone = await withAnswers(name, `node ${cli} undo-apply`, [
-    ["Delete the saved password?", "y\n"],
-    ["Delete the api key?", "y\n"],
+    AFFIRM_DISCLAIMER,
+    ["Delete the api key and the saved password?", "y\n"],
   ]);
   expect(failures, "undo-apply finishes", undone.code === 0);
   checkUndone(name, watched, settings, failures);

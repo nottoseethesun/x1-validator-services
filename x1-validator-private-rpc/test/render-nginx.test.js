@@ -2,11 +2,15 @@
  * @file x1-validator-private-rpc/test/render-nginx.test.js
  * @description
  * Tests nginx's configuration beyond the placeholder example, which
- * examples.test.js pins: every setting it reads shows in it, never the
- * shipped value in its place; the websocket port follows the rpc port;
- * acmeEmail becomes a contact line; with --acme-staging a second issuer,
- * the staging one, serves the certificate; and the logs' mask hides a key
- * however the client wrote it.
+ * examples.test.js pins:
+ *
+ * - every setting it reads shows in it, never the shipped value in its
+ *   place
+ * - the websocket port follows the rpc port
+ * - acmeEmail becomes a contact line
+ * - with --acme-staging a second issuer, the staging one, serves the
+ *   certificate
+ * - the logs' mask hides a key however the client wrote it
  */
 
 import assert from "node:assert/strict";

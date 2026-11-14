@@ -17,18 +17,23 @@
  */
 
 import assert from "node:assert/strict";
-import path from "node:path";
 import { test } from "node:test";
 import { runApply } from "../src/cli/apply.js";
 import { HTTPS_RULE } from "../src/cli/apply-install.js";
-import { featurePaths, homePath } from "../src/cli/feature-paths.js";
+import {
+  featurePaths,
+  gitHookPathOf,
+  homePath,
+} from "../src/cli/feature-paths.js";
 import { createLog } from "../src/cli/log.js";
+import { RESTART_HOW } from "../src/cli/start-script.js";
 import { readState } from "../src/cli/state.js";
 import { API_KEY_SECRET, secretOf } from "../src/cli/vault.js";
 import { readRecord } from "../src/cli/what-apply-changed.js";
 import { GATE_PAGE_PATH } from "../src/lib/gate-page.js";
 import { NGINX_PACKAGES, NGINX_UNIT } from "../src/lib/nginx-org.js";
 import { loadSettings } from "../src/lib/settings.js";
+import { MIN_SYSTEMD_VERSION } from "../src/lib/systemd.js";
 import {
   copyShippedConfig,
   shippedAndChangedSettings,
@@ -90,6 +95,7 @@ async function apply(host, run = {}) {
     prompts:
       run.prompts ?? scriptedPrompts({ passwords: [PASSWORD, PASSWORD] }),
     options: { yes: false, dryRun: false, acmeStaging: false, ...run.options },
+    atExit: run.atExit ?? (() => {}),
   });
   return { code, lines };
 }
@@ -137,6 +143,11 @@ test("a fresh validator goes through every stage, and a second apply changes not
   );
   assert.ok(state.ufwRules.includes(HTTPS_RULE));
   assert.match(state.crontab, / ensure --quiet >> /);
+  // The cron line can't start without its lock's folder and its log's.
+  const { tmpDir, logsDir } = featurePaths();
+  assert.ok(host.exists(tmpDir) && host.exists(logsDir));
+  // git skips a hook it can't run, so the hook must be executable.
+  assert.equal(host.fileMode(gitHookPathOf(settings, HOME)), 0o755);
   assert.match(
     host.files.get(scriptPath),
     /^ {4}--rpc-port 8899 --private-rpc \\$/m,
@@ -148,7 +159,7 @@ test("a fresh validator goes through every stage, and a second apply changes not
     rpcPort: 8899,
     staging: false,
   });
-  assert.ok(lines.some((line) => line.includes("Restart it from x1console")));
+  assert.ok(lines.some((line) => line.endsWith(RESTART_HOW)));
   assert.ok(
     lines.some((line) =>
       /The rpc's url: https:\/\/x1-rpc\.example\.com\/…[0-9a-f]{4}$/.test(line),
@@ -238,7 +249,7 @@ test("a stop at a stage changes nothing after it, and a later apply picks up", a
     ),
   );
   assert.equal(state.nginxInstalled, true);
-  assert.equal(state.ufwRules.includes("443/tcp"), false);
+  assert.equal(state.ufwRules.includes(HTTPS_RULE), false);
   const later = await apply(host);
   assert.equal(later.code, 0, later.lines.join("\n"));
   assert.ok(
@@ -277,8 +288,7 @@ test("refuses to replace a file apply didn't write", async () => {
 
 test("another program's git hook stays as it is, and out of the record", async () => {
   const settings = operatorSettings();
-  const x1consoleDir = homePath(settings.x1consoleDir, HOME);
-  const hookPath = path.join(x1consoleDir, ".git", "hooks", "post-merge");
+  const hookPath = gitHookPathOf(settings, HOME);
   const theirs = '#!/bin/sh\nexec git lfs post-merge "$@"\n';
   const { host } = fakeX1Validator({
     settings,
@@ -349,7 +359,8 @@ test("the preflight also names a wrong release, old systemd, missing tools and a
     respond: (call) => {
       const line = [call.command, ...call.args].join(" ");
       if (line === "systemctl --version") {
-        return { stdout: "systemd 249 (249.11)\n" };
+        const old = MIN_SYSTEMD_VERSION - 1;
+        return { stdout: `systemd ${old} (${old}.11)\n` };
       }
       return undefined;
     },
@@ -361,7 +372,7 @@ test("the preflight also names a wrong release, old systemd, missing tools and a
   await assert.rejects(apply(host, { settings }), (error) => {
     for (const problem of [
       "This isn't Ubuntu 24.04 or later.",
-      "systemd 250 or newer is needed, for systemd-creds; this machine has 249.",
+      `systemd ${MIN_SYSTEMD_VERSION} or newer is needed, for systemd-creds. This machine has ${MIN_SYSTEMD_VERSION - 1}.`,
       "ufw isn't installed.",
       `${PUBLIC_IP} isn't on any of this machine's interfaces`,
       `${HOSTNAME} points to 198.51.100.99, not to ${PUBLIC_IP}.`,
@@ -529,7 +540,6 @@ test("apply edits the start script the settings name, in the folder they name", 
     host.files.get(scriptPath),
     /^ {4}--rpc-port 8899 --private-rpc \\$/m,
   );
-  const x1consoleDir = homePath(settings.x1consoleDir, HOME);
-  const hook = path.join(x1consoleDir, ".git", "hooks", "post-merge");
+  const hook = gitHookPathOf(settings, HOME);
   assert.ok(host.files.has(hook), hook);
 });

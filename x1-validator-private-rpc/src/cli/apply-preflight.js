@@ -11,21 +11,18 @@
  * on this machine, the solana cli pointed at this validator, the
  * hostname pointing elsewhere, or Let's Encrypt out of reach.
  *
- * The public address is the `publicIp` setting when set; otherwise the
- * gossip address the X1 network has for this validator, which the local
- * rpc reports.
+ * The public address is the `publicIp` setting when set. Otherwise it's
+ * the gossip address the X1 network has for this validator, which the
+ * local rpc reports.
  */
 
 import { installedVersion } from "../lib/apt.js";
 import { parseOsRelease } from "../lib/os-release.js";
-import { systemdVersion } from "../lib/systemd.js";
+import { MIN_SYSTEMD_VERSION, systemdVersion } from "../lib/systemd.js";
 import { httpsRuleOf, httpsRuleProblem, packageKey } from "./apply-install.js";
 import { homePath, startScriptPathOf } from "./feature-paths.js";
 import { readStartScript } from "./start-script.js";
 import { changedByApply } from "./what-apply-changed.js";
-
-/** The oldest systemd with `systemd-creds`, which saving needs. */
-const OLDEST_SYSTEMD = 250;
 
 /** From this systemd on, `has-tpm2` belongs to `systemd-analyze`. */
 const SYSTEMD_ANALYZE_TPM2 = 257;
@@ -146,10 +143,14 @@ function checkSystem(host, problems) {
     problems.push("This isn't Ubuntu 24.04 or later.");
   }
   const version = systemdVersion(host);
-  if (version === null || version < OLDEST_SYSTEMD) {
+  if (
+    version === undefined ||
+    version === null ||
+    version < MIN_SYSTEMD_VERSION
+  ) {
     problems.push(
-      `systemd ${OLDEST_SYSTEMD} or newer is needed, for systemd-creds; ` +
-        `this machine has ${version ?? "an unknown version"}.`,
+      `systemd ${MIN_SYSTEMD_VERSION} or newer is needed, for systemd-creds. ` +
+        `This machine has ${version ?? "an unknown version"}.`,
     );
   }
   const missing = ["apt", "ufw", "sudo", "gpg"].filter(
@@ -179,7 +180,7 @@ function checkFirewall(host, missing, problems) {
   }
   const rule = httpsRuleOf(host);
   const problem = httpsRuleProblem(rule);
-  if (problem !== null) {
+  if (problem !== undefined && problem !== null) {
     problems.push(problem);
   }
 }
@@ -194,14 +195,14 @@ function checkFirewall(host, missing, problems) {
 function checkNginx(host, whatApplyChanged, problems) {
   const ours = changedByApply(whatApplyChanged, packageKey("nginx"));
   const installed = installedVersion(host, "nginx");
-  if (installed !== null && !ours) {
+  if (installed !== undefined && installed !== null && ours === false) {
     problems.push(
       `nginx ${installed} is already installed, by something other than ` +
         "this tool, which doesn't share nginx with other sites.",
     );
   }
   const listening = host.run("ss", ["-ltnH", "sport = :443"]).stdout.trim();
-  if (listening !== "" && !ours) {
+  if (listening !== "" && ours === false) {
     problems.push("Something already listens on port 443.");
   }
 }
@@ -224,7 +225,11 @@ async function checkAddress(host, { hostname, publicIp }, problems) {
     );
   }
   const url = cliUrl(host);
-  if (url !== null && (url.includes(publicIp) || url.includes(hostname))) {
+  if (
+    url !== undefined &&
+    url !== null &&
+    (url.includes(publicIp) || url.includes(hostname))
+  ) {
     problems.push(
       `The solana cli's url, ${url}, names this validator. Under ` +
         "--private-rpc, Autopilot's health check would then fail and " +
@@ -241,9 +246,27 @@ async function checkAddress(host, { hostname, publicIp }, problems) {
   if (!found.includes(publicIp)) {
     problems.push(
       `${hostname} points to ${found.join(", ")}, not to ${publicIp}. ` +
-        "Set its A record first, as docs/manual-domain-setup.md explains.",
+        "Set its A record first, as " +
+        "x1-validator-private-rpc/docs/manual-domain-setup.md explains.",
     );
   }
+}
+
+/**
+ * Asks systemd whether the machine has a TPM2 chip, for the save
+ * question.
+ * @param {object} host  The host.
+ * @param {number|null} version  systemd's version, or null when it's
+ *   unknown.
+ * @returns {string} The answer, or "" when systemd's version is unknown.
+ */
+function askTpm2(host, version) {
+  if (version === undefined || version === null) {
+    return "";
+  }
+  const program =
+    version >= SYSTEMD_ANALYZE_TPM2 ? "systemd-analyze" : "systemd-creds";
+  return host.run(program, ["has-tpm2"]).stdout.trim();
 }
 
 /**
@@ -260,17 +283,7 @@ export async function preflight(context) {
   const problems = [];
   const { version, codename, missing } = checkSystem(host, problems);
   checkFirewall(host, missing, problems);
-  const tpm2 =
-    version === null
-      ? ""
-      : host
-          .run(
-            version >= SYSTEMD_ANALYZE_TPM2
-              ? "systemd-analyze"
-              : "systemd-creds",
-            ["has-tpm2"],
-          )
-          .stdout.trim();
+  const tpm2 = askTpm2(host, version);
   if (settings.hostname === undefined || settings.hostname === null) {
     problems.push(
       `Set hostname in ${overridePath}: the name your clients will use for ` +
@@ -290,8 +303,10 @@ export async function preflight(context) {
   const timeoutMs = settings.requestTimeoutSeconds * 1000;
   const publicIp =
     settings.publicIp ??
-    (rpcPort === null ? null : await gossipAddress(host, rpcPort, timeoutMs));
-  if (publicIp === null) {
+    (rpcPort === undefined || rpcPort === null
+      ? null
+      : await gossipAddress(host, rpcPort, timeoutMs));
+  if (publicIp === undefined || publicIp === null) {
     problems.push(
       "The local rpc didn't say which address the X1 network has for this " +
         `validator. Set publicIp in ${overridePath}.`,
@@ -303,9 +318,10 @@ export async function preflight(context) {
       problems,
     );
   }
-  const directory = staging
-    ? settings.acmeStagingDirectoryUrl
-    : settings.acmeDirectoryUrl;
+  const directory =
+    staging === true
+      ? settings.acmeStagingDirectoryUrl
+      : settings.acmeDirectoryUrl;
   const reached = await host
     .httpsGet(directory, timeoutMs)
     .catch((error) => ({ status: 0, body: error.message }));
@@ -317,7 +333,7 @@ export async function preflight(context) {
     );
   }
   const resolver = systemResolver(host);
-  if (resolver === null) {
+  if (resolver === undefined || resolver === null) {
     problems.push("/etc/resolv.conf names no nameserver for nginx to use.");
   }
   if (problems.length > 0) {

@@ -22,12 +22,14 @@ function main() {
     ["0  clean", "1  bad arguments, or a problem found"],
   )
     .addOption(
-      new Option("--security", "run the security lint").conflicts("secrets"),
+      new Option("--security", "run the security lint")
+        .conflicts("secrets")
+        .default(false),
     )
-    .option("--secrets", "run the secret scan");
+    .option("--secrets", "run the secret scan", false);
   program.parse();
   const { security, secrets } = program.opts();
-  if (security !== true && secrets !== true) {
+  if (security === false && secrets === false) {
     program.error("error: give --security or --secrets.");
   }
   const stage = security === true ? securityLintStage() : secretlintStage();

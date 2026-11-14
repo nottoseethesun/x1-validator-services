@@ -4,7 +4,7 @@
  * Waits for another program to reach a state, by asking it again at an
  * interval until it answers as wanted or the time runs out. This is for
  * waiting on systems the tool doesn't control, such as nginx starting
- * under systemd; it never stands in for ordering the tool's own work.
+ * under systemd. It never stands in for ordering the tool's own work.
  * The clock and the pause come from the caller, so tests run without
  * waiting.
  */

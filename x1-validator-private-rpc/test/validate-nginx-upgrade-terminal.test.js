@@ -23,8 +23,8 @@ const PREFIX = "[validate-nginx-upgrade]";
  * @param {{isTTY?: boolean, columns?: number}} stdout  The stand-in
  *   output stream.
  * @returns {{terminal: object, signals: EventEmitter, made: object[],
- *   printed: string[]}} The terminal; its Ctrl-C source; the options of
- *   each spinner made; and every line printed and spinner call, in order.
+ *   printed: string[]}} The terminal, its Ctrl-C source, the options of
+ *   each spinner made, and every line printed and spinner call, in order.
  */
 function terminalOn(t, stdout) {
   const printed = [];

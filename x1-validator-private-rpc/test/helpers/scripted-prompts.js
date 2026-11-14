@@ -10,9 +10,9 @@
  * Makes scripted prompts.
  * @param {object} [script]  The answers.
  * @param {(question: string) => boolean} [script.confirm]  Answers
- *   confirmations; yes unless given.
- * @param {(question: string) => boolean} [script.ask]  Answers choices;
- *   no unless given.
+ *   confirmations, with yes unless given.
+ * @param {(question: string) => boolean} [script.ask]  Answers choices,
+ *   with no unless given.
  * @param {string[]} [script.passwords]  The passwords typed, in order.
  * @returns {object} The prompts, with `asked` listing the questions.
  */

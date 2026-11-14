@@ -21,7 +21,8 @@ export const PASSWORD = "a long test password";
  * Makes a run for a command, with a log the test can read.
  * @param {object} host  The fake host.
  * @param {object} settings  The tool's settings.
- * @param {object} [more]  More of the run: prompts and options.
+ * @param {object} [more]  More of the run: prompts, options and atExit,
+ *   which does nothing unless a test passes its own.
  * @returns {object} The run, with `lines` holding what the log printed.
  */
 export function commandRun(host, settings, more = {}) {
@@ -37,6 +38,7 @@ export function commandRun(host, settings, more = {}) {
     }),
     prompts: scriptedPrompts({ passwords: [PASSWORD] }),
     options: {},
+    atExit: () => {},
     lines,
     ...more,
   };

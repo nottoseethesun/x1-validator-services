@@ -7,8 +7,7 @@
  * them any state.
  */
 
-/** The oldest systemd the tool supports: `systemd-creds` arrived in 250. */
-const MIN_SYSTEMD_VERSION = 250;
+import { MIN_SYSTEMD_VERSION } from "../../src/lib/systemd.js";
 
 /**
  * Lists what stops the check from running on this machine.
@@ -17,11 +16,11 @@ const MIN_SYSTEMD_VERSION = 250;
  * @param {Map<string, string>} facts.osRelease  `/etc/os-release`.
  * @param {number|null} facts.systemdVersion  systemd's major version.
  * @param {string|null} facts.nginxVersion  The installed nginx, if any.
- * @returns {string[]} One message per problem; none when it can run.
+ * @returns {string[]} One message per problem, or none when it can run.
  */
 export function machineProblems(facts) {
   const problems = [];
-  if (facts.isRoot) {
+  if (facts.isRoot === true) {
     problems.push(
       "Run this as the validator's account, not as root or with sudo. It " +
         "asks for sudo itself when it needs it.",
@@ -38,13 +37,17 @@ export function machineProblems(facts) {
     );
   }
   const version = facts.systemdVersion;
-  if (version === null || version < MIN_SYSTEMD_VERSION) {
+  if (
+    version === undefined ||
+    version === null ||
+    version < MIN_SYSTEMD_VERSION
+  ) {
     problems.push(
-      `systemd is ${version ?? "of an unknown version"}; the tool needs ` +
-        `${MIN_SYSTEMD_VERSION} or newer.`,
+      `systemd is ${version ?? "of an unknown version"}, but the tool ` +
+        `needs ${MIN_SYSTEMD_VERSION} or newer.`,
     );
   }
-  if (facts.nginxVersion !== null) {
+  if (facts.nginxVersion !== undefined && facts.nginxVersion !== null) {
     problems.push(
       `nginx ${facts.nginxVersion} is already installed. This check ` +
         "installs and removes nginx itself, so it runs only before nginx " +
@@ -65,7 +68,7 @@ export function machineProblems(facts) {
  * @param {string} seen.gateAfter  What the gate page says after.
  * @param {string|null} seen.installedVersion  The installed nginx.
  * @param {string} seen.expectedVersion  The version upgraded to.
- * @returns {string[]} One message per failure; none when it passed.
+ * @returns {string[]} One message per failure, or none when it passed.
  */
 export function upgradeProblems(seen) {
   const problems = [];
@@ -93,7 +96,7 @@ export function upgradeProblems(seen) {
         "installed /usr/sbin/nginx.",
     );
   }
-  if (seen.oldMainRunning) {
+  if (seen.oldMainRunning === true) {
     problems.push("The old nginx main process is still running.");
   }
   if (seen.gateAfter === "locked") {
@@ -103,7 +106,7 @@ export function upgradeProblems(seen) {
     );
   } else if (seen.gateAfter !== "unlocked") {
     problems.push(
-      "After the upgrade the gate page never said unlocked; its last " +
+      "After the upgrade the gate page never said unlocked. Its last " +
         `answer was ${seen.gateAfter}.`,
     );
   }

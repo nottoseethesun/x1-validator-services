@@ -98,7 +98,7 @@ export async function encryptSecret(
  * @param {string} password  The x1-validator-services password.
  * @returns {Promise<string>} The secret.
  * @throws {Error} When the payload isn't in the format this tool writes,
- *   so no other cipher is ever used; or when GCM's check fails, which
+ *   so no other cipher is ever used. Or when GCM's check fails, which
  *   means a wrong password or a damaged vault.
  */
 export async function decryptSecret(payload, password) {

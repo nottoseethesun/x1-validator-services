@@ -5,8 +5,10 @@
  *
  * - every setting apply changed is reset, newest first, until the
  *   machine is as apply found it
- * - the api key and the saved password are deleted only when the
- *   operator says so, and their folders stay while they do
+ * - the api key and the saved password go together, after one question,
+ *   the key only once the password has gone, and their folders stay
+ *   while they do
+ * - with no password saved, the question names the api key alone
  * - a folder that was there keeps its mode and stays, even /run
  * - nginx.org's keyring that was there stays
  * - nginx and its account stay while nginx is still installed
@@ -28,7 +30,11 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { runApply } from "../src/cli/apply.js";
 import { HTTPS_RULE } from "../src/cli/apply-install.js";
-import { featurePaths, homePath } from "../src/cli/feature-paths.js";
+import {
+  featurePaths,
+  gitHookPathOf,
+  homePath,
+} from "../src/cli/feature-paths.js";
 import { readState } from "../src/cli/state.js";
 import { runUndoApply } from "../src/cli/undo-apply.js";
 import {
@@ -115,7 +121,6 @@ test("undoes everything apply did, newest first, until nothing is left", async (
   );
   const paths = featurePaths();
   const vault = homePath(settings.vaultPath, HOME);
-  const x1consoleDir = homePath(settings.x1consoleDir, HOME);
   const [backup] = targetsNamed(host, "startScriptBackup");
   const repository = ["nginxAptKeyring", "nginxAptSource", "nginxAptPin"]
     .map((name) => targetsNamed(host, name))
@@ -132,7 +137,7 @@ test("undoes everything apply did, newest first, until nothing is left", async (
   assert.deepEqual([state.nginxInstalled, state.nginxUser], [false, false]);
   assert.equal(state.ufwRules.includes(HTTPS_RULE), false);
   for (const filePath of [
-    path.join(x1consoleDir, ".git", "hooks", "post-merge"),
+    gitHookPathOf(settings, HOME),
     backup,
     settings.nginxConfigPath,
     path.dirname(settings.nginxConfigPath),
@@ -153,7 +158,11 @@ test("undoes everything apply did, newest first, until nothing is left", async (
   ]) {
     assert.equal(host.files.has(filePath), false, filePath);
   }
-  assert.equal(asked.length, 2);
+  assert.equal(asked.length, 1);
+  assert.ok(
+    asked[0].startsWith("Delete the api key and the saved password?"),
+    asked[0],
+  );
   for (const folder of [
     path.dirname(settings.keyHandOffPath),
     settings.acmeStatePath,
@@ -245,15 +254,24 @@ test("nginx.org's keyring that was there before apply stays, while the files app
   }
 });
 
-test("keeps the api key and the saved password when told no, with their folders, until a later run", async () => {
+test("keeps the api key and the saved password when told no to the one question, with their folders, until a later run", async () => {
   const { host, settings } = await appliedValidator({}, { savePassword: true });
   const paths = featurePaths();
   const vault = homePath(settings.vaultPath, HOME);
   const credentialFolder = path.dirname(settings.passwordCredentialPath);
-  const { code, lines } = await undoApply(host, settings, { yes: false });
+  const { code, lines, asked } = await undoApply(host, settings, {
+    yes: false,
+  });
   assert.equal(code, 0, lines.join("\n"));
+  assert.equal(asked.length, 1);
   assert.ok(host.files.has(vault));
   assert.ok(host.files.has(settings.passwordCredentialPath));
+  assert.ok(
+    lines.includes(
+      `[undo-apply] Kept, since ${settings.passwordCredentialPath} stays: the change behind "delete the api key from ${vault}".`,
+    ),
+    lines.join("\n"),
+  );
   assert.deepEqual(
     recorded(host).map((parts) => parts.name),
     [
@@ -284,6 +302,58 @@ test("keeps the api key and the saved password when told no, with their folders,
   }
 });
 
+test("with no password saved, it asks about the api key alone", async () => {
+  const { host, settings } = await appliedValidator();
+  const vault = homePath(settings.vaultPath, HOME);
+  const { code, lines, asked } = await undoApply(host, settings);
+  assert.equal(code, 0, lines.join("\n"));
+  assert.equal(asked.length, 1);
+  assert.ok(asked[0].startsWith("Delete the api key? "), asked[0]);
+  assert.equal(host.files.has(vault), false);
+});
+
+test("the api key stays while the saved password couldn't be deleted, and a later run takes both", async () => {
+  const { host, settings } = await appliedValidator({}, { savePassword: true });
+  const vault = homePath(settings.vaultPath, HOME);
+  const removeRootFile = host.removeRootFile;
+  let removalWorks = false;
+  host.removeRootFile = (filePath) => {
+    if (
+      filePath === settings.passwordCredentialPath &&
+      removalWorks === false
+    ) {
+      throw new Error("Operation not permitted");
+    }
+    return removeRootFile(filePath);
+  };
+  const { code, lines } = await undoApply(host, settings);
+  assert.equal(code, 1);
+  assert.ok(host.files.has(settings.passwordCredentialPath));
+  assert.ok(host.files.has(vault));
+  assert.deepEqual(
+    recorded(host).map((parts) => parts.name),
+    [
+      "vaultFolder",
+      "vaultFolder",
+      "vault",
+      "apiKey",
+      "savedPasswordFolder",
+      "savedPassword",
+    ],
+  );
+  assert.ok(
+    lines.includes(
+      `[undo-apply] Kept, since ${settings.passwordCredentialPath} stays: the change behind "delete the api key from ${vault}".`,
+    ),
+    lines.join("\n"),
+  );
+  removalWorks = true;
+  const later = await undoApply(host, settings);
+  assert.equal(later.code, 0, later.lines.join("\n"));
+  assert.equal(host.files.has(settings.passwordCredentialPath), false);
+  assert.equal(host.files.has(vault), false);
+});
+
 test("the dry run says each step, and changes nothing", async () => {
   const { host, settings } = await appliedValidator();
   const before = host.calls.length;
@@ -311,7 +381,7 @@ test("nginx stays masked, and its account stays, while it's still installed, unt
   let purgeWorks = false;
   const { host, state, settings } = await appliedValidator({
     respond: (call) =>
-      call.args?.includes("purge") && !purgeWorks
+      call.args?.includes("purge") && purgeWorks === false
         ? { status: 100, stderr: "E: Could not get lock" }
         : undefined,
   });
@@ -357,7 +427,7 @@ test("a folder stays when the settings moved it, or when others use it", async (
   assert.ok(host.files.has(libexec));
   assert.ok(
     lines.includes(
-      `[undo-apply] ${settings.nginxLogDir} isn't where the settings now put it, so it stays; remove it by hand if apply made it.`,
+      `[undo-apply] ${settings.nginxLogDir} isn't where the settings now put it, so it stays. Remove it by hand if apply made it.`,
     ),
   );
   assert.ok(
@@ -390,8 +460,7 @@ test("after apply --acme-staging with every setting changed, undo-apply removes 
 
 test("a later apply keeps the first one's old values, replaces its own hook and cron line, and undo-apply removes all it made", async () => {
   const { host, state, settings, scriptPath } = await appliedValidator();
-  const x1consoleDir = homePath(settings.x1consoleDir, HOME);
-  const hookPath = path.join(x1consoleDir, ".git", "hooks", "post-merge");
+  const hookPath = gitHookPathOf(settings, HOME);
   await host.sleep(1000);
   host.files.set(scriptPath, fixtureScript());
   host.nodePath = () => "/opt/node-v22/bin/node";
@@ -460,7 +529,7 @@ test("a step that fails stays recorded, and a second undo-apply retries it", asy
   let ufwWorks = false;
   const { host, state, settings } = await appliedValidator({
     respond: (call) =>
-      call.command === "ufw" && call.args[0] === "delete" && !ufwWorks
+      call.command === "ufw" && call.args[0] === "delete" && ufwWorks === false
         ? { status: 1, stderr: "ERROR: Could not delete rule" }
         : undefined,
   });

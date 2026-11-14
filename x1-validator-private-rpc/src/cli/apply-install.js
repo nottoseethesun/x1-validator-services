@@ -70,7 +70,7 @@ function repositoryKey(filePath) {
  * comment, so `ufw allow 443/tcp` would overwrite it.
  * @param {object} host  The host.
  * @returns {{line: string, action: string}|null} The rule as ufw prints
- *   it, and its action; null when there is none.
+ *   it, and its action, or null when there is none.
  */
 export function httpsRuleOf(host) {
   const listed = host.sudo("ufw", ["show", "added"]);
@@ -78,13 +78,13 @@ export function httpsRuleOf(host) {
   for (const line of added.split("\n")) {
     const [command, action, ...rest] = line.trim().split(" ");
     const logged = UFW_LOG_TYPES.includes(rest[0]);
-    const [port, ...tail] = logged ? rest.slice(1) : rest;
+    const [port, ...tail] = logged === true ? rest.slice(1) : rest;
     const sameRule =
       command === "ufw" &&
       UFW_ACTIONS.includes(action) &&
       port === HTTPS_RULE &&
       (tail.length === 0 || tail[0] === "comment");
-    if (sameRule) {
+    if (sameRule === true) {
       return { line: line.trim(), action };
     }
   }
@@ -102,7 +102,7 @@ export function httpsRuleProblem(rule) {
     rule !== undefined &&
     rule !== null &&
     (rule.action === "deny" || rule.action === "reject");
-  return closes
+  return closes === true
     ? `ufw's rule "${rule.line}" closes tcp port 443, which nginx needs. ` +
         "apply won't change your rule. Remove it, or make it allow the " +
         "port, then run apply again."
@@ -116,7 +116,8 @@ export function httpsRuleProblem(rule) {
  */
 export async function installNginx(context) {
   const { host, record, change, facts, settings } = context;
-  if (installedVersion(host, "nginx") !== null) {
+  const installed = installedVersion(host, "nginx");
+  if (installed !== undefined && installed !== null) {
     context.log.info("nginx", "nginx is installed already.");
     return;
   }
@@ -156,7 +157,9 @@ export async function installNginx(context) {
      * first, removes it only after the packages. dpkg holds no module
      * without nginx, so none of the packages was there before.
      */
-    record(accountExisted ? found("nginxAccount") : made("nginxAccount"));
+    record(
+      accountExisted === true ? found("nginxAccount") : made("nginxAccount"),
+    );
     for (const name of NGINX_PACKAGES) {
       record(made(packageKey(name)));
     }
@@ -176,7 +179,7 @@ export async function openFirewall(context) {
   const key = `firewallRule:${HTTPS_RULE}`;
   const rule = httpsRuleOf(host);
   const problem = httpsRuleProblem(rule);
-  if (problem !== null) {
+  if (problem !== undefined && problem !== null) {
     throw new Error(problem);
   }
   if (rule !== undefined && rule !== null) {

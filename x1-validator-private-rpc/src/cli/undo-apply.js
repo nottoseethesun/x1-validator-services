@@ -18,9 +18,12 @@
  *
  * A setting apply found already as it needed it stays as it is. Once
  * every change is undone, the record goes too, with the rest of
- * app-data/. It asks before it deletes the saved password or the api key,
- * since a later apply would then need a new password or give clients a
- * new url. With --dry-run it prints each step and changes nothing.
+ * app-data/. When apply saved the password, the saved password and the
+ * api key go together, after one question that names both. The key goes
+ * only once the password has, so a saved password never outlasts the
+ * key it opens. With no password saved, it asks about the key alone. A
+ * later apply then needs a new password, and gives clients a new url.
+ * With --dry-run it prints each step and changes nothing.
  *
  * It takes back only what apply did. The start script loses just the
  * word apply added, and never gets an old backup copied over a newer
@@ -62,6 +65,22 @@ import {
   writeRecord,
 } from "./what-apply-changed.js";
 
+/** The one question before the saved password and the api key go. */
+const SECRETS_QUESTION =
+  "Delete the api key and the saved password? They go together, so a no " +
+  "keeps both. A later apply then makes a new key under a new password, " +
+  "and every client needs the new url.";
+
+/** The question before the api key goes, when no password was saved. */
+const KEY_QUESTION =
+  "Delete the api key? A later apply makes a new one, and every client " +
+  "then needs the new url.";
+
+/** The question before a saved password goes without its key. */
+const PASSWORD_QUESTION =
+  "Delete the saved password? Without it, nginx stays locked after a " +
+  "restart until unlock.";
+
 /**
  * Removes apply's line from the crontab, keeping every other line.
  * @param {object} host  The host.
@@ -90,8 +109,8 @@ function removeCronLine(host, line) {
 function removeNamedTree(remove, folder, named) {
   if (!named.includes(folder)) {
     return (
-      `${folder} isn't where the settings now put it, so it stays; ` +
-      "remove it by hand if apply made it."
+      `${folder} isn't where the settings now put it, so it stays. ` +
+      "Remove it by hand if apply made it."
     );
   }
   remove(folder);
@@ -111,7 +130,9 @@ function removeFolder(host, folder, removeIfEmpty) {
   }
   removeIfEmpty(folder);
   const stays = host.exists(folder);
-  return stays ? `${folder} holds files apply didn't make, so it stays.` : null;
+  return stays === true
+    ? `${folder} holds files apply didn't make, so it stays.`
+    : null;
 }
 
 /**
@@ -140,7 +161,7 @@ function removeHook(host, hookPath) {
 function removeFlag(host, scriptPath) {
   const original = host.readText(scriptPath);
   const { text, changed } = removePrivateRpc(original, scriptPath);
-  if (changed) {
+  if (changed === true) {
     const mode = host.fileMode(scriptPath);
     host.writeUserFile(scriptPath, text, mode);
   }
@@ -172,7 +193,7 @@ async function removeRootFile(host, name, filePath) {
  */
 function deleteKey(host, vaultPath) {
   const vault = readVault(host, vaultPath);
-  if (vault !== null) {
+  if (vault !== undefined && vault !== null) {
     const rest = withoutSecret(vault, API_KEY_SECRET);
     writeVault(host, vaultPath, rest);
   }
@@ -186,7 +207,7 @@ function deleteKey(host, vaultPath) {
  */
 function removeVault(host, vaultPath) {
   const vault = readVault(host, vaultPath);
-  if (vault === null) {
+  if (vault === undefined || vault === null) {
     return null;
   }
   if (Object.keys(vault.secrets).length > 0) {
@@ -205,7 +226,8 @@ function removeVault(host, vaultPath) {
  * @returns {Promise<string|null>} A note when the package isn't there.
  */
 async function removePackage(host, name) {
-  if (installedVersion(host, name) === null) {
+  const version = installedVersion(host, name);
+  if (version === undefined || version === null) {
     return `${name} isn't installed, so there's nothing to remove.`;
   }
   await purgePackages(host, [name]);
@@ -217,11 +239,11 @@ async function removePackage(host, name) {
  * the package leaves its account behind.
  * @param {object} host  The host.
  * @throws {Error} While nginx is still installed, since its files belong
- *   to that account; the account stays in the record, for the next run.
+ *   to that account. The account stays in the record, for the next run.
  */
 function removeAccount(host) {
   const version = installedVersion(host, "nginx");
-  if (version !== null) {
+  if (version !== undefined && version !== null) {
     throw new Error(
       `nginx ${version} is still installed, so its account stays until it's gone.`,
     );
@@ -237,11 +259,11 @@ function removeAccount(host) {
  * Unmasks nginx.service once nginx is gone.
  * @param {object} host  The host.
  * @throws {Error} While nginx is still installed, since its default site
- *   could then run; the mask stays in the record, for the next run.
+ *   could then run. The mask stays in the record, for the next run.
  */
 function unmaskNginx(host) {
   const version = installedVersion(host, "nginx");
-  if (version !== null) {
+  if (version !== undefined && version !== null) {
     throw new Error(
       `nginx ${version} is still installed, so the mask stays until it's gone.`,
     );
@@ -251,15 +273,16 @@ function unmaskNginx(host) {
 
 /**
  * Lists the step that resets one setting apply changed.
- * @param {object} context  The run.
+ * @param {object} context  The run, with `secretsPaired`: whether the
+ *   saved password and the api key go together.
  * @param {string} key  The setting.
  * @param {import("./what-apply-changed.js").Entry} entry  Its entry.
  * @returns {{what: string, ask?: string, keep?: boolean,
- *   run?: () => (unknown|Promise<unknown>)}} The step; `keep` for a
+ *   run?: () => (unknown|Promise<unknown>)}} The step, with `keep` for a
  *   setting this version of the tool can't reset.
  */
 function resetStep(context, key, entry) {
-  const { host, settings, paths } = context;
+  const { host, settings, paths, secretsPaired } = context;
   const { name, target } = partsOf(key);
   const old = oldValueOf(entry);
   const rootTree = (what, named) => () => ({
@@ -331,13 +354,17 @@ function resetStep(context, key, entry) {
     nginxFileFolder: rootFolder,
     savedPassword: () => ({
       what: `delete the saved password, ${target}`,
-      ask: "Delete the saved password? Without it, nginx stays locked after a restart until unlock.",
+      ask: secretsPaired === true ? SECRETS_QUESTION : PASSWORD_QUESTION,
       run: () => host.removeRootFile(target),
     }),
     savedPasswordFolder: rootFolder,
+    /*-
+     * Paired, the saved password's question covers the key, and heldBy
+     * keeps the key until the password has gone.
+     */
     apiKey: () => ({
       what: `delete the api key from ${target}`,
-      ask: "Delete the api key? A later apply makes a new one, and every client then needs the new url.",
+      ...(secretsPaired === true ? {} : { ask: KEY_QUESTION }),
       run: () => deleteKey(host, target),
     }),
     vault: () => ({
@@ -378,7 +405,7 @@ function resetStep(context, key, entry) {
   const make = new Map(Object.entries(steps)).get(name);
   const resettable =
     old === false || (name === "nginxServiceMasked" && old === true);
-  return make === undefined || make === null || !resettable
+  return make === undefined || make === null || resettable === false
     ? {
         what: `${key}, a change this version of the tool can't undo`,
         keep: true,
@@ -387,22 +414,25 @@ function resetStep(context, key, entry) {
 }
 
 /**
- * Finds a change still in the record whose target sits in this one's,
- * such as the api key in the vault, or the saved password in its
- * folder, so this one waits for it.
+ * Finds a change still in the record that this one waits for: one whose
+ * target sits in this one's, such as the api key in the vault, or the
+ * saved password in its folder. The api key also waits for the saved
+ * password, so a saved password never outlasts the key it opens.
  * @param {string} key  The setting.
  * @param {Map<string, object>} left  The changes that stay in the record.
  * @returns {string|null} What holds it back, or null.
  */
 function heldBy(key, left) {
-  const { target } = partsOf(key);
-  const inner = [...left.keys()]
-    .map((other) => partsOf(other).target)
+  const { name, target } = partsOf(key);
+  const holder = [...left.keys()]
+    .map((other) => partsOf(other))
     .find(
       (other) =>
-        target !== "" && (other === target || other.startsWith(`${target}/`)),
+        (target !== "" &&
+          (other.target === target || other.target.startsWith(`${target}/`))) ||
+        (name === "apiKey" && other.name === "savedPassword"),
     );
-  return inner === undefined || inner === null ? null : inner;
+  return holder === undefined || holder === null ? null : holder.target;
 }
 
 /**
@@ -418,7 +448,7 @@ async function runStep(run, step) {
     return "kept";
   }
   const asks = step.ask !== undefined && step.ask !== null;
-  if (asks && !(await prompts.ask(step.ask))) {
+  if (asks === true && !(await prompts.ask(step.ask))) {
     log.info("undo-apply", `Kept, as asked: the change behind "${step.what}".`);
     return "kept";
   }
@@ -447,7 +477,7 @@ export async function runUndoApply(run) {
   const recordPath = paths.whatApplyChangedPath;
   const record = readRecord(host, recordPath) ?? new Map();
   const newestFirst = [...record]
-    .filter(([, entry]) => entry.applyChangedThisFromItsPreviousValue)
+    .filter(([, entry]) => entry.applyChangedThisFromItsPreviousValue === true)
     .reverse();
   if (newestFirst.length === 0) {
     log.info(
@@ -456,9 +486,14 @@ export async function runUndoApply(run) {
     );
     return 0;
   }
+  const names = new Set(newestFirst.map(([key]) => partsOf(key).name));
+  const context = {
+    ...run,
+    secretsPaired: names.has("savedPassword") && names.has("apiKey"),
+  };
   if (options.dryRun === true) {
     for (const [key, entry] of newestFirst) {
-      const step = resetStep(run, key, entry);
+      const step = resetStep(context, key, entry);
       log.info(
         "undo-apply",
         step.keep === true ? `Would keep ${step.what}.` : `Would ${step.what}.`,
@@ -469,19 +504,22 @@ export async function runUndoApply(run) {
   const left = new Map();
   let failed = false;
   for (const [key, entry] of newestFirst) {
-    const step = resetStep(run, key, entry);
+    const step = resetStep(context, key, entry);
     const holder = heldBy(key, left);
-    if (holder !== null) {
+    const held = holder !== undefined && holder !== null;
+    if (held === true) {
       log.info(
         "undo-apply",
         `Kept, since ${holder} stays: the change behind "${step.what}".`,
       );
     }
-    const outcome = holder === null ? await runStep(run, step) : "kept";
+    const outcome = held === true ? "kept" : await runStep(run, step);
     if (outcome !== "done") {
       left.set(key, entry);
     }
-    failed = failed || outcome === "failed";
+    if (outcome === "failed") {
+      failed = true;
+    }
   }
   if (left.size === 0) {
     host.removeUserTree(path.dirname(recordPath));
@@ -491,9 +529,9 @@ export async function runUndoApply(run) {
   const oldestFirst = new Map([...left].reverse());
   writeRecord(host, recordPath, oldestFirst);
   const state = readState(host, paths.statePath);
-  if (state !== null) {
+  if (state !== undefined && state !== null) {
     state.setup = null;
     writeState(host, paths.statePath, state);
   }
-  return failed ? 1 : 0;
+  return failed === true ? 1 : 0;
 }

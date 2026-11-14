@@ -11,7 +11,7 @@
  * with `src/`, `test/` and, when it has standalone tools, `util/`. Every
  * list below is built from FEATURES, so a new feature joins every gate by
  * being named there. A feature's entry points are the files directly in
- * its `src/` and its `util/` tools; the modules they load sit in folders
+ * its `src/` and its `util/` tools. The modules they load sit in folders
  * under `src/`.
  */
 

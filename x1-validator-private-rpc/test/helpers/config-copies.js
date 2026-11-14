@@ -76,7 +76,7 @@ function changedValue(name, value) {
   if (typeof value === "number") {
     return value + 1;
   }
-  throw new Error(`changedValue can't change ${name} yet; teach it how.`);
+  throw new Error(`changedValue can't change ${name} yet. Teach it how.`);
 }
 
 /**

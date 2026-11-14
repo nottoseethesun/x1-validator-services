@@ -6,19 +6,26 @@
  * drop-in and the logrotate rule, each only when it's missing or
  * differs, and refuses to write over a file apply didn't write. Then it
  * reloads systemd and has nginx test the configuration, which also
- * fails when the public address isn't on the machine.
+ * fails when the public address isn't on the machine. The fourth stage
+ * already brings an existing drop-in in line with the saved password,
+ * through matchDropIn, so a stop between the two stages leaves systemd
+ * expecting nothing that's gone.
  *
  * nginx then starts with the key, handed over as unlock does, unless it
- * runs unlocked already with nothing changed. The stage waits for the
- * certificate, and checks the whole request path from the server: the
- * gate page says unlocked, the keyed path reaches the rpc, and a path
- * without the key gets a 403. Before the first start it records the
- * certificates' folders that nginx is about to make, and the key's
- * hand-off folder, so undo-apply can remove them.
+ * runs unlocked already with nothing changed and the key isn't new. The
+ * gate page can't tell which key nginx holds, so a key the fourth stage
+ * made always goes to nginx. The stage waits for the certificate, and
+ * checks the whole request path from the server: the gate page says
+ * unlocked, the keyed path reaches the rpc, and a path without the key
+ * gets a 403. Before the first start it records the key's hand-off
+ * folder, so undo-apply can remove it, and the certificates' folders.
+ * `nginx -t` makes those first, so apply records them as found. Purging
+ * nginx removes them at the shipped paths.
  */
 
 import path from "node:path";
 import { mustSucceed } from "../lib/command-result.js";
+import { foldersToMake } from "../lib/folders-to-make.js";
 import { NGINX_UNIT } from "../lib/nginx-org.js";
 import {
   renderDropIn,
@@ -34,12 +41,27 @@ import {
   waitForUnlocked,
 } from "./nginx-gate.js";
 import { renderNginxConfig } from "./render-nginx.js";
-import {
-  changedByApply,
-  foldersToMake,
-  found,
-  made,
-} from "./what-apply-changed.js";
+import { changedByApply, found, made } from "./what-apply-changed.js";
+
+/**
+ * Describes the systemd drop-in for nginx.service: a start through the
+ * start wrapper, and the saved password when there is one.
+ * @param {object} settings  The tool's settings.
+ * @param {boolean} saved  Whether the password is saved.
+ * @returns {{name: string, path: string, text: string, mode: string}}
+ */
+function dropInFile(settings, saved) {
+  return {
+    name: "systemdDropInFile",
+    path: settings.systemdDropInPath,
+    text: renderDropIn({
+      startWrapperPath: settings.startWrapperPath,
+      passwordCredentialPath:
+        saved === true ? settings.passwordCredentialPath : null,
+    }),
+    mode: "0644",
+  };
+}
 
 /**
  * Lists the files the stage writes, with their settings' names, their
@@ -85,15 +107,7 @@ function nginxFiles(context, saved) {
       }),
       mode: "0755",
     },
-    {
-      name: "systemdDropInFile",
-      path: settings.systemdDropInPath,
-      text: renderDropIn({
-        startWrapperPath: settings.startWrapperPath,
-        passwordCredentialPath: saved ? settings.passwordCredentialPath : null,
-      }),
-      mode: "0644",
-    },
+    dropInFile(settings, saved),
     {
       name: "logrotateRuleFile",
       path: settings.logrotateRulePath,
@@ -140,6 +154,29 @@ async function writeFile(context, file) {
 }
 
 /**
+ * Brings the systemd drop-in in line with whether the password is saved,
+ * and has systemd read it again, when an earlier run wrote it. systemd
+ * reads a drop-in only then, or at boot. The fourth stage calls this as
+ * it saves the password, once the file is there, and as it removes it,
+ * before the file goes. So apply never stops while systemd expects a
+ * saved password that's gone. With no drop-in yet, nginx has never
+ * started through the tool, and this stage writes one.
+ * @param {object} context  The run.
+ * @param {boolean} saved  Whether the password is saved.
+ * @returns {Promise<void>}
+ */
+export async function matchDropIn(context, saved) {
+  const { host, settings } = context;
+  if (!host.exists(settings.systemdDropInPath)) {
+    return;
+  }
+  const wrote = await writeFile(context, dropInFile(settings, saved));
+  if (wrote === true) {
+    systemctl(host, ["daemon-reload"]);
+  }
+}
+
+/**
  * Makes nginx's log folder when it's missing, open to root and nginx's
  * group alone. So no other account can read a log, whatever the log
  * file's own mode, while nginx's workers can still reopen their logs
@@ -162,18 +199,19 @@ async function makeLogFolder(context) {
 }
 
 /**
- * Records each folder of nginx's certificates, before nginx makes the
- * missing ones, so undo-apply removes what nginx makes there, and never
- * a folder that was there before. Root may own a folder's parent, so
- * root looks.
+ * Records each folder of nginx's certificates. `nginx -t` has just made
+ * any that were missing, so each is recorded as found, and undo-apply
+ * leaves it. Purging nginx removes them at the shipped paths. Root may
+ * own a folder's parent, so root looks.
  * @param {object} context  The run.
  */
 function recordCertificateFolders(context) {
   const { host, settings, record, staging } = context;
   const production = ["acmeStateFolder", settings.acmeStatePath];
-  const folders = staging
-    ? [production, ["acmeStagingStateFolder", settings.acmeStagingStatePath]]
-    : [production];
+  const folders =
+    staging === true
+      ? [production, ["acmeStagingStateFolder", settings.acmeStagingStatePath]]
+      : [production];
   for (const [name, folder] of folders) {
     const looked = host.sudo("test", ["-e", folder]);
     const key = `${name}:${folder}`;
@@ -191,7 +229,7 @@ function recordHandOffFolder(context) {
   const folder = path.dirname(settings.keyHandOffPath);
   const key = `keyHandOffFolder:${folder}`;
   const there = host.exists(folder);
-  record(there ? found(key) : made(key));
+  record(there === true ? found(key) : made(key));
 }
 
 /**
@@ -207,7 +245,10 @@ export async function configureNginx(context) {
   const { host, settings, facts, record, change, log } = context;
   let changed = false;
   for (const file of nginxFiles(context, context.saved)) {
-    changed = (await writeFile(context, file)) || changed;
+    const wrote = await writeFile(context, file);
+    if (wrote === true) {
+      changed = true;
+    }
   }
   await makeLogFolder(context);
   const setup = {
@@ -227,7 +268,7 @@ export async function configureNginx(context) {
     .stdout.trim();
   const unlocked =
     running === "active" && (await readGate(host, target)) === "unlocked";
-  if (!changed && unlocked) {
+  if (changed === false && unlocked === true && context.keyIsNew === false) {
     log.info("nginx", "nginx runs unlocked, with nothing changed.");
     return;
   }
@@ -254,6 +295,7 @@ export async function configureNginx(context) {
       });
       recordHandOffFolder(context);
       handKeyToNginx(host, settings.keyHandOffPath, context.key);
+      context.keyWaitsForNginx = false;
       log.info("nginx", "Waiting for the certificate.");
       const gate = await waitForUnlocked(
         host,

@@ -4,7 +4,7 @@ x1-validator-private-rpc needs one dns record, which you add by hand at your dns
 
 ## What You Are Setting Up
 
-You are adding one dns record. It is an `A` record that points a new name under a domain you own, such as `x1-rpc.example.com`, at the validator's public ipv4 address. nginx on the validator uses that name to get a tls certificate, and your clients use it in the rpc url.
+You are adding one dns record. It is an `A` record that points a new name under a domain you own, such as `x1-rpc.example.com`, at the validator's public ipv4 address. `nginx` on the validator uses that name to get a tls certificate, and your clients use it in the rpc url.
 
 dns maps names to addresses. It never sees url paths. So a path such as `https://example.com/x1-rpc` cannot point at the validator. Whatever web server answers for `example.com` today would have to forward that path to the validator. Most shared hosting cannot do that, and it would put that host in the middle of every rpc request. A subdomain is a separate name instead. Adding it changes nothing about the domain's website, its mail or any other record.
 
@@ -13,7 +13,7 @@ dns maps names to addresses. It never sees url paths. So a path such as `https:/
 ### Choose the Subdomain
 
 - Any label works: letters, digits and hyphens, at most 63 characters, not starting or ending with a hyphen. This guide uses `x1-rpc`.
-- The name will become public. Certificate authorities record every certificate they issue in public certificate transparency logs, which anyone can search by domain. Scanners will find the name, and nginx will answer them with a 403. The key protects the rpc, not the name, so an obscure name adds nothing.
+- The name will become public. Certificate authorities record every certificate they issue in public certificate transparency logs, which anyone can search by domain. Scanners will find the name, and `nginx` will answer them with a 403. The key protects the rpc, not the name, so an obscure name adds nothing.
 - Make sure the name is not already in use. Look it up first, as in [Verifying the Record](#verifying-the-record).
 
 ### Find the Server's Public Address
@@ -21,7 +21,7 @@ dns maps names to addresses. It never sees url paths. So a path such as `https:/
 - Your data center's control panel shows the server's public ipv4 address.
 - On the server, `ip -4 addr` shows the same address on its main network interface. If it shows only a private address, the server sits behind address translation, which the tool doesn't support.
 - `apply` checks the record against the `publicIp` setting when you set it, and otherwise against the address the X1 network sees for the validator. It stops when the record names another address.
-- Use only the ipv4 address. Do not add an `AAAA` (ipv6) record: nginx listens on the ipv4 address alone.
+- Use only the ipv4 address. Do not add an `AAAA` (ipv6) record: `nginx` listens on the ipv4 address alone.
 
 ### Find Who Hosts Your Dns
 
@@ -40,7 +40,7 @@ Look through the zone's existing records for these:
 - **Any record with the same name.** A name that has a `CNAME` can have no other record. Remove or rename the old one, or choose another label.
 - **A wildcard (`*`).** A wildcard answers for every name that has no record of its own, so a lookup of your new name may succeed before you add anything. Your own record overrides the wildcard for that name. Check the address a lookup returns, not only whether it returns one.
 - **`CAA` records.** They list the certificate authorities allowed to issue certificates for the domain. If there are any, one must allow `letsencrypt.org`, the authority the tool uses. If there are none, any authority may issue, and nothing needs adding.
-- **An `AAAA` record** for the same name, or a wildcard one. nginx listens on the ipv4 address alone, so clients that follow an `AAAA` record never reach it, even when the record names your server. Remove it.
+- **An `AAAA` record** for the same name, or a wildcard one. `nginx` listens on the ipv4 address alone, so clients that follow an `AAAA` record never reach it, even when the record names your server. Remove it.
 
 ### Back Up the Zone
 
@@ -163,13 +163,13 @@ dig +short x1-rpc.example.com @ns1.dns-provider.example
 
 ## Certificates and the New Hostname
 
-Once the name resolves to the server and port 443 is open, nginx's ACME module gets a certificate by itself, within seconds of nginx's first start. It proves control of the name through port 443 alone, so port 80 stays closed. It renews the certificate before it expires. For that:
+Once the name resolves to the server and port 443 is open, `nginx`'s ACME module gets a certificate by itself, within seconds of `nginx`'s first start. It proves control of the name through port 443 alone, so port 80 stays closed. It renews the certificate before it expires. For that:
 
 - The name must resolve to this server, with no stray `AAAA` record.
-- Port 443 must reach nginx from the internet.
+- Port 443 must reach `nginx` from the internet.
 - `CAA` records, if any, must allow the certificate authority.
 
-Fix the dns before starting nginx with the site. Certificate authorities limit failed attempts. nginx logs the module's progress to `/var/log/x1-validator-private-rpc/nginx-error.log`.
+Fix the dns before starting `nginx` with the site. Certificate authorities limit failed attempts. `nginx` logs the module's progress to `/var/log/x1-validator-private-rpc/nginx-error.log`.
 
 ## Changing or Removing the Record
 
@@ -185,6 +185,6 @@ Fix the dns before starting nginx with the site. Certificate authorities limit f
 | The lookup returns another address | A wildcard, an old record, or a full name without its final dot in a raw zone | Search the zone for the name and for `*`, then fix the line |
 | The panel refuses the record | A `CNAME` with the same name, a hostname as an `A` value, or invalid characters | Remove the conflict, and put the address in the value field |
 | Works on one machine, not another | Caching | Wait for the TTL, and compare with the provider's name server |
-| nginx gets no certificate | The name resolves elsewhere, port 443 is closed, `CAA` leaves the authority out, or a stray `AAAA` | Check each one, then read nginx's error log |
-| The browser warns about the certificate | nginx has no certificate yet, the certificate is still from Let's Encrypt's staging service, or the configuration names another host | Check the hostname in the configuration; after staging, run `apply` without `--acme-staging` |
+| `nginx` gets no certificate | The name resolves elsewhere, port 443 is closed, `CAA` leaves the authority out, or a stray `AAAA` | Check each one, then read `nginx`'s error log |
+| The browser warns about the certificate | `nginx` has no certificate yet, the certificate is still from Let's Encrypt's staging service, or the configuration names another host | Check the hostname in the configuration. After staging, run `apply` without `--acme-staging` |
 | The whole domain stopped working after a raw edit | A syntax error, or a serial that did not go up | Restore the backup, then add the one line again with care |

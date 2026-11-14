@@ -1,6 +1,7 @@
 #!/bin/sh
 # x1-validator-private-rpc: start nginx with the rpc api key in its
-# environment, never in a file. Written by the tool; systemd runs it as root.
+# environment, never in a file. Written by the tool, and systemd runs it as
+# root.
 set -u
 
 VALIDATOR_USER='VALIDATOR_USER'
@@ -27,7 +28,7 @@ case "$key" in
 esac
 if [ "${#key}" -ne 64 ]; then
     key=""
-    echo "x1-validator-private-rpc: no usable api key; nginx starts locked and answers 403" >&2
+    echo "x1-validator-private-rpc: no usable api key, so nginx starts locked and answers 403" >&2
 fi
 
 export X1_RPC_KEY="$key"

@@ -5,22 +5,34 @@
  * vault yet, it makes one, in the format src/lib/api-key.js gives, and
  * stores it encrypted with the x1-validator-services password: a new
  * one, typed twice, or the existing one when the vault already holds
- * other secrets. An existing key is kept; it only asks for the password
- * to read it, since nginx needs the key at its start.
+ * other secrets. An existing key is kept. Then the stage only asks for
+ * the password to read it, since nginx needs the key at its start.
  *
  * Then it offers to save the password with systemd's encrypted
  * credentials, so nginx unlocks itself after a restart, showing first
  * what systemd said about a TPM2 chip and what that means. The question
- * is asked even with --yes, which skips only confirmations. It makes the
- * saved password's folder only when the folder is missing, so a folder
- * that was there keeps its own mode.
+ * is asked even with --yes, which skips only confirmations. A password
+ * saved for an earlier key can't open a new one. So after making a key,
+ * the stage asks again, and writes the new password over the old one,
+ * or removes the old one on a no. It makes the saved password's folder
+ * only when the folder is missing, so a folder that was there keeps its
+ * own mode. When an earlier run wrote nginx's systemd drop-in, the stage
+ * brings it in line with the saved password at once, so apply can stop
+ * after this stage without systemd expecting a file that's gone. Before
+ * it asks about a saved password that can't open the vault's newest key,
+ * it writes that into the tool's state. So a run that ends before the
+ * answer leaves the next run asking again, not taking the old password
+ * as saved.
  */
 
 import path from "node:path";
 import { makeApiKey } from "../lib/api-key.js";
 import { mustSucceed } from "../lib/command-result.js";
+import { foldersToMake } from "../lib/folders-to-make.js";
 import { PASSWORD_CREDENTIAL } from "../lib/render-host-files.js";
+import { matchDropIn } from "./apply-nginx.js";
 import { homePath } from "./feature-paths.js";
+import { writeState } from "./state.js";
 import {
   API_KEY_SECRET,
   decryptSecret,
@@ -31,11 +43,12 @@ import {
   withSecret,
   writeVault,
 } from "./vault.js";
-import { foldersToMake, found, made } from "./what-apply-changed.js";
+import { found, made } from "./what-apply-changed.js";
 
 /**
  * Explains systemd's answer about a TPM2 chip, for the save question.
- * @param {string} answer  `systemd-creds has-tpm2`'s output.
+ * @param {string} answer  The output of `has-tpm2`, from `systemd-analyze`
+ *   or, on an older systemd, from `systemd-creds`.
  * @returns {string}
  */
 export function explainTpm2(answer) {
@@ -67,7 +80,8 @@ export function explainTpm2(answer) {
  * @param {object} prompts  The run's prompts.
  * @param {object} payload  A secret the password must decrypt.
  * @returns {Promise<{password: string, plain: string}>}
- * @throws {Error} When the password is wrong.
+ * @throws {Error} When the password is wrong, so the caller can count
+ *   the try and ask again.
  */
 async function tryPassword(prompts, payload) {
   const password = await prompts.password("x1-validator-services password: ");
@@ -149,8 +163,11 @@ async function storeNewKey(context, vault, vaultPath) {
     record(made(`vaultFolder:${folder}`));
   }
   writeVault(context.host, vaultPath, updated);
+  // nginx lacks this key until the fifth stage hands it over.
+  context.keyWaitsForNginx = true;
   const vaultKey = `vault:${vaultPath}`;
-  record(vault === null ? made(vaultKey) : found(vaultKey));
+  const vaultWasThere = vault !== undefined && vault !== null;
+  record(vaultWasThere === true ? found(vaultKey) : made(vaultKey));
   record(made(`apiKey:${vaultPath}`));
   return { key, password };
 }
@@ -171,12 +188,14 @@ async function readStoredKey(context, stored, vaultPath) {
 }
 
 /**
- * Saves the password with systemd's encrypted credentials. Root looks
- * for the folder, since a parent may be root's alone.
+ * Saves the password with systemd's encrypted credentials, then has an
+ * existing drop-in name it, so systemd loads it at nginx's next start.
+ * Root looks for the folder, since a parent may be root's alone.
  * @param {object} context  The run.
  * @param {string} password  The password.
+ * @returns {Promise<void>}
  */
-function savePassword(context, password) {
+async function savePassword(context, password) {
   const { host, settings, record } = context;
   const target = settings.passwordCredentialPath;
   const folder = path.dirname(target);
@@ -193,43 +212,83 @@ function savePassword(context, password) {
   );
   mustSucceed(encrypted, `Saving the password to ${target}`);
   record(made(`savedPassword:${target}`));
+  await matchDropIn(context, true);
+}
+
+/**
+ * Removes a saved password that opens an earlier key, not the new one.
+ * An existing drop-in stops naming it first, and systemd reads the
+ * drop-in again, so no start of nginx looks for the file once it's gone.
+ * @param {object} context  The run.
+ * @returns {Promise<void>}
+ */
+async function removeOldPassword(context) {
+  const { host, settings, record, log } = context;
+  const target = settings.passwordCredentialPath;
+  await matchDropIn(context, false);
+  record({ key: `savedPassword:${target}`, oldValue: true, newValue: false });
+  host.removeRootFile(target);
+  log.info("key", `Removed the old saved password, ${target}.`);
 }
 
 /**
  * Runs the stage.
  * @param {object} context  The run.
- * @returns {Promise<{key: string|null, saved: boolean}>} The api key,
- *   null in a dry run; and whether the password is saved.
+ * @returns {Promise<{key: string|null, saved: boolean, keyIsNew: boolean}>}
+ *   The api key, or null in a dry run, whether the password is saved, and
+ *   whether this run made the key.
  */
 export async function setUpKey(context) {
-  const { host, settings, prompts, facts, log, record } = context;
+  const { host, settings, paths, prompts, facts, log, record, state } = context;
   const homeDir = host.homeDir();
   const vaultPath = homePath(settings.vaultPath, homeDir);
   // Root looks, since the saved password's folder is root's alone.
   const looked = host.sudo("test", ["-e", settings.passwordCredentialPath]);
   const alreadySaved = looked.status === 0;
-  if (context.dryRun) {
+  if (context.dryRun === true) {
     log.info("key", `Would read or make the api key in ${vaultPath}.`);
-    return { key: null, saved: alreadySaved };
+    return { key: null, saved: alreadySaved, keyIsNew: false };
   }
   const vault = readVault(host, vaultPath);
   const stored = secretOf(vault, API_KEY_SECRET);
+  const keyIsNew = stored === undefined || stored === null;
   const { key, password } =
-    stored === undefined || stored === null
+    keyIsNew === true
       ? await storeNewKey(context, vault, vaultPath)
       : await readStoredKey(context, stored, vaultPath);
   log.hide(key);
-  if (alreadySaved) {
+  const stale =
+    alreadySaved === true &&
+    (keyIsNew === true || state.savedPasswordStale === true);
+  if (alreadySaved === true && stale === false) {
     log.info("key", "The password is saved already.");
     record(found(`savedPassword:${settings.passwordCredentialPath}`));
-    return { key, saved: true };
+    return { key, saved: true, keyIsNew };
+  }
+  if (stale === true) {
+    /*-
+     * Written now, before the question, so a run that ends before it's
+     * answered leaves apply knowing there's no usable saved password.
+     */
+    state.savedPasswordStale = true;
+    writeState(host, paths.statePath, state);
+    log.info(
+      "key",
+      "The saved password is for the old key, and can't open this new one.",
+    );
   }
   log.info("key", explainTpm2(facts.tpm2));
   const save = await prompts.ask(
     "Save the password, so nginx unlocks itself after a restart?",
   );
-  if (save) {
-    savePassword(context, password);
+  if (save === true) {
+    await savePassword(context, password);
+  } else if (alreadySaved === true) {
+    await removeOldPassword(context);
   }
-  return { key, saved: save };
+  if (state.savedPasswordStale === true) {
+    state.savedPasswordStale = false;
+    writeState(host, paths.statePath, state);
+  }
+  return { key, saved: save, keyIsNew };
 }

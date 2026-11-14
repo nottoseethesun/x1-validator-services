@@ -185,15 +185,20 @@ function judgeCoverage(root, lcovPath) {
  * @returns {import("./_run-stages.js").StageResult[]}
  */
 function runTests(root, { coverage }) {
-  const files = coverage ? listTestFiles(root) : listFeatureTestFiles(root);
+  const files =
+    coverage === true ? listTestFiles(root) : listFeatureTestFiles(root);
   const { configValues, others } = splitConfigValueTests(files);
   const lcovPath = path.join(root, REPORT_DIR, "lcov.info");
   fs.rmSync(lcovPath, { force: true });
   const results = [
     runTestGroup("Tests (shipped settings)", configValues, []),
-    runTestGroup("Tests", others, coverage ? coverageOptions(lcovPath) : []),
+    runTestGroup(
+      "Tests",
+      others,
+      coverage === true ? coverageOptions(lcovPath) : [],
+    ),
   ];
-  if (coverage) {
+  if (coverage === true) {
     results.push(judgeCoverage(root, lcovPath));
   }
   return results;
@@ -222,8 +227,9 @@ function saveFullAudit(root) {
 function main() {
   scriptProgram(
     "scripts/check.js",
-    "Runs the gate: on Node.js 22.13 or newer, every lint, format, security, " +
-      "audit, test and coverage check; on older versions, the features' tests.",
+    "Runs the gate. On Node.js 22.13 or newer it runs every lint, format, " +
+      "security, audit, test and coverage check. On older versions it runs " +
+      "the features' tests.",
     ["0  every check passed", "1  at least one check failed"],
   ).parse();
   const root = projectRoot();

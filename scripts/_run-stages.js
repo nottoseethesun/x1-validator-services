@@ -3,7 +3,7 @@
  * @description
  * Runs a list of gate stages one after another and reports on all of
  * them. Every stage runs even after one fails, so a single run shows
- * every problem; stopping at the first would take a run per problem. The
+ * every problem. Stopping at the first would take a run per problem. The
  * summary at the end lists each stage with its result.
  */
 
@@ -36,9 +36,11 @@ export function runStages(stages) {
 export function printSummary(results) {
   console.log("\n── Summary ──");
   for (const result of results) {
-    console.log(`${result.passed ? "PASS" : "FAIL"}  ${result.name}`);
+    console.log(`${result.passed === true ? "PASS" : "FAIL"}  ${result.name}`);
   }
-  const allPassed = results.every((result) => result.passed);
-  console.log(allPassed ? "\nAll checks passed." : "\nSome checks failed.");
+  const allPassed = results.every((result) => result.passed === true);
+  console.log(
+    allPassed === true ? "\nAll checks passed." : "\nSome checks failed.",
+  );
   return allPassed;
 }

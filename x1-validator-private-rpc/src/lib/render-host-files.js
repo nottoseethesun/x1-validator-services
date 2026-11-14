@@ -5,14 +5,14 @@
  * nginx's configuration: nginx.org's apt source and pin, the start
  * wrapper systemd runs to start nginx, the systemd drop-in that points
  * nginx.service at the wrapper, and the logrotate rule for nginx's logs.
- * Every function is pure; the caller writes the text where it belongs.
+ * Every function is pure. The caller writes the text where it belongs.
  *
  * The wrapper starts nginx with the api key in its environment, never in
- * a file. It takes the key from the memory-only file that `unlock` left a
- * moment before, and deletes that file. Or, with a saved password, it
- * decrypts the key as the validator's account. It passes on only a
- * well-formed key, in the format src/lib/api-key.js gives, so a bad one
- * leaves nginx locked rather than unprotected.
+ * a file. It takes the key from the memory-only file that apply or
+ * `unlock` left a moment before, and deletes that file. Or, with a saved
+ * password, it decrypts the key as the validator's account. It passes on
+ * only a well-formed key, in the format src/lib/api-key.js gives, so a
+ * bad one leaves nginx locked rather than unprotected.
  */
 
 import { API_KEY_HEX_DIGITS } from "./api-key.js";
@@ -83,7 +83,8 @@ export function renderAptPin() {
 export function renderStartWrapper(values) {
   return `#!/bin/sh
 # x1-validator-private-rpc: start nginx with the rpc api key in its
-# environment, never in a file. Written by the tool; systemd runs it as root.
+# environment, never in a file. Written by the tool, and systemd runs it as
+# root.
 set -u
 
 VALIDATOR_USER=${shellQuote(values.validatorUser)}
@@ -110,7 +111,7 @@ case "$key" in
 esac
 if [ "\${#key}" -ne ${API_KEY_HEX_DIGITS} ]; then
     key=""
-    echo "x1-validator-private-rpc: no usable api key; nginx starts locked and answers 403" >&2
+    echo "x1-validator-private-rpc: no usable api key, so nginx starts locked and answers 403" >&2
 fi
 
 export X1_RPC_KEY="$key"
@@ -135,7 +136,7 @@ export function renderDropIn({ startWrapperPath, passwordCredentialPath }) {
     "ExecStart=",
     `ExecStart=${startWrapperPath}`,
   ];
-  if (passwordCredentialPath !== null) {
+  if (passwordCredentialPath !== undefined && passwordCredentialPath !== null) {
     lines.push(
       "# Only when the password is saved: systemd decrypts it into a memory-only",
       "# folder that only this service can read.",

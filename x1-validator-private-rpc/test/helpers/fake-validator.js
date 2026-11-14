@@ -55,7 +55,7 @@ const COLONS = PINNED_FINGERPRINTS.map(
  */
 function userAnswer(line, state) {
   if (line === "getent passwd nginx") {
-    return state.nginxUser
+    return state.nginxUser === true
       ? { stdout: "nginx:x:101:101::/nonexistent" }
       : { status: 2 };
   }
@@ -67,15 +67,15 @@ function userAnswer(line, state) {
 }
 
 /**
- * Plays an apt install: the first one installs nginx and creates its
- * user; a later one upgrades nginx, handing over to a new main process.
+ * Plays an apt install. The first one installs nginx and creates its
+ * user. A later one upgrades nginx, handing over to a new main process.
  * @param {object} call  The command.
  * @param {object} state  The fake validator's state.
  * @param {Map<string, string>} files  The fake's files.
  */
 function playInstall(call, state, files) {
-  if (state.installed !== null) {
-    if (!state.keepOldMain) {
+  if (state.installed !== undefined && state.installed !== null) {
+    if (state.keepOldMain === false) {
       files.delete(`/proc/${state.mainPid}`);
     }
     state.mainPid = state.upgradedPid;
@@ -98,7 +98,7 @@ function commonAnswer(call, state, files) {
     return { stdout: "systemd 255 (255.4-1ubuntu8)\n" };
   }
   if (call.command === "dpkg-query") {
-    return state.installed === null
+    return state.installed === undefined || state.installed === null
       ? { status: 1 }
       : { stdout: `install ok installed ${state.installed}` };
   }

@@ -139,7 +139,7 @@ export default [
   {
     /*-
      * The njs modules run inside nginx, not Node.js, so Node.js's version
-     * rules don't apply; njs supplies its own globals.
+     * rules don't apply. njs supplies its own globals.
      */
     files: INSTALLED_GLOBS,
     languageOptions: {

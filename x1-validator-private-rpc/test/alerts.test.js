@@ -4,8 +4,8 @@
  * Tests which alerts ensure sends:
  *
  * - a check that turns bad alerts once
- * - the public rpc repeats after the reminder interval, the certificate
- *   daily, and nginx's outages not at all
+ * - the public rpc and the certificate repeat after their reminder
+ *   intervals, and nginx's outages not at all
  * - a check that turns good sends a recovery notice
  * - an unknown verdict keeps the last state
  * - the flag's restoring sends a notice of its own
@@ -27,8 +27,8 @@ const MINUTE_MS = 60 * 1000;
 const PREFIX = "x1-validator-private-rpc on x1-rpc.example.com:";
 
 /**
- * Runs the decision for one check's verdict, with the reminder interval
- * changed from its shipped value, so a repeat at the shipped one would
+ * Runs the decision for one check's verdict, with the reminder intervals
+ * changed from their shipped values, so a repeat at a shipped one would
  * show.
  * @param {object} check  The check.
  * @param {object} last  The last state.
@@ -44,6 +44,7 @@ function decide(check, last, now, flagRestored = false) {
     now,
     hostname: "x1-rpc.example.com",
     reminderMinutes: changed.exposedReminderMinutes,
+    certificateReminderHours: changed.certificateReminderHours,
     flagRestored,
   });
 }
@@ -84,7 +85,9 @@ test("nginx's outage alerts once and doesn't repeat; its end sends a recovery no
   assert.deepEqual(decide(up, recovered.next, 1001 * MINUTE_MS).messages, []);
 });
 
-test("the certificate repeats daily; an unknown verdict keeps the last state", () => {
+test("the certificate repeats as often as the settings say, and an unknown verdict keeps the last state", () => {
+  const { changed } = shippedAndChangedSettings();
+  const repeatMs = changed.certificateReminderHours * 60 * MINUTE_MS;
   const expiring = {
     name: "certificate",
     status: "problem",
@@ -92,13 +95,10 @@ test("the certificate repeats daily; an unknown verdict keeps the last state", (
   };
   const first = decide(expiring, emptyAlertState(), 0);
   assert.equal(
-    decide(expiring, first.next, 23 * 60 * MINUTE_MS).messages.length,
+    decide(expiring, first.next, repeatMs - MINUTE_MS).messages.length,
     0,
   );
-  assert.equal(
-    decide(expiring, first.next, 24 * 60 * MINUTE_MS).messages.length,
-    1,
-  );
+  assert.equal(decide(expiring, first.next, repeatMs).messages.length, 1);
   const unknown = {
     name: "certificate",
     status: "unknown",

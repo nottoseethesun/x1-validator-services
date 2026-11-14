@@ -20,12 +20,15 @@
   "websocketIdleTimeoutSeconds": 3600,
   "certificateWaitSeconds": 120,
   "certificateWarningDays": 14,
+  "certificateReminderHours": 24,
   "exposedReminderMinutes": 60,
   "rateLimitRequestsPerSecond": 20,
   "requestTimeoutSeconds": 10,
+  "cronitorCheckInTries": 2,
   "gatePollMs": 1000,
   "upgradeCheckPollMs": 250,
   "startScriptQuietSeconds": 30,
   "passwordMinLength": 12,
-  "passwordTries": 3
+  "passwordTries": 3,
+  "checkQueryCount": 10
 }

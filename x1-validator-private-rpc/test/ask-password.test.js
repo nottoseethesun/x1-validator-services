@@ -9,7 +9,7 @@
 import assert from "node:assert/strict";
 import { PassThrough } from "node:stream";
 import { test } from "node:test";
-import { askPassword } from "../src/cli/ask-password.js";
+import { askPassword } from "../src/lib/ask-password.js";
 
 test("returns what was typed and shows none of it", async () => {
   const input = new PassThrough();

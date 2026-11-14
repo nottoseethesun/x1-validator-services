@@ -63,7 +63,7 @@ export async function runTurnOffPrivateRpc(run) {
   const name = "turn-off-private-rpc";
   const { state, scriptPath, text } = readSwitch(run);
   const edit = removePrivateRpc(text, scriptPath);
-  if (state.privateRpc === "off" && !edit.changed) {
+  if (state.privateRpc === "off" && edit.changed === false) {
     log.info(name, "Private rpc is off already.");
     return 0;
   }
@@ -71,13 +71,13 @@ export async function runTurnOffPrivateRpc(run) {
     "From its next start, the validator's rpc listens on every interface, " +
       "so anyone can reach it. Turn off private rpc?",
   );
-  if (!wanted) {
+  if (wanted === false) {
     log.info(name, "Stopped. Nothing changed.");
     return 1;
   }
   state.privateRpc = "off";
   writeState(host, paths.statePath, state);
-  if (edit.changed) {
+  if (edit.changed === true) {
     writeScript(host, scriptPath, edit.text);
   }
   log.info(
@@ -106,7 +106,7 @@ export async function runTurnOnPrivateRpc(run) {
     state.privateRpc = "on";
     writeState(host, paths.statePath, state);
   }
-  if (!edit.changed) {
+  if (edit.changed === false) {
     log.info(
       name,
       "Private rpc is on: the start script carries --private-rpc.",

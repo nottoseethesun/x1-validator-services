@@ -87,10 +87,10 @@ http {
         location / {
             # Critical errors only, so an rpc outage never logs a request.
             error_log /var/log/x1-validator-private-rpc/nginx-error-keyed.log crit;
-            # Request bodies of at most 10 KB, held in memory; larger gets 413.
+            # Request bodies of at most 10 KB, held in memory. A larger one gets 413.
             client_max_body_size 10k;
             client_body_buffer_size 10k;
-            # 20 keyed requests a second, plus a burst of 20 more; the rest get 429.
+            # 20 keyed requests a second, plus a burst of 20 more. The rest get 429.
             limit_req zone=x1_rpc burst=20 nodelay;
             limit_req_status 429;
             if ($x1_rpc_path = "") {

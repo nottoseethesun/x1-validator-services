@@ -5,15 +5,20 @@
  *
  * - nothing before apply
  * - the flag put back after an update, with one notice
- * - an update waited out, for as long as the settings say, unless the
- *   git hook runs ensure
+ * - an update waited out, for as long as the settings say, and while git
+ *   holds its lock in the checkout they name, unless the git hook runs
+ *   ensure
  * - the reason the flag couldn't go back, in the alert
  * - a public rpc's alert and its repeats, as often as the settings say
- * - the certificate's warning, as many days ahead as they say
+ * - the certificate's warning, as many days ahead as they say, and its
+ *   alert's repeats, as often as they say
  * - requests that wait as long as they say
  * - an alert Telegram didn't take, sent at the next run
  * - a damaged alert state, set aside for a fresh one
- * - the Cronitor check-in, and what --quiet prints
+ * - the Cronitor check-in, tried as many times as the settings say, and
+ *   what --quiet prints
+ * - every check passing with every setting changed
+ * - a start wrapper whose Node.js is gone, reported with no alert
  */
 
 import assert from "node:assert/strict";
@@ -26,7 +31,12 @@ import { runEnsure } from "../src/cli/ensure.js";
 import { featurePaths, homePath } from "../src/cli/feature-paths.js";
 import { CRONITOR_URL } from "../src/cli/heartbeat.js";
 import { appliedValidator, commandRun } from "./helpers/applied-validator.js";
-import { fakeX1Validator, HOME } from "./helpers/fake-x1-validator.js";
+import { shippedAndChangedSettings } from "./helpers/config-copies.js";
+import {
+  fakeX1Validator,
+  HOME,
+  HOSTNAME,
+} from "./helpers/fake-x1-validator.js";
 
 const MINUTE_MS = 60 * 1000;
 const PRIVATE = { rpcAddress: "127.0.0.1", flagRunning: true };
@@ -98,15 +108,21 @@ test("puts the flag back after an update, and says so once", async () => {
   assert.deepEqual(second.lines, []);
 });
 
-test("waits out an update in progress, unless git's hook runs it", async () => {
+test("waits out an update in progress, unless the tool's git hook runs it", async () => {
+  // Every setting changed, so git's lock counts only in the x1console
+  // checkout the settings name.
+  const { changed } = shippedAndChangedSettings();
   const {
     host,
-    settings: shipped,
+    settings: applied,
     scriptPath,
-  } = await appliedValidator({ state: PRIVATE }, {});
-  const quietMs = (shipped.startScriptQuietSeconds + 60) * 1000;
+  } = await appliedValidator(
+    { state: PRIVATE, settings: { ...changed, hostname: HOSTNAME } },
+    {},
+  );
+  const quietMs = (applied.startScriptQuietSeconds + 60) * 1000;
   const settings = {
-    ...shipped,
+    ...applied,
     startScriptQuietSeconds: quietMs / 1000,
   };
   host.files.set(scriptPath, scriptWithoutFlag());
@@ -191,6 +207,30 @@ test("the certificate check warns as many days ahead as the settings say", async
   );
 });
 
+test("the certificate's alert repeats as often as the settings say", async () => {
+  const {
+    host,
+    state,
+    settings: shipped,
+  } = await appliedValidator({ state: PRIVATE, telegram: true });
+  // Twice the shipped interval, so a repeat at the shipped one would show.
+  const hours = shipped.certificateReminderHours * 2;
+  const settings = { ...shipped, certificateReminderHours: hours };
+  state.certificateDays = shipped.certificateWarningDays - 1;
+  const alerts = () =>
+    telegramTexts(host).filter((text) =>
+      text.includes("The certificate needs attention"),
+    );
+  await ensure(host, settings);
+  assert.equal(alerts().length, 1);
+  await host.sleep(hours * 60 * MINUTE_MS - MINUTE_MS);
+  await ensure(host, settings);
+  assert.equal(alerts().length, 1);
+  await host.sleep(MINUTE_MS);
+  await ensure(host, settings);
+  assert.equal(alerts().length, 2);
+});
+
 test("ensure's requests wait as long as the settings say", async () => {
   const { host, settings: shipped } = await appliedValidator(
     { telegram: true },
@@ -235,7 +275,7 @@ test("an alert Telegram didn't take goes out at the next run", async () => {
   const postJson = host.postJson;
   let refuse = true;
   host.postJson = (url, body, timeoutMs) =>
-    url.startsWith("https://api.telegram.org/") && refuse
+    url.startsWith("https://api.telegram.org/") && refuse === true
       ? Promise.resolve({ status: 502, body: "" })
       : postJson(url, body, timeoutMs);
   state.active = false;
@@ -281,8 +321,14 @@ test("a damaged alert state, a check without its last alert time, is set aside f
   });
 });
 
-test("checks in with Cronitor when .env holds its url", async () => {
-  const { host, settings } = await appliedValidator({ state: PRIVATE }, {});
+test("checks in with Cronitor when .env holds its url, and tries as many times as the settings say", async () => {
+  const { host, settings: shipped } = await appliedValidator(
+    { state: PRIVATE },
+    {},
+  );
+  // A changed count, so code that kept the shipped one would show.
+  const tries = shippedAndChangedSettings().changed.cronitorCheckInTries;
+  const settings = { ...shipped, cronitorCheckInTries: tries };
   host.files.set(
     featurePaths().envPath,
     `${CRONITOR_URL}=https://cronitor.link/p/KEY/MONITOR\n`,
@@ -297,10 +343,25 @@ test("checks in with Cronitor when .env holds its url", async () => {
   assert.deepEqual(fetched, [
     "https://cronitor.link/p/KEY/MONITOR?state=complete",
   ]);
+  fetched.length = 0;
+  host.httpsGet = async (url) => {
+    fetched.push(url);
+    return { status: 500, body: "" };
+  };
+  await ensure(host, settings);
+  assert.equal(fetched.length, tries);
 });
 
-test("without --quiet, it reports every check; with it, nothing when all is well", async () => {
-  const { host, settings } = await appliedValidator({ state: PRIVATE }, {});
+test("with every setting changed, it reports every check without --quiet, and nothing with it when all is well", async () => {
+  /*-
+   * Every setting changed, so a check that read a shipped value, such as
+   * the start wrapper's path, would show.
+   */
+  const { changed } = shippedAndChangedSettings();
+  const { host, settings } = await appliedValidator({
+    state: PRIVATE,
+    settings: { ...changed, hostname: HOSTNAME },
+  });
   const quiet = await ensure(host, settings);
   assert.deepEqual(quiet.lines, []);
   assert.equal(quiet.code, 0);
@@ -310,4 +371,27 @@ test("without --quiet, it reports every check; with it, nothing when all is well
     loud.lines.every((line) => line.startsWith("[ensure] ok: ")),
     loud.lines.join("\n"),
   );
+  assert.ok(
+    loud.lines.includes(
+      "[ensure] ok: The start wrapper's Node.js and src/cli.js exist.",
+    ),
+  );
+});
+
+test("reports a problem, and sends no alert, once the start wrapper's Node.js is gone", async () => {
+  const { host, settings } = await appliedValidator({
+    state: PRIVATE,
+    telegram: true,
+  });
+  host.files.delete(host.nodePath());
+  const sentBefore = telegramTexts(host).length;
+  const { code, lines } = await ensure(host, settings, { quiet: false });
+  assert.equal(code, 1);
+  assert.ok(
+    lines.some((line) =>
+      line.startsWith("[ensure] problem: A path in the start wrapper is gone"),
+    ),
+    lines.join("\n"),
+  );
+  assert.equal(telegramTexts(host).length, sentBefore);
 });

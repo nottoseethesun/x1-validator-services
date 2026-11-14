@@ -7,6 +7,8 @@
  * - running a command in the test's container as root, or as the
  *   container's ordinary user from the project's folder with Node.js
  *   20.0.0 first on the PATH, as a validator's account runs the tool
+ * - running a command there in a real terminal, and answering its
+ *   prompts as they appear, the disclaimer's dialog among them
  * - reading the start script and ufw's rules there
  * - stopping the test when a set-up step fails
  * - finding what a run of the tool left behind
@@ -16,8 +18,10 @@
  * files, the folders above them, the nginx package and its account.
  */
 
+import { spawn } from "node:child_process";
 import path from "node:path";
 import { startScriptPathOf } from "../x1-validator-private-rpc/src/cli/feature-paths.js";
+import { DECLINE_BUTTON } from "../x1-validator-private-rpc/src/lib/disclaimer.js";
 import {
   NGINX_APT_PIN_PATH,
   NGINX_APT_SOURCE_PATH,
@@ -32,6 +36,16 @@ export const GUEST_PROJECT = "/home/ubuntu/x1-validator-services";
 export const GUEST_HOME = "/home/ubuntu";
 
 const GUEST_PATH = "/opt/node/bin:/usr/local/bin:/usr/bin:/bin";
+
+/** How long a command run in a real terminal may take. */
+const COMMAND_TIMEOUT_MS = 10 * 60 * 1000;
+
+/**
+ * The answer to the disclaimer's dialog, which each run that can change
+ * the system shows first: once its Decline button shows, the left arrow
+ * moves to Affirm, and Enter chooses it.
+ */
+export const AFFIRM_DISCLAIMER = [DECLINE_BUTTON, "\x1b[D\r"];
 
 /**
  * Runs a command in the container as its user, capturing its output.
@@ -140,6 +154,54 @@ export function asUser(name, command, env = {}) {
 }
 
 /**
+ * Runs a command in the container as its user, in a real terminal of 80
+ * by 24 that `script` makes, and answers its prompts as each one appears.
+ * TERM is set, so whiptail knows the arrow keys.
+ * @param {string} name  The container.
+ * @param {string} command  The command, as the shell reads it.
+ * @param {[string, string][]} answers  Each prompt's text, and its answer.
+ * @param {Object<string, string>} [env]  More environment variables.
+ * @returns {Promise<{code: number, output: string}>}
+ */
+export function answerInTerminal(name, command, answers, env = {}) {
+  return new Promise((resolve) => {
+    const sized = `stty rows 24 cols 80; ${command}`;
+    const child = spawn(
+      "lxc",
+      asUserArgs(name, ["script", "-qfec", sized, "/dev/null"], {
+        TERM: "xterm",
+        ...env,
+      }),
+      { stdio: ["pipe", "pipe", "inherit"] },
+    );
+    let output = "";
+    let unread = "";
+    let next = 0;
+    const timer = setTimeout(() => child.kill(), COMMAND_TIMEOUT_MS);
+    child.stdout.on("data", (chunk) => {
+      process.stdout.write(chunk);
+      output += chunk;
+      unread += chunk;
+      let [prompt, reply] = answers.at(next) ?? [];
+      while (
+        prompt !== undefined &&
+        prompt !== null &&
+        unread.includes(prompt)
+      ) {
+        unread = unread.slice(unread.indexOf(prompt) + prompt.length);
+        child.stdin.write(reply);
+        next += 1;
+        [prompt, reply] = answers.at(next) ?? [];
+      }
+    });
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      resolve({ code: code ?? 1, output });
+    });
+  });
+}
+
+/**
  * Stops the test with a message when a set-up step fails.
  * @param {number} status  The step's exit code.
  * @param {string} what  The step, in words.
@@ -203,7 +265,7 @@ export function existingPaths(name, paths) {
  * @param {string} name  The container.
  * @param {string[]} paths  The paths the run might create.
  * @param {string[]} before  Those that existed before the run.
- * @returns {string[]} One line per leftover; none when it's clean.
+ * @returns {string[]} One line per leftover, or none when it's clean.
  */
 export function leftovers(name, paths, before) {
   const found = existingPaths(name, paths).filter(

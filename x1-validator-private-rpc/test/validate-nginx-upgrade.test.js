@@ -20,6 +20,7 @@ import {
   NGINX_APT_SOURCE_PATH,
   NGINX_KEYRING_PATH,
   NGINX_PACKAGES,
+  NGINX_UNIT,
 } from "../src/lib/nginx-org.js";
 import {
   machineProblems,
@@ -105,9 +106,9 @@ test("masks nginx before installing, and upgrades only after the start", async (
   const { host } = fakeValidator();
   await runCheck(host);
   const order = [
-    "sudo systemctl mask nginx.service",
+    `sudo systemctl mask ${NGINX_UNIT}`,
     "nginx=1.30.5-1~noble",
-    "sudo systemctl start nginx.service",
+    `sudo systemctl start ${NGINX_UNIT}`,
     "nginx=1.30.6-1~noble",
   ].map((text) => indexOfCall(host.calls, text));
   assert.ok(
@@ -189,10 +190,10 @@ test("removes everything it added, newest first", async () => {
   const settings = testSettings();
   await runCheck(host);
   const order = [
-    "sudo systemctl stop nginx.service",
+    `sudo systemctl stop ${NGINX_UNIT}`,
     `removeRootFile ${settings.systemdDropInPath}`,
     PURGE,
-    "sudo systemctl unmask nginx.service",
+    `sudo systemctl unmask ${NGINX_UNIT}`,
     `removeRootFile ${NGINX_APT_SOURCE_PATH}`,
     "sudo userdel nginx",
   ].map((text) =>
@@ -368,7 +369,7 @@ test("waits out a connection dropped while the old nginx shuts down", async () =
   let dropped = false;
   const validator = fakeValidator({
     httpGet: async () => {
-      if (validator.state.installed === "1.30.6-1~noble" && !dropped) {
+      if (validator.state.installed === "1.30.6-1~noble" && dropped === false) {
         dropped = true;
         throw new Error("socket hang up");
       }
@@ -398,7 +399,7 @@ test("fails when the gate page never answers after the upgrade", async () => {
   });
   const { result } = await runCheck(validator.host);
   assert.deepEqual(result.problems, [
-    "After the upgrade the gate page never said unlocked; its last answer " +
+    "After the upgrade the gate page never said unlocked. Its last answer " +
       "was no answer (socket hang up).",
   ]);
 });

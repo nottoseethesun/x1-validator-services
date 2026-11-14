@@ -16,7 +16,11 @@
 import assert from "node:assert/strict";
 import path from "node:path";
 import { test } from "node:test";
-import { featurePaths, homePath } from "../src/cli/feature-paths.js";
+import {
+  featurePaths,
+  gitHookPathOf,
+  homePath,
+} from "../src/cli/feature-paths.js";
 import { runUndoApply } from "../src/cli/undo-apply.js";
 import {
   API_KEY_SECRET,
@@ -43,21 +47,11 @@ async function undoApply(host, settings) {
   return { code, lines: run.lines };
 }
 
-/**
- * Finds the git hook's path where the settings put x1console.
- * @param {object} settings  The settings.
- * @returns {string}
- */
-function hookPathOf(settings) {
-  const x1consoleDir = homePath(settings.x1consoleDir, HOME);
-  return path.join(x1consoleDir, ".git", "hooks", "post-merge");
-}
-
 test("leaves what others changed since apply, and puts back a mask that was there before it", async () => {
   const { host, state, settings } = await appliedValidator({
     state: { masked: true },
   });
-  const hookPath = hookPathOf(settings);
+  const hookPath = gitHookPathOf(settings, HOME);
   const theirs = '#!/bin/sh\nexec git lfs post-merge "$@"\n';
   host.files.set(hookPath, theirs);
   const vaultPath = homePath(settings.vaultPath, HOME);
@@ -89,12 +83,14 @@ test("a hook or a vault someone removed is no matter; a crontab that refuses the
   let crontabWorks = true;
   const { host, settings } = await appliedValidator({
     respond: (call) =>
-      call.command === "crontab" && call.args[0] === "-" && !crontabWorks
+      call.command === "crontab" &&
+      call.args[0] === "-" &&
+      crontabWorks === false
         ? { status: 1, stderr: "crontab: no changes made" }
         : undefined,
   });
   crontabWorks = false;
-  host.files.delete(hookPathOf(settings));
+  host.files.delete(gitHookPathOf(settings, HOME));
   host.files.delete(homePath(settings.vaultPath, HOME));
   const { code, lines } = await undoApply(host, settings);
   assert.equal(code, 1);

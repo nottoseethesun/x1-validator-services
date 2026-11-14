@@ -9,7 +9,7 @@
  * stage's command again. The stages take their file lists from
  * scripts/lint-targets.js, but for Prettier's json and yaml globs, here.
  *
- * A stage only describes its command; scripts/lint.js and
+ * A stage only describes its command. scripts/lint.js and
  * scripts/check.js run it.
  */
 
@@ -44,7 +44,7 @@ export function eslintStage({ fix }) {
   return {
     name: "Lint (JavaScript)",
     command: toolPath("eslint"),
-    args: fix ? [...args, "--fix"] : args,
+    args: fix === true ? [...args, "--fix"] : args,
   };
 }
 
@@ -57,7 +57,7 @@ export function markdownStage({ fix }) {
   return {
     name: "Lint (Markdown)",
     command: toolPath("markdownlint-cli2"),
-    args: fix ? ["--fix", ...MARKDOWN_TARGETS] : [...MARKDOWN_TARGETS],
+    args: fix === true ? ["--fix", ...MARKDOWN_TARGETS] : [...MARKDOWN_TARGETS],
   };
 }
 
@@ -79,7 +79,7 @@ export function prettierStage(kind, { write }) {
     name: `Format (${label})`,
     command: toolPath("prettier"),
     args: [
-      write ? "--write" : "--check",
+      write === true ? "--write" : "--check",
       "--no-error-on-unmatched-pattern",
       ...globs,
     ],
@@ -113,8 +113,8 @@ export function knipStage() {
 }
 
 /**
- * The check that every module under a feature's `src/` is loaded by one
- * of the feature's entry points, not only by tests.
+ * The check that every module under a feature's `src/` or `util/` is
+ * loaded by one of the feature's entry points, not only by tests.
  * @returns {Stage}
  */
 export function unusedSrcModulesStage() {

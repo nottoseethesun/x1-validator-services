@@ -9,7 +9,7 @@
  * node no longer publishes it, from the validator's next start.
  *
  * The port line must have exactly the form `--rpc-port N \`, once in the
- * file; any other layout is refused rather than guessed at. A command
+ * file. Any other layout is refused rather than guessed at. A command
  * that binds the rpc to an address other than 127.0.0.1 is refused too,
  * since Tachyon would bind there even with the flag. A command that
  * already carries the flag, on any of its lines, is left alone, so a
@@ -24,11 +24,13 @@ const RPC_PORT = "--rpc-port";
 const BIND_ADDRESS = "--rpc-bind-address";
 const LOOPBACK = "127.0.0.1";
 
+/** x1console's choices that restart the validator, and when to make them. */
+export const RESTART_STEPS =
+  "choose 2. Validator, then 1. Start/Restart Validator, at a moment when " +
+  "the Validator screen shows no leader slot coming soon.";
+
 /** How to restart the validator, so it takes a change to the script. */
-export const RESTART_HOW =
-  "Restart it from x1console: choose 2. Validator, then 1. Start/Restart " +
-  "Validator, at a moment when the Validator screen shows no leader slot " +
-  "coming soon.";
+export const RESTART_HOW = `Restart it from x1console: ${RESTART_STEPS}`;
 
 /**
  * @typedef {object} StartScript
@@ -51,7 +53,7 @@ function words(line) {
  * Finds the validator's command: the line that runs tachyon-validator,
  * and every line that a trailing backslash joins to it.
  * @param {string[]} lines  The script's lines.
- * @returns {string[]} The command's lines; none when no line runs it.
+ * @returns {string[]} The command's lines, or none when no line runs it.
  */
 function commandLines(lines) {
   const runsValidator = (line) =>
@@ -76,7 +78,7 @@ function commandLines(lines) {
  * --private-rpc \` once the edit is made.
  * @param {string} line  The line.
  * @returns {{port: number, flagged: boolean}|null} The port, and whether
- *   the line carries the flag; null for any other line.
+ *   the line carries the flag, or null for any other line.
  */
 function readPortLine(line) {
   const parts = words(line);
@@ -84,9 +86,11 @@ function readPortLine(line) {
   const formed =
     parts[0] === RPC_PORT &&
     parts.at(-1) === "\\" &&
-    (parts.length === 3 || flagged) &&
+    (parts.length === 3 || flagged === true) &&
     /^\d+$/.test(parts[1]);
-  return formed ? { port: Number.parseInt(parts[1], 10), flagged } : null;
+  return formed === true
+    ? { port: Number.parseInt(parts[1], 10), flagged }
+    : null;
 }
 
 /**
@@ -97,7 +101,7 @@ function readPortLine(line) {
 function portLines(lines) {
   return lines.flatMap((line, index) => {
     const read = readPortLine(line);
-    return read === null ? [] : [{ ...read, index }];
+    return read === undefined || read === null ? [] : [{ ...read, index }];
   });
 }
 
@@ -105,7 +109,8 @@ function portLines(lines) {
  * Reads the address the validator's command binds its rpc to, as
  * `--rpc-bind-address A` or `--rpc-bind-address=A`.
  * @param {string[]} commandWords  The command's words.
- * @returns {string|null} The address; null when the command names none.
+ * @returns {string|null} The address, or null when the command names
+ *   none.
  */
 function bindAddress(commandWords) {
   const index = commandWords.findIndex(
@@ -140,7 +145,7 @@ export function readStartScript(text, scriptPath) {
     );
   }
   const address = bindAddress(commandWords);
-  if (address !== null && address !== LOOPBACK) {
+  if (address !== undefined && address !== null && address !== LOOPBACK) {
     throw new Error(
       `${scriptPath} binds the rpc to ${address} with ${BIND_ADDRESS}, so ` +
         `${PRIVATE_RPC} wouldn't keep it on ${LOOPBACK}. Remove that flag ` +
@@ -174,7 +179,7 @@ export function readStartScript(text, scriptPath) {
  */
 export function addPrivateRpc(text, scriptPath) {
   const script = readStartScript(text, scriptPath);
-  if (script.hasFlag) {
+  if (script.hasFlag === true) {
     return { text, changed: false };
   }
   const lines = text.split("\n");
@@ -196,7 +201,7 @@ export function addPrivateRpc(text, scriptPath) {
  */
 export function removePrivateRpc(text, scriptPath) {
   const lines = text.split("\n");
-  const flagged = portLines(lines).filter((line) => line.flagged);
+  const flagged = portLines(lines).filter((line) => line.flagged === true);
   if (flagged.length > 1) {
     throw new Error(
       `${scriptPath} holds ${flagged.length} port lines with ` +

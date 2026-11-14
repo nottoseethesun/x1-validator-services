@@ -33,6 +33,7 @@ import {
   purgePackages,
 } from "../../src/lib/apt.js";
 import { mustSucceed } from "../../src/lib/command-result.js";
+import { foldersToMake } from "../../src/lib/folders-to-make.js";
 import { GATE_PAGE_PATH } from "../../src/lib/gate-page.js";
 import {
   NGINX_PACKAGES,
@@ -140,13 +141,7 @@ function readMachine(host) {
  * @param {string} folder  The folder.
  */
 function trackNewFolders({ host, undo }, folder) {
-  const missing = [];
-  let current = folder;
-  while (!host.exists(current) && current !== path.dirname(current)) {
-    missing.unshift(current);
-    current = path.dirname(current);
-  }
-  for (const newFolder of missing) {
+  for (const newFolder of foldersToMake(host, folder)) {
     undo.push({
       what: `Removing ${newFolder}`,
       action: () => host.removeRootDir(newFolder),
@@ -190,7 +185,7 @@ async function installPreviousRelease(context, codename) {
     undo.push({
       what: "Removing the nginx user",
       action: () => {
-        // nginx's package creates the user; a stop before that leaves none.
+        // nginx's package creates the user. A stop before that leaves none.
         if (hasNginxUser()) {
           const removed = host.sudo("userdel", ["nginx"]);
           mustSucceed(removed, "Removing nginx's user");
@@ -401,14 +396,14 @@ async function upgradeAndObserve(context, port, newest) {
   );
   const { wanted: oldMainGone } = await pollUntil(
     async () => host.exists(oldMain),
-    (running) => !running,
+    (running) => running === false,
     timing(context),
   );
   return {
     before,
     after,
     programAfter: processProgram(host, after.get("MainPID") ?? "0"),
-    oldMainRunning: !oldMainGone,
+    oldMainRunning: oldMainGone === false,
     gateAfter: await waitForUnlocked(context, port),
     installedVersion: installedVersion(host, "nginx"),
     expectedVersion: newest[0].version,
@@ -418,7 +413,8 @@ async function upgradeAndObserve(context, port, newest) {
 /**
  * Runs the steps, recording each change's undo step as it goes.
  * @param {Context} context  The run.
- * @returns {Promise<string[]>} What failed; nothing when the check passed.
+ * @returns {Promise<string[]>} What failed, or nothing when the check
+ *   passed.
  */
 async function runSteps(context) {
   const { host, report } = context;
@@ -448,7 +444,7 @@ async function runSteps(context) {
   }
   if (gate !== "unlocked") {
     return [
-      "Before the upgrade the gate page never said unlocked; its last " +
+      "Before the upgrade the gate page never said unlocked. Its last " +
         `answer was ${gate}.`,
     ];
   }
@@ -483,12 +479,12 @@ async function undoAll({ undo }) {
  * @param {object} options.host  The host.
  * @param {object} options.settings  The tool's settings.
  * @param {(line: string) => void} options.report  Prints a progress line.
- * @param {Context["wait"]} [options.wait]  Runs a long step; without a
+ * @param {Context["wait"]} [options.wait]  Runs a long step. Without a
  *   spinner, it prints the step's line and runs it.
  * @param {() => boolean} [options.isInterrupted]  Whether Ctrl-C was
- *   pressed; never, unless the caller watches for it.
+ *   pressed, which is never unless the caller watches for it.
  * @returns {Promise<{passed: boolean, problems: string[],
- *   leftovers: string[]}>} The verdict; what failed in the check; and
+ *   leftovers: string[]}>} The verdict, what failed in the check, and
  *   what the clean-up couldn't remove.
  */
 export async function validateNginxUpgrade({

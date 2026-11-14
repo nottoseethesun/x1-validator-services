@@ -18,10 +18,10 @@ import { findUnusedSrcModules } from "./_unused-src-modules.js";
 async function main() {
   scriptProgram(
     "scripts/check-unused-src-modules.js",
-    "Fails when a module under a feature's src/ is loaded by no entry point.",
+    "Fails when a module under a feature's src/ or util/ is loaded by no entry point.",
     [
       "0  every source module is reached from an entry point",
-      "1  at least one isn't; each is listed",
+      "1  at least one isn't, and each is listed",
     ],
   ).parse();
   const root = projectRoot();

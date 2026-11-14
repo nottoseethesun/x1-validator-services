@@ -20,8 +20,8 @@ const CONFIG_VALUES_SUFFIX = ".config-values.test.js";
 /**
  * Lists the test files in the given folders, sorted.
  * @param {string} root  The project's root.
- * @param {string[]} [folders]  The test folders, relative to the root;
- *   every test folder when left out.
+ * @param {string[]} [folders]  The test folders, relative to the root,
+ *   or every test folder when left out.
  * @returns {string[]} The test files' paths, relative to the root.
  */
 export function listTestFiles(root, folders = TEST_FOLDERS) {

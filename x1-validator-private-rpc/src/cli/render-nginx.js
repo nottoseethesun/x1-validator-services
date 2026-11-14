@@ -36,7 +36,7 @@ const MASKED_HEX_DIGITS = API_KEY_HEX_DIGITS / 2;
  * @typedef {object} NginxValues
  * @property {string} hostname  The rpc's hostname.
  * @property {string} publicIp  The address nginx listens on.
- * @property {number} rpcPort  The validator's rpc port; its websocket
+ * @property {number} rpcPort  The validator's rpc port. Its websocket
  *   port is the next one.
  * @property {string} resolver  The system's dns resolver.
  * @property {boolean} staging  Whether the certificate comes from Let's
@@ -82,7 +82,7 @@ export function renderNginxConfig(values) {
       settings.acmeStatePath,
       settings.acmeEmail,
     ) +
-    (staging
+    (staging === true
       ? `\n${issuer(
           "letsencrypt-staging",
           settings.acmeStagingDirectoryUrl,
@@ -155,7 +155,7 @@ ${issuers}
         http2 on;
         server_name ${hostname};
 
-        acme_certificate ${staging ? "letsencrypt-staging" : "letsencrypt"};
+        acme_certificate ${staging === true ? "letsencrypt-staging" : "letsencrypt"};
         ssl_certificate $acme_certificate;
         ssl_certificate_key $acme_certificate_key;
         ssl_certificate_cache max=2;
@@ -173,10 +173,10 @@ ${issuers}
         location / {
             # Critical errors only, so an rpc outage never logs a request.
             error_log ${logDir}/nginx-error-keyed.log crit;
-            # Request bodies of at most 10 KB, held in memory; larger gets 413.
+            # Request bodies of at most 10 KB, held in memory. A larger one gets 413.
             client_max_body_size 10k;
             client_body_buffer_size 10k;
-            # ${rate} keyed requests a second, plus a burst of ${rate} more; the rest get 429.
+            # ${rate} keyed requests a second, plus a burst of ${rate} more. The rest get 429.
             limit_req zone=x1_rpc burst=${rate} nodelay;
             limit_req_status 429;
             if ($x1_rpc_path = "") {

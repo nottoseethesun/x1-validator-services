@@ -1,5 +1,5 @@
 {
-  "_comment": "Every setting apply can change, with the description and type that each entry of apply's record, app-data/what-apply-changed.json, copies. The apply's Record section of docs/engineering.md says how the record works. Not a setting the operator changes.",
+  "_comment": "Every setting apply can change, with the description and type that each entry of apply's record, app-data/what-apply-changed.json, copies. The section apply's Record, in x1-validator-private-rpc/docs/engineering.md, says how the record works. Not a setting the operator changes.",
   "nginxServiceMasked": {
     "description": "Whether systemd's nginx.service is masked, so nothing can start nginx.",
     "oldValueDatatype": "boolean"
@@ -81,7 +81,7 @@
     "oldValueDatatype": "boolean"
   },
   "acmeStagingStateFolder": {
-    "description": "nginx's folder for its account and certificate at Let's Encrypt's staging server.",
+    "description": "nginx's folder for its account and certificate at Let's Encrypt's staging service.",
     "oldValueDatatype": "boolean"
   },
   "nginxServiceEnabled": {
@@ -101,15 +101,15 @@
     "oldValueDatatype": "boolean"
   },
   "gitHook": {
-    "description": "x1console's post-merge hook, which runs ensure after an Update X1 Console.",
+    "description": "The tool's git hook in x1console's checkout, which runs ensure after an Update X1 Console.",
     "oldValueDatatype": "boolean"
   },
   "toolTmpFolder": {
-    "description": "The tool's tmp/ folder, which holds the cron job's lock.",
+    "description": "The tool's tmp/ folder, which holds ensure's lock.",
     "oldValueDatatype": "boolean"
   },
   "toolLogsFolder": {
-    "description": "The tool's logs/ folder, which holds the scheduled ensure's log.",
+    "description": "The tool's logs/ folder, which holds ensure's log.",
     "oldValueDatatype": "boolean"
   },
   "cronLine": {

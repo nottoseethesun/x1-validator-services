@@ -3,10 +3,10 @@
  * @description
  * A stand-in for the real host (src/lib/host.js), with the same
  * functions, for tests. Commands go to a `respond` function the test
- * writes, which answers each one as the test's scenario needs; files
+ * writes, which answers each one as the test's scenario needs. Files
  * live in a map, where writing a file or making a folder also creates
  * every missing folder above it, and removing a folder that still holds
- * anything fails, as on the real host; requests go to functions the test
+ * anything fails, as on the real host. Requests go to functions the test
  * gives. Every call is recorded in order, so a test can check what was
  * done and in what order. Nothing touches the machine.
  */
@@ -52,9 +52,10 @@ function removeTree(files, folder) {
 
 /**
  * @typedef {object} FakeCall
- * @property {string} kind  `run`, `sudo`, or the name of the file
- *   function called, such as `writeRootFile` or `removeRootDir`.
- * @property {string} [command]  The command, for `run` and `sudo`.
+ * @property {string} kind  `run`, `sudo`, `runOnTerminal`, or the name of
+ *   the file function called, such as `writeRootFile` or `removeRootDir`.
+ * @property {string} [command]  The command, for `run`, `sudo` and
+ *   `runOnTerminal`.
  * @property {string[]} [args]  Its arguments.
  * @property {string} [path]  The file or folder, for the file kinds.
  * @property {string} [mode]  The folder's mode, for `makeRootDir`.
@@ -66,12 +67,12 @@ function removeTree(files, folder) {
  * Builds a fake host.
  * @param {object} scenario  How the fake answers.
  * @param {(call: FakeCall) => object|undefined} scenario.respond
- *   Answers a command with `{status, stdout, stderr}`; undefined means
- *   success with no output.
+ *   Answers a command with `{status, stdout, stderr}`. An undefined
+ *   answer means success with no output.
  * @param {Map<string, string|Buffer>} [scenario.files]  The files that
- *   exist, and their content; changed as the code writes and removes.
+ *   exist, and their content, changed as the code writes and removes.
  * @param {string[]} [scenario.folders]  Folders that exist at the start,
- *   each with every folder above it; added to `files`.
+ *   each with every folder above it, added to `files`.
  * @param {(url: string) => Promise<object>} [scenario.httpGet]  Answers
  *   http requests.
  * @param {(url: string) => Promise<object>} [scenario.httpsGet]  Answers
@@ -81,7 +82,7 @@ function removeTree(files, folder) {
  * @param {(target: object) => Promise<object>} [scenario.tlsGet]
  *   Answers https requests to an address under a hostname.
  * @param {Object<string, string[]>} [scenario.dns]  Each hostname's
- *   ipv4 addresses; a name missing here doesn't resolve.
+ *   ipv4 addresses. A name missing here doesn't resolve.
  * @param {string[]} [scenario.addresses]  The machine's own addresses.
  * @returns {object} The fake host, with `calls` listing every call.
  */
@@ -133,6 +134,7 @@ export function createFakeHost({
     sudo,
     // Recorded as a `sudo` call, since only the waiting differs.
     sudoAsync: async (name, args) => sudo(name, args),
+    runOnTerminal: (name, args) => command("runOnTerminal")(name, args).status,
     writeRootFile: fileCall("writeRootFile", (filePath, content) => {
       addFolders(files, path.dirname(filePath));
       files.set(filePath, content);

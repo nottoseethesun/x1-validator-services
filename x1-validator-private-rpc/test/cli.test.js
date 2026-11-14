@@ -3,7 +3,8 @@
  * @description
  * Tests the tool's command-line program: its help, its version, its
  * refusal of what it doesn't accept, and its commands, each run with its
- * options on stand-ins, a failure exiting 1 with its reason. Most tests
+ * options on stand-ins, a failure exiting 1 with its reason, and the
+ * disclaimer before each run that can change the system. Most tests
  * parse argument lists through a program built in the test, with
  * commander's exits turned into exceptions and its output caught. The
  * last two run the real entry point as a child process, the way a person
@@ -21,6 +22,8 @@ import {
   EXIT_CODES,
   projectVersion,
 } from "../src/cli/program.js";
+import { DECLINED } from "../src/lib/disclaimer.js";
+import { NGINX_UNIT } from "../src/lib/nginx-org.js";
 import { loadSettings } from "../src/lib/settings.js";
 import { copyShippedConfig } from "./helpers/config-copies.js";
 import { fakeX1Validator } from "./helpers/fake-x1-validator.js";
@@ -136,15 +139,19 @@ test("the real entry point refuses an unknown option with exit code 1", () => {
 
 /**
  * Makes stand-in makers on a fake validator, and keeps what the commands
- * print and the exit code they set.
+ * print, the exit code they set and how often the disclaimer showed.
  * @param {object} host  The fake host.
  * @param {object} settings  The settings.
- * @returns {{makers: object, out: string[], err: string[], code: () => number}}
+ * @param {string} [refusal]  What the disclaimer gives: "" for an
+ *   affirmed one, unless the test passes a refusal.
+ * @returns {{makers: object, out: string[], err: string[],
+ *   code: () => number, shown: () => number}}
  */
-function standInMakers(host, settings) {
+function standInMakers(host, settings, refusal = "") {
   const out = [];
   const err = [];
   let code = null;
+  let shown = 0;
   const makers = {
     host: () => host,
     settings: () => settings,
@@ -155,6 +162,11 @@ function standInMakers(host, settings) {
         out: (line) => out.push(line),
         err: (line) => err.push(line),
       }),
+    showDisclaimer: (shownOn) => {
+      assert.equal(shownOn, host);
+      shown += 1;
+      return refusal;
+    },
     prompts: () => scriptedPrompts(),
     out: (line) => out.push(line),
     err: (line) => err.push(line),
@@ -164,9 +176,40 @@ function standInMakers(host, settings) {
     setExitCode: (exitCode) => {
       code = exitCode;
     },
+    atExit: () => {},
   };
-  return { makers, out, err, code: () => code };
+  return { makers, out, err, code: () => code, shown: () => shown };
 }
+
+test("each run that can change the system shows the disclaimer first, and a refusal stops it with nothing done", async () => {
+  const settings = loadSettings(
+    copyShippedConfig('{"hostname": "x1-rpc.example.com"}').configDir,
+  );
+  const cases = [
+    [["apply"], true],
+    [["apply", "--dry-run"], false],
+    [["undo-apply"], true],
+    [["undo-apply", "--dry-run"], false],
+    [["turn-off-private-rpc"], true],
+    [["turn-on-private-rpc"], true],
+    [["unlock"], true],
+    [["url"], false],
+    [["ensure"], false],
+    [["decrypt-key", "--password-stdin"], false],
+  ];
+  for (const [args, shows] of cases) {
+    const { host } = fakeX1Validator();
+    const callsBefore = host.calls.length;
+    const run = standInMakers(host, settings, DECLINED);
+    await buildProgram(run.makers).parseAsync(["node", "cli", ...args]);
+    assert.equal(run.shown(), shows === true ? 1 : 0, args.join(" "));
+    if (shows === true) {
+      assert.equal(run.code(), 1, args.join(" "));
+      assert.deepEqual(run.out, [`[${args[0]}] ${DECLINED} Nothing changed.`]);
+      assert.equal(host.calls.length, callsBefore, args.join(" "));
+    }
+  }
+});
 
 test("each command runs with its options, and a failure exits 1 with its reason", async () => {
   const settings = loadSettings(
@@ -181,7 +224,7 @@ test("each command runs with its options, and a failure exits 1 with its reason"
     "--dry-run",
   ]);
   assert.equal(dry.code(), 0, dry.err.join("\n"));
-  assert.ok(dry.out.some((line) => line.includes("Would mask nginx.service")));
+  assert.ok(dry.out.some((line) => line.includes(`Would mask ${NGINX_UNIT}`)));
   const url = standInMakers(host, settings);
   await buildProgram(url.makers).parseAsync(["node", "cli", "url"]);
   assert.equal(url.code(), 1);
@@ -195,6 +238,25 @@ test("each command runs with its options, and a failure exits 1 with its reason"
     const run = standInMakers(host, settings);
     await buildProgram(run.makers).parseAsync(["node", "cli", ...args]);
     assert.equal(run.code(), 0, args.join(" "));
+  }
+});
+
+test("each on/off option reaches its command as a boolean, false when left out", async () => {
+  const settings = loadSettings(
+    copyShippedConfig('{"hostname": "x1-rpc.example.com"}').configDir,
+  );
+  const { host } = fakeX1Validator();
+  const cases = [
+    [["apply", "--dry-run"], { yes: false, dryRun: true, acmeStaging: false }],
+    [["ensure", "--quiet"], { quiet: true, fromGitHook: false }],
+    [["undo-apply"], { dryRun: false }],
+    [["turn-off-private-rpc"], { yes: false }],
+  ];
+  for (const [args, options] of cases) {
+    const program = buildProgram(standInMakers(host, settings).makers);
+    await program.parseAsync(["node", "cli", ...args]);
+    const command = program.commands.find((each) => each.name() === args[0]);
+    assert.deepEqual(command.opts(), options, args.join(" "));
   }
 });
 

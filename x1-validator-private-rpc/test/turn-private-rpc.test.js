@@ -2,11 +2,17 @@
  * @file x1-validator-private-rpc/test/turn-private-rpc.test.js
  * @description
  * Tests turn-off-private-rpc and turn-on-private-rpc on a fake validator
- * that apply set up: off takes the flag out after asking, and ensure
- * then leaves it out and stops checking that the rpc is private; on puts
- * the flag back, for ensure to keep there again; a no stops off; each
- * says so when there's nothing to change; apply turns private rpc on
- * again; and neither runs before apply.
+ * that apply set up:
+ *
+ * - off takes the flag out after asking, and ensure then leaves it out
+ *   and stops checking that the rpc is private
+ * - on puts the flag back, for ensure to keep there again
+ * - a no stops off
+ * - each says so when there's nothing to change
+ * - apply turns private rpc on again
+ * - before apply has added the flag, ensure leaves the start script
+ *   alone, until turn-on turns private rpc on
+ * - neither runs before apply
  */
 
 import assert from "node:assert/strict";
@@ -21,12 +27,14 @@ import {
   runTurnOffPrivateRpc,
   runTurnOnPrivateRpc,
 } from "../src/cli/turn-private-rpc.js";
+import { loadSettings } from "../src/lib/settings.js";
 import {
   appliedValidator,
   commandRun,
   PASSWORD,
 } from "./helpers/applied-validator.js";
-import { fakeX1Validator } from "./helpers/fake-x1-validator.js";
+import { copyShippedConfig } from "./helpers/config-copies.js";
+import { fakeX1Validator, HOSTNAME } from "./helpers/fake-x1-validator.js";
 import { scriptedPrompts } from "./helpers/scripted-prompts.js";
 
 const FLAG = /--rpc-port 8899 --private-rpc \\$/m;
@@ -62,7 +70,7 @@ async function ensure(host, settings) {
 }
 
 /**
- * Reads the operator's choice from apply's record.
+ * Reads the operator's choice from the tool's state.
  * @param {object} host  The fake host.
  * @returns {string}
  */
@@ -168,6 +176,42 @@ test("apply turns private rpc on again", async () => {
   assert.equal(await runApply(run), 0, run.lines.join("\n"));
   assert.match(host.files.get(scriptPath), FLAG);
   assert.equal(choice(host), "on");
+});
+
+test("before apply has added the flag, ensure leaves the start script alone, until turn-on turns private rpc on", async () => {
+  const override = JSON.stringify({ hostname: HOSTNAME });
+  const settings = loadSettings(copyShippedConfig(override).configDir);
+  const { host, scriptPath } = fakeX1Validator({ settings, telegram: true });
+  const original = host.files.get(scriptPath);
+  const stopped = commandRun(host, settings, {
+    prompts: scriptedPrompts({
+      confirm: (question) => !question.startsWith("Stage 6 of 8"),
+      passwords: [PASSWORD, PASSWORD],
+    }),
+    options: { yes: false, dryRun: false, acmeStaging: false },
+  });
+  assert.equal(await runApply(stopped), 1, stopped.lines.join("\n"));
+  assert.equal(choice(host), "");
+  await host.sleep(settings.startScriptQuietSeconds * 1000);
+  const checked = await ensure(host, settings);
+  assert.equal(checked.code, 0, checked.lines.join("\n"));
+  assert.equal(host.files.get(scriptPath), original);
+  assert.ok(
+    checked.lines.includes(
+      "[ensure] apply hasn't added --private-rpc yet, so ensure leaves the start script alone, and doesn't check that the rpc is private.",
+    ),
+  );
+  const alerts = host.posts.filter((post) =>
+    post.url.startsWith("https://api.telegram.org/"),
+  );
+  assert.deepEqual(alerts, []);
+  const on = await turn(runTurnOnPrivateRpc, host, settings);
+  assert.equal(on.code, 0, on.lines.join("\n"));
+  assert.equal(choice(host), "on");
+  host.files.set(scriptPath, original);
+  await host.sleep(settings.startScriptQuietSeconds * 1000);
+  await ensure(host, settings);
+  assert.match(host.files.get(scriptPath), FLAG);
 });
 
 test("neither runs before apply", async () => {

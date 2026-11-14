@@ -4,7 +4,7 @@
  * Tests the shipped settings, before any other test runs: every shipped
  * value passes its schema, every setting has a type or range rule, and
  * the shipped file holds exactly the settings the schema requires. A
- * wrong shipped value would break whatever reads it; run first, these
+ * wrong shipped value would break whatever reads it. Run first, these
  * tests name the cause.
  */
 

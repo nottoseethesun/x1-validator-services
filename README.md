@@ -34,7 +34,7 @@ Each feature's own steps are in its README:
 
 ### Credentials
 
-Credentials that belong to your install go in `.env`, in the project root, which git ignores. Start from the example, and keep the file readable only by you:
+Credentials that belong to your install go in `.env`, in the project root, which `git` ignores. Start from the example, and keep the file readable only by you:
 
 ```bash
 cp .env.example .env && chmod 600 .env
@@ -49,7 +49,7 @@ Some features check in with [Cronitor](https://cronitor.io), which alerts you wh
 1. Create a Cronitor account.
 2. In Cronitor, open Settings → Alerts, and edit the notification list your monitors use, usually the default one. Add a Telegram notification, and follow Cronitor's prompts to link your chat.
 
-Cronitor uses its own Telegram bot, so its alerts arrive in a different chat from x1console's. Each feature's README says which monitor to create.
+Cronitor uses its own Telegram bot, so its alerts arrive in a different chat from `x1console`'s. Each feature's README says which monitor to create.
 
 ## Development
 

@@ -88,7 +88,8 @@ function withGpgHome(host, work) {
  * @param {string} home  gpg's folder.
  * @param {string} keyFile  The key file, armored or binary.
  * @param {string} what  The step, for an error.
- * @returns {string[]} The missing fingerprints; none when it holds both.
+ * @returns {string[]} The missing fingerprints, or none when it holds
+ *   both.
  */
 function missingPinnedKeys(host, home, keyFile, what) {
   const shown = gpg(
@@ -215,7 +216,7 @@ async function downloadSigningKey(host, timeoutMs) {
  * Lists the apt source files, other than the tool's own, that already
  * name nginx.org's repository in a line that isn't a comment.
  * @param {object} host  The host.
- * @returns {string[]} The files; none when nothing else names it.
+ * @returns {string[]} The files, or none when nothing else names it.
  */
 function otherNginxSources(host) {
   const result = host.run("grep", [

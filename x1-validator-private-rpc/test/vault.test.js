@@ -1,12 +1,17 @@
 /**
  * @file x1-validator-private-rpc/test/vault.test.js
  * @description
- * Tests the vault: a secret's round trip; a wrong password and a changed
- * byte, each refused; a payload made by LP Ranger's key-store.js,
- * decrypted, with the same fields as the tool's own; a payload in
- * another format, refused; and the vault file's modes, written whole.
+ * Tests the vault:
+ *
+ * - a secret's round trip
+ * - a wrong password and a changed byte, each refused
+ * - a payload made by LP Ranger's key-store.js, decrypted, with the same
+ *   fields as the tool's own
+ * - a payload in another format, refused
+ * - the vault file's modes, written whole
+ *
  * Most tests use a few PBKDF2 rounds, which the payload records, so they
- * run fast; the LP Ranger payload uses the full 600,000.
+ * run fast. The LP Ranger payload uses the full 600,000.
  */
 
 import assert from "node:assert/strict";

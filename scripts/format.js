@@ -5,7 +5,7 @@
  * Backs `npm run format` and `npm run format:check`: Prettier over the
  * project's JavaScript files, the same stage `npm run lint` runs. Run
  * `npm run format` to fix a JavaScript formatting failure from the lint
- * or the gate, and `npm run lint:fix` for json or yaml; nothing rewrites
+ * or the gate. For json or yaml, run `npm run lint:fix`. Nothing rewrites
  * files at commit time. Run it with `--help` for its options and exit
  * codes.
  */
@@ -27,12 +27,14 @@ function main() {
     ],
   )
     .addOption(
-      new Option("--check", "report unformatted files").conflicts("write"),
+      new Option("--check", "report unformatted files")
+        .conflicts("write")
+        .default(false),
     )
-    .option("--write", "rewrite unformatted files");
+    .option("--write", "rewrite unformatted files", false);
   program.parse();
   const { check, write } = program.opts();
-  if (check !== true && write !== true) {
+  if (check === false && write === false) {
     program.error("error: give --check or --write.");
   }
   const stage = prettierStage("js", { write: write === true });

@@ -13,8 +13,8 @@
  * names the hostname and the event, never a secret.
  */
 
-const DAY_MS = 24 * 60 * 60 * 1000;
 const MINUTE_MS = 60 * 1000;
+const HOUR_MS = 60 * MINUTE_MS;
 
 /** The last alert time of a check that has never alerted. */
 export const NEVER_ALERTED = -1;
@@ -24,7 +24,7 @@ export const NEVER_ALERTED = -1;
  *   it.
  * @property {boolean} bad  Whether its last verdict was a problem.
  * @property {number} lastAlertAt  When it last alerted, its recovery
- *   notice included; NEVER_ALERTED when it never has.
+ *   notice included, or NEVER_ALERTED when it never has.
  */
 
 /**
@@ -55,7 +55,7 @@ export function isAlertState(state) {
   return (
     state?.version === 1 &&
     Array.isArray(state.pending) &&
-    isObject &&
+    isObject === true &&
     Object.values(checks).every(
       (check) =>
         typeof check?.bad === "boolean" &&
@@ -68,9 +68,11 @@ export function isAlertState(state) {
 /**
  * Lists the alerting checks, their alerts and how often they repeat.
  * @param {number} reminderMs  How often the public-rpc alerts repeat.
+ * @param {number} certificateReminderMs  How often the certificate's
+ *   alert repeats.
  * @returns {Map<string, {title: string, repeatMs: number|null}>}
  */
-function alertRules(reminderMs) {
+function alertRules(reminderMs, certificateReminderMs) {
   return new Map([
     ["rpc-private", { title: "The rpc is public", repeatMs: reminderMs }],
     [
@@ -85,13 +87,16 @@ function alertRules(reminderMs) {
     [
       "gate",
       {
-        title: "nginx is locked, so it refuses every request; run unlock",
+        title: "nginx is locked, so it refuses every request. Run unlock",
         repeatMs: null,
       },
     ],
     [
       "certificate",
-      { title: "The certificate needs attention", repeatMs: DAY_MS },
+      {
+        title: "The certificate needs attention",
+        repeatMs: certificateReminderMs,
+      },
     ],
   ]);
 }
@@ -110,14 +115,19 @@ function decideOne(check, was, rule, now) {
   }
   if (check.status === "ok") {
     return {
-      message: was.bad ? `Recovered: ${check.detail}` : null,
-      next: { bad: false, lastAlertAt: was.bad ? now : was.lastAlertAt },
+      message: was.bad === true ? `Recovered: ${check.detail}` : null,
+      next: {
+        bad: false,
+        lastAlertAt: was.bad === true ? now : was.lastAlertAt,
+      },
     };
   }
   const due =
-    !was.bad ||
-    (rule.repeatMs !== null && now - was.lastAlertAt >= rule.repeatMs);
-  return due
+    was.bad === false ||
+    (rule.repeatMs !== undefined &&
+      rule.repeatMs !== null &&
+      now - was.lastAlertAt >= rule.repeatMs);
+  return due === true
     ? {
         message: `${rule.title}. ${check.detail}`,
         next: { bad: true, lastAlertAt: now },
@@ -134,17 +144,24 @@ function decideOne(check, was, rule, now) {
  * @param {string} run.hostname  The rpc's hostname, for the messages.
  * @param {number} run.reminderMinutes  How often the public-rpc alerts
  *   repeat.
+ * @param {number} run.certificateReminderHours  How often the
+ *   certificate's alert repeats.
  * @param {boolean} run.flagRestored  Whether ensure put the flag back.
  * @returns {{messages: string[], next: AlertState}} The new messages,
- *   and the state to keep; pending ones aren't included in either.
+ *   and the state to keep. The state carries over the last run's pending
+ *   messages, which the new messages leave out.
  */
 export function decideAlerts(run) {
-  const { checks, last, now, hostname, reminderMinutes, flagRestored } = run;
+  const { checks, last, now, hostname, flagRestored } = run;
   const prefix = `x1-validator-private-rpc on ${hostname}:`;
   const messages = [];
   const nextChecks = {};
   const lastChecks = new Map(Object.entries(last.checks));
-  for (const [name, rule] of alertRules(reminderMinutes * MINUTE_MS)) {
+  const rules = alertRules(
+    run.reminderMinutes * MINUTE_MS,
+    run.certificateReminderHours * HOUR_MS,
+  );
+  for (const [name, rule] of rules) {
     const was = lastChecks.get(name) ?? {
       bad: false,
       lastAlertAt: NEVER_ALERTED,
@@ -154,12 +171,12 @@ export function decideAlerts(run) {
       check === undefined || check === null
         ? { message: null, next: was }
         : decideOne(check, was, rule, now);
-    if (decided.message !== null) {
+    if (decided.message !== undefined && decided.message !== null) {
       messages.push(`${prefix} ${decided.message}`);
     }
     Object.assign(nextChecks, { [name]: decided.next });
   }
-  if (flagRestored) {
+  if (flagRestored === true) {
     messages.push(
       `${prefix} An x1console update took --private-rpc out of the start ` +
         "script, and ensure put it back. The running validator keeps a " +

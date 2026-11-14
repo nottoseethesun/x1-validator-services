@@ -6,7 +6,7 @@
  * temporary folder, named `x1-validator-services-test-<purpose>-<pid>-`
  * followed by random characters, so no two processes ever share one,
  * and the gate can tell a live run's folder from a dead run's by the
- * process id. A test process removes its own folders as it exits; the
+ * process id. A test process removes its own folders as it exits. The
  * gate removes, before it runs the tests, the folders of processes that
  * are gone.
  */

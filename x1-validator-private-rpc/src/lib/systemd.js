@@ -2,11 +2,14 @@
  * @file x1-validator-private-rpc/src/lib/systemd.js
  * @description
  * Talks to systemd through `systemctl`, on the host it is given. Reading
- * a unit's state needs no privileges; changing one runs through sudo.
+ * a unit's state needs no privileges. Changing one runs through sudo.
  * The parsers are pure, so tests feed them captured output.
  */
 
 import { mustSucceed } from "./command-result.js";
+
+/** The oldest systemd the tool supports: `systemd-creds` arrived in 250. */
+export const MIN_SYSTEMD_VERSION = 250;
 
 /**
  * Reads systemd's major version from the first line `systemctl
@@ -16,7 +19,9 @@ import { mustSucceed } from "./command-result.js";
  */
 export function parseSystemdVersion(text) {
   const match = /^systemd (\d+)\b/.exec(text.trim());
-  return match === null ? null : Number.parseInt(match[1], 10);
+  return match === undefined || match === null
+    ? null
+    : Number.parseInt(match[1], 10);
 }
 
 /**
@@ -64,7 +69,7 @@ export function showUnit(host, unit, names) {
  * Reads a unit's state at boot, as `systemctl is-enabled` prints it.
  * @param {object} host  The host.
  * @param {string} unit  The unit, such as `nginx.service`.
- * @returns {string} Such as `enabled`, `disabled` or `masked`; empty
+ * @returns {string} Such as `enabled`, `disabled` or `masked`, or empty
  *   when systemd has no such unit.
  */
 export function unitFileState(host, unit) {

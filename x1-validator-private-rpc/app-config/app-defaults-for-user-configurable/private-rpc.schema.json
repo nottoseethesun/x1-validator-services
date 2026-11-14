@@ -26,14 +26,17 @@
     "websocketIdleTimeoutSeconds",
     "certificateWaitSeconds",
     "certificateWarningDays",
+    "certificateReminderHours",
     "exposedReminderMinutes",
     "rateLimitRequestsPerSecond",
     "requestTimeoutSeconds",
+    "cronitorCheckInTries",
     "gatePollMs",
     "upgradeCheckPollMs",
     "startScriptQuietSeconds",
     "passwordMinLength",
-    "passwordTries"
+    "passwordTries",
+    "checkQueryCount"
   ],
   "properties": {
     "$schema": {
@@ -146,6 +149,12 @@
       "minimum": 1,
       "maximum": 89
     },
+    "certificateReminderHours": {
+      "description": "How often ensure repeats the alert while the certificate needs attention.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 168
+    },
     "exposedReminderMinutes": {
       "description": "How often ensure repeats the alert while the rpc is public.",
       "type": "integer",
@@ -164,6 +173,12 @@
       "minimum": 1,
       "maximum": 120
     },
+    "cronitorCheckInTries": {
+      "description": "How many times ensure tries its Cronitor check-in on each run before it gives up until the next run.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 5
+    },
     "gatePollMs": {
       "description": "How long apply and unlock wait between two looks at nginx's gate page, while they wait for it to say unlocked.",
       "type": "integer",
@@ -177,13 +192,13 @@
       "maximum": 5000
     },
     "startScriptQuietSeconds": {
-      "description": "How long after a change to the start script ensure keeps off it, on every run but the git hook's, so it never edits the script in the middle of an x1console update.",
+      "description": "How long ensure keeps off the start script after it changes, so it never edits the script in the middle of an x1console update. A run from the tool's git hook doesn't wait.",
       "type": "integer",
       "minimum": 5,
       "maximum": 600
     },
     "passwordMinLength": {
-      "description": "The fewest characters a new x1-validator-services password may have. It can only be raised.",
+      "description": "The fewest characters a new x1-validator-services password may have.",
       "type": "integer",
       "minimum": 12,
       "maximum": 1024
@@ -193,6 +208,12 @@
       "type": "integer",
       "minimum": 1,
       "maximum": 10
+    },
+    "checkQueryCount": {
+      "description": "How many queries check-my-private-rpc sends through the keyed url, one right after another.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 50
     }
   },
   "$defs": {

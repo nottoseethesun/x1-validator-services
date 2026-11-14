@@ -60,6 +60,26 @@ test("gives a command that can't start exit code 127", () => {
   assert.match(result.stderr, /ENOENT/);
 });
 
+test("runs a program on the terminal, drawing on stderr, and gives its exit code", () => {
+  const host = testHost();
+  assert.equal(
+    host.runOnTerminal(process.execPath, ["-e", "process.exit(3)"]),
+    3,
+  );
+  assert.equal(host.runOnTerminal("x1-no-such-command", []), 127);
+  const hostUrl = new URL("../src/lib/host.js", import.meta.url).href;
+  const draws = `import { createHost } from ${JSON.stringify(hostUrl)};
+createHost().runOnTerminal(process.execPath, ["-e", "process.stdout.write('drawn')"]);`;
+  const result = spawnSync(
+    process.execPath,
+    ["--input-type=module", "--eval", draws],
+    { encoding: "utf8" },
+  );
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout, "");
+  assert.equal(result.stderr, "drawn");
+});
+
 test("captures binary output as bytes", () => {
   const result = testHost().run(
     process.execPath,

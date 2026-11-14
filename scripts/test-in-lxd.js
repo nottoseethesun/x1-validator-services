@@ -4,17 +4,18 @@
  * @description
  * Backs `npm run test:system`: the end-to-end test of
  * x1-validator-private-rpc on a real Ubuntu 24.04 system with systemd, in
- * a throwaway LXD container on the development machine; never on a
- * validator. Its first phase, the nginx upgrade check, is described
- * here; its second, apply and the commands after it, in
+ * a throwaway LXD container on the development machine. It never runs on
+ * a validator. Its first phase, the nginx upgrade check, is described
+ * here. Its second, apply and the commands after it, is described in
  * scripts/_lxd-apply-phase.js. It launches the container, copies in
- * the feature and Node.js 20.0.0 (the validator's version), installs the
- * runtime dependencies, and runs the check as the container's ordinary
- * user, who has sudo, as a validator's account does. Then it confirms
- * the container is as clean as before and deletes it. What counts as
- * clean comes from the app: the paths in the settings the check loads in
- * the container, nginx.org's repository files, and the folders above
- * them, so this test keeps no copy of a default.
+ * the feature and Node.js 20.0.0 (the validator's version), and installs
+ * the runtime dependencies. It runs the check as the container's
+ * ordinary user, who has sudo, as a validator's account does, in a real
+ * terminal, where it affirms the disclaimer's dialog. Then it
+ * confirms the container is as clean as before and deletes it. What
+ * counts as clean comes from the app: the paths in the settings the
+ * check loads in the container, nginx.org's repository files, and the
+ * folders above them, so this test keeps no copy of a default.
  *
  * It needs LXD, and network access from the container to Ubuntu's
  * archive, nginx.org, npm's registry and GitHub, for Pebble. It isn't
@@ -27,6 +28,8 @@ import os from "node:os";
 import path from "node:path";
 import { overrideFilePath } from "../x1-validator-private-rpc/src/lib/settings.js";
 import {
+  AFFIRM_DISCLAIMER,
+  answerInTerminal,
   asRoot,
   asUser,
   asUserArgs,
@@ -182,15 +185,16 @@ async function runTest(name, workFolder) {
   const paths = pathsTheToolMightCreate(settings);
   const before = existingPaths(name, paths);
   console.log("\n── The nginx upgrade check ──");
-  const checkStatus = asUser(name, [
-    "node",
-    "x1-validator-private-rpc/util/validate-nginx-upgrade/index.js",
-  ]);
+  const check = await answerInTerminal(
+    name,
+    "node x1-validator-private-rpc/util/validate-nginx-upgrade/index.js",
+    [AFFIRM_DISCLAIMER],
+  );
   const left = leftovers(name, paths, before);
   for (const item of left) {
     console.error(`Left behind: ${item}`);
   }
-  if (checkStatus !== 0 || left.length > 0) {
+  if (check.code !== 0 || left.length > 0) {
     return false;
   }
   console.log("\n── apply and the commands after it ──");
@@ -205,16 +209,16 @@ async function main() {
   const program = scriptProgram(
     "scripts/test-in-lxd.js",
     "Runs x1-validator-private-rpc end to end in a throwaway Ubuntu 24.04 " +
-      "LXD container: first the nginx upgrade check, which must leave the " +
-      "container clean; then apply, ensure, turn-off-private-rpc, " +
+      "LXD container. First comes the nginx upgrade check, which must leave " +
+      "the container clean. Then come apply, ensure, turn-off-private-rpc, " +
       "turn-on-private-rpc, unlock, url and undo-apply, with Pebble in place " +
-      "of Let's Encrypt, ending with a container as apply found it. Then it " +
-      "deletes the container.",
+      "of Let's Encrypt. They end with the container as apply found it. " +
+      "Then it deletes the container.",
     [
       "0  both phases passed",
       "1  a phase failed, or the container couldn't be set up",
     ],
-  ).option("--keep", "keep the container for a look inside");
+  ).option("--keep", "keep the container for a look inside", false);
   program.parse();
   const { keep } = program.opts();
   const name = `x1vs-system-test-${process.pid}`;
@@ -233,8 +237,10 @@ async function main() {
       runInherited("lxc", ["delete", "--force", name]);
     }
   }
-  console.log(passed ? "\nSystem test passed." : "\nSystem test failed.");
-  process.exit(passed ? 0 : 1);
+  console.log(
+    passed === true ? "\nSystem test passed." : "\nSystem test failed.",
+  );
+  process.exit(passed === true ? 0 : 1);
 }
 
 await main();

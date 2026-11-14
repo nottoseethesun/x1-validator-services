@@ -20,9 +20,14 @@
  * ufw is on, unless a scenario turns it off. Its status then lists no
  * rules, though it still holds them. A folder root makes with mode 0700
  * hides what it holds from the validator's account, as on a real system.
- * nginx, once started with a hand-off key, answers the gate page, the
- * keyed path and a path without the key, with a certificate for the
- * hostname. A scenario changes the starting state.
+ * A restart of nginx takes the key from the hand-off file only where the
+ * settings put it, as the start wrapper does. systemd reads nginx's
+ * drop-in only at a daemon-reload, and a restart fails with
+ * 243/CREDENTIALS while the drop-in it read names a saved password whose
+ * file is gone. nginx, once started with
+ * the key, answers the gate page, the keyed path and a path without the
+ * key, with a certificate for the hostname. A scenario changes the
+ * starting state.
  */
 
 import fs from "node:fs";
@@ -91,13 +96,13 @@ function startingState(changes = {}) {
  * @returns {object}
  */
 function unitFileAnswer(state) {
-  if (state.masked) {
+  if (state.masked === true) {
     return { status: 1, stdout: "masked\n" };
   }
-  if (state.enabled) {
+  if (state.enabled === true) {
     return { stdout: "enabled\n" };
   }
-  if (state.nginxInstalled) {
+  if (state.nginxInstalled === true) {
     return { status: 1, stdout: "disabled\n" };
   }
   return {
@@ -108,7 +113,7 @@ function unitFileAnswer(state) {
 
 /**
  * Writes one of the fake's ufw rules as `ufw show added` prints it, after
- * `ufw `. A bare port, such as `443/tcp`, is an allow rule; any other rule
+ * `ufw `. A bare port, such as `443/tcp`, is an allow rule. Any other rule
  * is written out, such as `limit 443/tcp`.
  * @param {string} rule  The rule.
  * @returns {string}
@@ -125,7 +130,7 @@ function shownRule(rule) {
 function partsOfRule(rule) {
   const [action, ...words] = shownRule(rule).split(" ");
   const logged = words[0] === "log" || words[0] === "log-all";
-  return { action, port: logged ? words[1] : words[0] };
+  return { action, port: logged === true ? words[1] : words[0] };
 }
 
 /**
@@ -144,7 +149,7 @@ function ufwAnswer(call, state) {
       const { action, port } = partsOfRule(rule);
       return `${port} ${action.toUpperCase()} Anywhere`;
     });
-    return state.ufwActive
+    return state.ufwActive === true
       ? { stdout: `Status: active\n\nTo Action From\n${rules.join("\n")}\n` }
       : { stdout: "Status: inactive\n" };
   }
@@ -191,33 +196,39 @@ function systemAnswer(line, state) {
     ["systemd-creds has-tpm2", { status: 1, stdout: state.tpm2 }],
     [
       "getent passwd nginx",
-      state.nginxUser
+      state.nginxUser === true
         ? { stdout: "nginx:x:101:101::/nonexistent" }
         : { status: 2 },
     ],
     [
       `systemctl is-active ${NGINX_UNIT}`,
       {
-        status: state.active ? 0 : 3,
-        stdout: state.active ? "active\n" : "inactive\n",
+        status: state.active === true ? 0 : 3,
+        stdout: state.active === true ? "active\n" : "inactive\n",
       },
     ],
     [
       "crontab -l",
-      state.crontab === null
+      state.crontab === undefined || state.crontab === null
         ? { status: 1, stderr: "no crontab for validator" }
         : { stdout: state.crontab },
     ],
     [
       "ss -ltnH sport = :443",
       {
-        stdout: state.active ? `LISTEN 0 511 ${PUBLIC_IP}:443 0.0.0.0:*\n` : "",
+        stdout:
+          state.active === true
+            ? `LISTEN 0 511 ${PUBLIC_IP}:443 0.0.0.0:*\n`
+            : "",
       },
     ],
     [
       "ss -ltnH ( sport = :443 or sport = :80 )",
       {
-        stdout: state.active ? `LISTEN 0 511 ${PUBLIC_IP}:443 0.0.0.0:*\n` : "",
+        stdout:
+          state.active === true
+            ? `LISTEN 0 511 ${PUBLIC_IP}:443 0.0.0.0:*\n`
+            : "",
       },
     ],
     [
@@ -281,6 +292,20 @@ function packageAnswer(call, line, state, files) {
 }
 
 /**
+ * Says whether the drop-in systemd last read names a saved password whose
+ * file is gone, so nginx can't start.
+ * @param {object} state  The machine's state.
+ * @param {Map<string, string>} files  The fake's files.
+ * @returns {boolean}
+ */
+function credentialGone(state, files) {
+  const named = /^LoadCredentialEncrypted=[^:]+:(.+)$/m.exec(
+    state.loadedDropIn ?? "",
+  );
+  return named !== undefined && named !== null && !files.has(named[1]);
+}
+
+/**
  * Answers the commands that change the machine, changing its state.
  * @param {object} call  The command.
  * @param {string} line  Its command line.
@@ -296,17 +321,33 @@ function changeAnswer(call, line, state, files) {
     [
       "restart",
       () => {
-        // The start wrapper reads the hand-off file and deletes it.
-        const handedOver = files.has(state.handOffPath ?? "");
-        files.delete(state.handOffPath ?? "");
-        Object.assign(state, { active: true, unlocked: handedOver });
+        // The start wrapper reads the hand-off file where the settings
+        // put it, hands nginx the key in it, and deletes it.
+        const handedOver = files.get(state.handOffPath);
+        files.delete(state.handOffPath);
+        Object.assign(state, {
+          active: true,
+          unlocked: handedOver !== undefined && handedOver !== null,
+          key: handedOver ?? state.key,
+        });
       },
     ],
-    ["daemon-reload", () => state],
+    // systemd reads the drop-in only now, or at boot.
+    [
+      "daemon-reload",
+      () => Object.assign(state, { loadedDropIn: files.get(state.dropInPath) }),
+    ],
   ]);
   if (call.kind === "sudo" && call.command === "systemctl") {
     if (call.args[0] === "disable") {
       Object.assign(state, { enabled: false, active: false, unlocked: false });
+    }
+    if (call.args[0] === "restart" && credentialGone(state, files)) {
+      Object.assign(state, { active: false, unlocked: false });
+      return {
+        status: 1,
+        stderr: `Job for ${NGINX_UNIT} failed (243/CREDENTIALS).`,
+      };
     }
     systemctlVerbs.get(call.args[0])?.();
     return {};
@@ -352,7 +393,7 @@ function gpgAnswer(call) {
  * @returns {Promise<object>}
  */
 async function nginxAnswer(state, target, clock) {
-  if (!state.active) {
+  if (state.active === false) {
     throw new Error(`connect ECONNREFUSED ${target.address}:443`);
   }
   const certificate = {
@@ -364,11 +405,15 @@ async function nginxAnswer(state, target, clock) {
   if (target.path === GATE_PAGE_PATH) {
     return {
       status: 200,
-      body: state.unlocked ? "unlocked\n" : "locked\n",
+      body: state.unlocked === true ? "unlocked\n" : "locked\n",
       certificate,
     };
   }
-  if (state.unlocked && key !== "" && target.path === `/${key}/health`) {
+  if (
+    state.unlocked === true &&
+    key !== "" &&
+    target.path === `/${key}/health`
+  ) {
     return { status: 200, body: "ok", certificate };
   }
   return { status: 403, body: "", certificate };
@@ -384,15 +429,20 @@ async function nginxAnswer(state, target, clock) {
  * @param {boolean} [scenario.telegram]  Whether x1console's Telegram
  *   files exist.
  * @param {object} [scenario.settings]  The settings that say where
- *   x1console's checkout and start script are: the shipped ones, unless
- *   the test changes them.
+ *   x1console's checkout and start script are, and where the start
+ *   wrapper reads the hand-off file: the shipped ones, unless the test
+ *   changes them.
  * @returns {{host: object, state: object, scriptPath: string}} The fake,
  *   its state, and where its start script is.
  */
 export function fakeX1Validator(scenario = {}) {
-  const state = startingState(scenario.state);
-  const paths = featurePaths();
   const settings = scenario.settings ?? shippedSettings();
+  const state = {
+    ...startingState(scenario.state),
+    handOffPath: settings.keyHandOffPath,
+    dropInPath: settings.systemdDropInPath,
+  };
+  const paths = featurePaths();
   const x1consoleDir = homePath(settings.x1consoleDir, HOME);
   // Not through the app's own function, so a test sees the app ignore it.
   const scriptPath = path.join(x1consoleDir, settings.startScriptFile);
@@ -415,10 +465,10 @@ export function fakeX1Validator(scenario = {}) {
         "tachyon-validator",
         "--rpc-port",
         "8899",
-        ...(state.flagRunning ? ["--private-rpc"] : []),
+        ...(state.flagRunning === true ? ["--private-rpc"] : []),
       ].join("\0"),
     ],
-    ...(scenario.telegram
+    ...(scenario.telegram === true
       ? [
           [
             path.join(x1consoleDir, TOKEN_FILE),
@@ -433,9 +483,6 @@ export function fakeX1Validator(scenario = {}) {
   let host = null;
   const respond = (call) => {
     const line = [call.command, ...call.args].join(" ");
-    if (call.command === "sh" && call.kind === "sudo") {
-      Object.assign(state, { key: call.input, handOffPath: call.args.at(-1) });
-    }
     return (
       scenario.respond?.(call, state) ??
       systemAnswer(line, state) ??
@@ -443,7 +490,7 @@ export function fakeX1Validator(scenario = {}) {
       changeAnswer(call, line, state, files) ??
       gpgAnswer(call) ??
       (call.command === "dpkg-query"
-        ? state.nginxInstalled
+        ? state.nginxInstalled === true
           ? { stdout: "install ok installed 1.30.6-1~noble" }
           : { status: 1 }
         : undefined)

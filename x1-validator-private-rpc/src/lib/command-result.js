@@ -2,8 +2,8 @@
  * @file x1-validator-private-rpc/src/lib/command-result.js
  * @description
  * Turns a failed command into an error that says what failed. Every
- * command the tool runs on the host returns its exit code and output;
- * a step that needs the command to succeed passes the result through
+ * command the tool runs on the host returns its exit code and output. A
+ * step that needs the command to succeed passes the result through
  * here, so the error names the step, the exit code and what the command
  * printed on stderr.
  */
