@@ -58,6 +58,36 @@ export function machineProblems(facts) {
 }
 
 /**
+ * Lists how nginx's answers fell short: the gate page must say ok, a
+ * request with the listed key must get 200, and one with a random key
+ * 403.
+ * @param {{gate: string, keyed: number, stranger: number}} answers  The
+ *   gate page's answer, and the two requests' statuses, 0 for none.
+ * @param {string} when  Before or after the upgrade, for the messages.
+ * @returns {string[]} One message per failure, or none.
+ */
+export function keyProblems(answers, when) {
+  const problems = [];
+  if (answers.gate !== "ok") {
+    problems.push(
+      `${when} the gate page never said ok. Its last answer was ${answers.gate}.`,
+    );
+  }
+  if (answers.keyed !== 200) {
+    problems.push(
+      `${when} a request with the listed key got ${answers.keyed}, not ` +
+        "200: nginx didn't find the key's hash in its list.",
+    );
+  }
+  if (answers.stranger !== 403) {
+    problems.push(
+      `${when} a request with a random key got ${answers.stranger}, not 403.`,
+    );
+  }
+  return problems;
+}
+
+/**
  * Lists how nginx failed to come through the upgrade.
  * @param {object} seen  What the check saw before and after.
  * @param {Map<string, string>} seen.before  nginx.service's state before.
@@ -65,7 +95,8 @@ export function machineProblems(facts) {
  * @param {string} seen.programAfter  The program the main process runs.
  * @param {boolean} seen.oldMainRunning  Whether the old main process is
  *   still running.
- * @param {string} seen.gateAfter  What the gate page says after.
+ * @param {{gate: string, keyed: number, stranger: number}}
+ *   seen.answersAfter  How nginx answered after, as keyProblems judges.
  * @param {string|null} seen.installedVersion  The installed nginx.
  * @param {string} seen.expectedVersion  The version upgraded to.
  * @returns {string[]} One message per failure, or none when it passed.
@@ -82,7 +113,7 @@ export function upgradeProblems(seen) {
   if (seen.after.get("InvocationID") !== seen.before.get("InvocationID")) {
     problems.push(
       "systemd restarted nginx during the upgrade instead of following " +
-        "the hand-over, so without a saved password nginx would be locked.",
+        "the hand-over, so the upgrade dropped every open connection.",
     );
   }
   if (seen.after.get("MainPID") === seen.before.get("MainPID")) {
@@ -99,17 +130,7 @@ export function upgradeProblems(seen) {
   if (seen.oldMainRunning === true) {
     problems.push("The old nginx main process is still running.");
   }
-  if (seen.gateAfter === "locked") {
-    problems.push(
-      "After the upgrade the gate page says locked: the api key didn't " +
-        "carry over.",
-    );
-  } else if (seen.gateAfter !== "unlocked") {
-    problems.push(
-      "After the upgrade the gate page never said unlocked. Its last " +
-        `answer was ${seen.gateAfter}.`,
-    );
-  }
+  problems.push(...keyProblems(seen.answersAfter, "After the upgrade"));
   if (seen.installedVersion !== seen.expectedVersion) {
     problems.push(
       `nginx ${seen.installedVersion ?? "(none)"} is installed, not ` +

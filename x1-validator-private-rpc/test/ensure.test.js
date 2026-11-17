@@ -5,6 +5,7 @@
  *
  * - nothing before apply
  * - the flag put back after an update, with one notice
+ * - a run skipped while another command holds the start script's lock
  * - an update waited out, for as long as the settings say, and while git
  *   holds its lock in the checkout they name, unless the git hook runs
  *   ensure
@@ -18,7 +19,8 @@
  * - the Cronitor check-in, tried as many times as the settings say, and
  *   what --quiet prints
  * - every check passing with every setting changed
- * - a start wrapper whose Node.js is gone, reported with no alert
+ * - in every run, no question and no sudo, and the hostname apply set
+ *   nginx up with, whatever the settings name now
  */
 
 import assert from "node:assert/strict";
@@ -30,13 +32,17 @@ import { NEVER_ALERTED } from "../src/cli/alerts.js";
 import { runEnsure } from "../src/cli/ensure.js";
 import { featurePaths, homePath } from "../src/cli/feature-paths.js";
 import { CRONITOR_URL } from "../src/cli/heartbeat.js";
+import { lockStartScript, START_SCRIPT_LOCKED } from "../src/cli/state.js";
 import { appliedValidator, commandRun } from "./helpers/applied-validator.js";
 import { shippedAndChangedSettings } from "./helpers/config-copies.js";
+import { sudoCalls } from "./helpers/fake-host.js";
 import {
+  ANOTHER_HOSTNAME,
   fakeX1Validator,
   HOME,
   HOSTNAME,
 } from "./helpers/fake-x1-validator.js";
+import { scriptedPrompts } from "./helpers/scripted-prompts.js";
 
 const MINUTE_MS = 60 * 1000;
 const PRIVATE = { rpcAddress: "127.0.0.1", flagRunning: true };
@@ -53,17 +59,26 @@ function scriptWithoutFlag() {
 }
 
 /**
- * Runs ensure.
+ * Runs ensure, and checks that it asked nothing and used no sudo, since
+ * cron runs it with nobody at the terminal. The settings name another
+ * hostname than apply set nginx up with, since ensure checks what nginx
+ * serves.
  * @param {object} host  The fake host.
  * @param {object} settings  The settings.
  * @param {object} [options]  ensure's options.
  * @returns {Promise<{code: number, lines: string[]}>}
  */
 async function ensure(host, settings, options = {}) {
-  const run = commandRun(host, settings, {
+  const from = host.calls.length;
+  const later = { ...settings, hostname: ANOTHER_HOSTNAME };
+  const prompts = scriptedPrompts();
+  const run = commandRun(host, later, {
+    prompts,
     options: { quiet: true, fromGitHook: false, ...options },
   });
   const code = await runEnsure(run);
+  const rooted = sudoCalls(host.calls.slice(from));
+  assert.deepEqual([prompts.asked, rooted], [[], []]);
   return { code, lines: run.lines };
 }
 
@@ -99,6 +114,7 @@ test("puts the flag back after an update, and says so once", async () => {
     host.files.get(scriptPath),
     /--rpc-port 8899 --private-rpc \\$/m,
   );
+  assert.equal(host.fileMode(scriptPath), 0o755);
   assert.ok(
     first.lines.some((line) =>
       line.includes(`Put --private-rpc back into ${scriptPath}`),
@@ -108,9 +124,34 @@ test("puts the flag back after an update, and says so once", async () => {
   assert.deepEqual(second.lines, []);
 });
 
+test("skips its run while another command holds the start script's lock, and the next run puts the flag back", async () => {
+  const { host, settings, scriptPath } = await appliedValidator(
+    { state: PRIVATE },
+    {},
+  );
+  host.files.set(scriptPath, scriptWithoutFlag());
+  host.modified.set(scriptPath, host.now());
+  await host.sleep(settings.startScriptQuietSeconds * 1000);
+  const release = lockStartScript(host, featurePaths().statePath);
+  const skipped = await ensure(host, settings, { quiet: false });
+  release();
+  assert.deepEqual(skipped, {
+    code: 0,
+    lines: [`[ensure] ${START_SCRIPT_LOCKED}`],
+  });
+  assert.equal(host.files.get(scriptPath), scriptWithoutFlag());
+  await ensure(host, settings);
+  assert.match(
+    host.files.get(scriptPath),
+    /--rpc-port 8899 --private-rpc \\$/m,
+  );
+});
+
 test("waits out an update in progress, unless the tool's git hook runs it", async () => {
-  // Every setting changed, so git's lock counts only in the x1console
-  // checkout the settings name.
+  /*-
+   * Every setting changed, so git's lock counts only in the x1console
+   * checkout the settings name.
+   */
   const { changed } = shippedAndChangedSettings();
   const {
     host,
@@ -128,11 +169,18 @@ test("waits out an update in progress, unless the tool's git hook runs it", asyn
   host.files.set(scriptPath, scriptWithoutFlag());
   host.modified.set(scriptPath, host.now());
   await host.sleep(quietMs - 1000);
-  const recent = await ensure(host, settings);
+  const recent = await ensure(host, settings, { quiet: false });
   assert.doesNotMatch(host.files.get(scriptPath), /--private-rpc/);
   assert.equal(
     recent.lines.some((line) => line.includes("couldn't put it back")),
     false,
+  );
+  // A run by hand says when to run it again, for a machine without cron.
+  assert.ok(
+    recent.lines.some((line) =>
+      line.endsWith(`gone unchanged for ${quietMs / 1000} seconds.`),
+    ),
+    recent.lines.join("\n"),
   );
   await host.sleep(1000);
   const x1consoleDir = homePath(settings.x1consoleDir, HOME);
@@ -304,7 +352,7 @@ test("a damaged alert state, a check without its last alert time, is set aside f
   const { alertStatePath } = featurePaths();
   const damaged = {
     version: 1,
-    checks: { gate: { bad: true, lastAlertAt: null } },
+    checks: { certificate: { bad: true, lastAlertAt: null } },
     pending: ["a message from the damaged file"],
   };
   host.files.set(alertStatePath, JSON.stringify(damaged));
@@ -315,7 +363,7 @@ test("a damaged alert state, a check without its last alert time, is set aside f
     false,
   );
   const kept = JSON.parse(host.files.get(alertStatePath));
-  assert.deepEqual(kept.checks.gate, {
+  assert.deepEqual(kept.checks.certificate, {
     bad: false,
     lastAlertAt: NEVER_ALERTED,
   });
@@ -355,7 +403,7 @@ test("checks in with Cronitor when .env holds its url, and tries as many times a
 test("with every setting changed, it reports every check without --quiet, and nothing with it when all is well", async () => {
   /*-
    * Every setting changed, so a check that read a shipped value, such as
-   * the start wrapper's path, would show.
+   * x1console's start script's place, would show.
    */
   const { changed } = shippedAndChangedSettings();
   const { host, settings } = await appliedValidator({
@@ -366,32 +414,10 @@ test("with every setting changed, it reports every check without --quiet, and no
   assert.deepEqual(quiet.lines, []);
   assert.equal(quiet.code, 0);
   const loud = await ensure(host, settings, { quiet: false });
-  assert.equal(loud.lines.length, 8);
+  assert.equal(loud.lines.length, 7);
   assert.ok(
     loud.lines.every((line) => line.startsWith("[ensure] ok: ")),
     loud.lines.join("\n"),
   );
-  assert.ok(
-    loud.lines.includes(
-      "[ensure] ok: The start wrapper's Node.js and src/cli.js exist.",
-    ),
-  );
-});
-
-test("reports a problem, and sends no alert, once the start wrapper's Node.js is gone", async () => {
-  const { host, settings } = await appliedValidator({
-    state: PRIVATE,
-    telegram: true,
-  });
-  host.files.delete(host.nodePath());
-  const sentBefore = telegramTexts(host).length;
-  const { code, lines } = await ensure(host, settings, { quiet: false });
-  assert.equal(code, 1);
-  assert.ok(
-    lines.some((line) =>
-      line.startsWith("[ensure] problem: A path in the start wrapper is gone"),
-    ),
-    lines.join("\n"),
-  );
-  assert.equal(telegramTexts(host).length, sentBefore);
+  assert.ok(loud.lines.includes("[ensure] ok: The gate page says ok."));
 });

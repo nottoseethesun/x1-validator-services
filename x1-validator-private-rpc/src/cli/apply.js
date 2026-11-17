@@ -4,7 +4,7 @@
  * The `apply` command: it makes the validator's rpc private and puts it
  * behind nginx, in eight stages. The first checks the machine and
  * changes nothing. Then: nginx from nginx.org, the firewall rule, the
- * api key and the password, nginx's configuration and start, the
+ * api keys and the password, nginx's configuration and start, the
  * start-script flag, and the watchers that keep the flag in place. The
  * last says what to do next.
  *
@@ -24,23 +24,18 @@
 
 import { maskSecret } from "../lib/mask-secret.js";
 import { installNginx, openFirewall } from "./apply-install.js";
-import { setUpKey } from "./apply-key.js";
+import { checkedKey, setUpApiKeys } from "./apply-key.js";
 import { configureNginx } from "./apply-nginx.js";
 import { preflight } from "./apply-preflight.js";
 import { editStartScript, installWatchers } from "./apply-watchers.js";
 import { runningFlag } from "./checks.js";
 import { RESTART_HOW, RESTART_STEPS } from "./start-script.js";
-import { emptyState, hasSetup, readState, writeState } from "./state.js";
+import { emptyState, readState, writeState } from "./state.js";
 import {
   loadApplySettingsDictionary,
   readRecord,
   recorder,
 } from "./what-apply-changed.js";
-
-/** What apply says when it ends before nginx has the key it made. */
-export const KEY_NOT_WITH_NGINX =
-  "nginx doesn't have the new api key yet, so the new url gets 403 until " +
-  "you run unlock, which restarts nginx with it.";
 
 /**
  * The stages after the preflight, in order.
@@ -50,14 +45,15 @@ const STAGES = [
   { title: "install nginx from nginx.org", run: installNginx },
   { title: "open tcp port 443 in ufw", run: openFirewall },
   {
-    title: "make or read the api key, and decide whether to save the password",
+    title:
+      "make the first api key when there's none, and decide whether to save the password",
     run: async (context) => {
-      const keyAndSaved = await setUpKey(context);
-      Object.assign(context, keyAndSaved);
+      const { key } = await setUpApiKeys(context);
+      context.key = key;
     },
   },
   {
-    title: "write nginx's configuration and start it with the key",
+    title: "write nginx's configuration, and start or reload it",
     run: configureNginx,
   },
   {
@@ -67,7 +63,7 @@ const STAGES = [
       context.state.privateRpc = "on";
     },
   },
-  { title: "install the git hook and the cron job", run: installWatchers },
+  { title: "install the git hook and the cron jobs", run: installWatchers },
 ];
 
 /**
@@ -91,14 +87,17 @@ function changeStep(log, dryRun) {
 
 /**
  * Says what to do next: restart the validator, while the running one
- * lacks the flag, and where the url is. It asks the running validator
+ * lacks the flag, and what the url is. It asks the running validator
  * itself, so a run that finds the flag already in the script, after an
  * earlier run stopped short, still says to restart. A dry run says the
  * restart a real run would need, since it added no flag to restart for.
+ * A key this run made shows masked here, since the fourth stage showed
+ * it in full, the only time the tool can.
  * @param {object} context  The run.
  */
 function handOver(context) {
-  const { host, log, settings, paths, key, facts, dryRun } = context;
+  const { host, log, settings, paths, facts, dryRun } = context;
+  const key = checkedKey(context.key);
   const running = runningFlag(host, facts.rpcPort);
   if (running.status === "problem") {
     log.info(
@@ -108,12 +107,16 @@ function handOver(context) {
         : `The running validator lacks --private-rpc, and takes it at its next start. ${RESTART_HOW}`,
     );
   }
-  const masked = key === undefined || key === null ? "KEY" : maskSecret(key);
   log.info(
     "hand-over",
-    `The rpc's url: https://${settings.hostname}/${masked}`,
+    key === ""
+      ? `The rpc's url: https://${settings.hostname}/KEY, with an api key in place of KEY.`
+      : `The rpc's url: https://${settings.hostname}/${maskSecret(key)}, shown in full above, and only there.`,
   );
-  log.info("hand-over", `To see it in full, run: node ${paths.toolCli} url`);
+  log.info(
+    "hand-over",
+    `To make more api keys, run: node ${paths.toolCli} add-api-key`,
+  );
 }
 
 /**
@@ -128,8 +131,8 @@ function handOver(context) {
  * @param {import("./prompts.js").Prompts} run.prompts  The questions.
  * @param {{yes: boolean, dryRun: boolean, acmeStaging: boolean}}
  *   run.options  The command's options.
- * @param {(callback: () => void) => void} run.atExit  Runs a callback as
- *   the process exits, however it ends.
+ * @param {(line: string) => void} run.out  Prints a line on stdout, as
+ *   is: the new api key's urls, which the logger would mask.
  * @returns {Promise<number>} The exit code: 0 when every stage ran, 1
  *   when the operator stopped it.
  */
@@ -137,7 +140,6 @@ export async function runApply(run) {
   const { host, paths, log, prompts, options } = run;
   const dryRun = options.dryRun === true;
   const state = readState(host, paths.statePath) ?? emptyState();
-  const hadSetup = hasSetup(state);
   const recordPath = paths.whatApplyChangedPath;
   const whatApplyChanged = readRecord(host, recordPath) ?? new Map();
   const dictionary = loadApplySettingsDictionary();
@@ -152,22 +154,9 @@ export async function runApply(run) {
         ? () => {}
         : recorder(host, recordPath, whatApplyChanged, dictionary),
     change: changeStep(log, dryRun),
-    key: null,
-    saved: false,
-    keyIsNew: false,
-    keyWaitsForNginx: false,
+    // The api key the fourth stage makes, or "" while it has made none.
+    key: "",
   };
-  /*-
-   * However the run ends, by a no, a failure or Ctrl-C at a prompt, it
-   * says so when nginx lacks a key the run made. An nginx that apply
-   * hasn't set up yet has no key to lack, and its first full run hands
-   * the key over.
-   */
-  run.atExit(() => {
-    if (context.keyWaitsForNginx === true && hadSetup === true) {
-      log.problem("apply", KEY_NOT_WITH_NGINX);
-    }
-  });
   log.info("preflight", "Checking this machine. This changes nothing.");
   context.facts = await preflight(context);
   for (const [index, stage] of STAGES.entries()) {

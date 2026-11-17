@@ -9,6 +9,10 @@
 
 const PREFIX = "[validate-nginx-upgrade]";
 
+/** What the check says when it passes. */
+export const PASSED =
+  "Passed: an apt upgrade of nginx keeps the gated rpc working.";
+
 /**
  * Builds how the check talks to the person at the terminal.
  *
@@ -71,7 +75,7 @@ export function createTerminal({ stdout, signals, makeSpinner }) {
  */
 export function reportOutcome(result, report) {
   if (result.passed === true) {
-    report("Passed: an apt upgrade of nginx keeps the gated rpc unlocked.");
+    report(PASSED);
     return 0;
   }
   const lines = [...result.problems, ...result.leftovers].flatMap((problem) =>

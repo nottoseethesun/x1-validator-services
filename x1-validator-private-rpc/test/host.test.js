@@ -19,6 +19,9 @@ import { fileURLToPath } from "node:url";
 import { makeTestTempFolder } from "../../scripts/_test-temp-folders.js";
 import { createHost } from "../src/lib/host.js";
 
+/** The host's module, as a url another Node.js process can import. */
+const HOST_MODULE = new URL("../src/lib/host.js", import.meta.url).href;
+
 /**
  * Builds the host with the sudo stand-in.
  * @returns {object}
@@ -174,7 +177,7 @@ test("reads, writes and checks files, and makes temporary folders", () => {
 
 test("removes a folder of the account's own only once it's empty", () => {
   const host = testHost();
-  const folder = path.join(makeTestTempFolder("host"), "vault");
+  const folder = path.join(makeTestTempFolder("host"), "keys");
   host.makeUserDir(folder, 0o700);
   host.writeUserFile(path.join(folder, "other.json"), "{}", 0o600);
   host.removeUserDirIfEmpty(folder);
@@ -185,14 +188,44 @@ test("removes a folder of the account's own only once it's empty", () => {
   assert.throws(() => host.removeUserDirIfEmpty(folder), { code: "ENOENT" });
 });
 
+test("locks a folder through flock until the release, or until its holder ends, and makes no file", () => {
+  const host = testHost();
+  const folder = path.join(makeTestTempFolder("host"), "keys");
+  host.makeUserDir(folder, 0o700);
+  const release = host.lockFolder(folder);
+  assert.equal(typeof release, "function");
+  assert.equal(host.lockFolder(folder), null);
+  const other = spawnSync("flock", ["--nonblock", folder, "true"]);
+  assert.notEqual(other.status, 0);
+  release();
+  const again = host.lockFolder(folder);
+  assert.equal(typeof again, "function");
+  again();
+  // A holder that ends without letting go leaves no lock behind.
+  const holder = spawnSync(process.execPath, [
+    "--input-type=module",
+    "-e",
+    `import { createHost } from ${JSON.stringify(HOST_MODULE)};` +
+      `createHost().lockFolder(${JSON.stringify(folder)});`,
+  ]);
+  assert.equal(holder.status, 0, String(holder.stderr));
+  const after = host.lockFolder(folder);
+  assert.equal(typeof after, "function");
+  after();
+  assert.deepEqual(fs.readdirSync(folder), []);
+  assert.throws(() => host.lockFolder(path.join(folder, "gone")), {
+    code: "ENOENT",
+  });
+});
+
 test("reads an http answer as text", async () => {
   const { server, url } = await startServer((request, response) => {
-    response.end("unlocked\n");
+    response.end("ok\n");
   });
   try {
     assert.deepEqual(await testHost().httpGet(url, 2000), {
       status: 200,
-      body: "unlocked\n",
+      body: "ok\n",
     });
   } finally {
     server.close();
@@ -238,7 +271,7 @@ test("writes, reads and removes files the tool's own account owns, and leaves a 
   fs.chmodSync(folder, 0o750);
   host.makeUserDir(folder, 0o700);
   assert.equal(host.fileMode(folder), 0o750);
-  const file = path.join(folder, "vault.json");
+  const file = path.join(folder, "keys.json");
   host.writeUserFile(file, "first\n", 0o600);
   host.writeUserFile(file, "second\n", 0o600);
   assert.equal(host.readText(file), "second\n");

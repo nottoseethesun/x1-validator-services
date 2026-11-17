@@ -3,9 +3,10 @@
  * @description
  * The second phase of the LXD system test, run on the container the
  * nginx upgrade phase left clean: x1-validator-private-rpc's apply,
- * ensure, unlock, url, turn-off-private-rpc, turn-on-private-rpc and
- * undo-apply, end to end, as the container's ordinary user, with sudo,
- * as on a validator. Never on a validator.
+ * ensure, url, add-api-key, remove-api-key, the key count check,
+ * turn-off-private-rpc, turn-on-private-rpc and undo-apply, end to end,
+ * as the container's ordinary user, with sudo, as on a validator. Never
+ * on a validator.
  *
  * The container plays a validator: a stand-in for Tachyon's rpc listens
  * on every interface, a git checkout holds the stand-in start script,
@@ -17,15 +18,20 @@
  * made by `script`, as a person would answer them, the disclaimer's
  * dialog among them.
  *
- * It checks the outcome after each step: apply's working request path,
- * its firewall rule, and logs that hold no key and that the validator's
- * account can't read. Then ensure: its failure while the rpc is public,
- * every one of its verdicts after the validator's restart, the flag put
- * back after `git stash`, and its silence about a public rpc while
- * private rpc is off. Then unlock after nginx comes back locked, the flag
- * back once private rpc is on, and a saved password that unlocks nginx
- * after a restart and that a later apply sees. After undo-apply, the
- * container must be as apply found it.
+ * It checks the outcome after each step: the first key apply shows, its
+ * working request path, the saved password, the firewall rule, logs that
+ * hold no key and that the validator's account can't read, and nginx's
+ * own read-only /dev, with the key still working once nginx reopens its
+ * logs. Then
+ * ensure: its failure while the rpc is public, every one of its verdicts
+ * after the validator's restart, the flag put back after `git stash`,
+ * and its silence about a public rpc while private rpc is off. Then
+ * every key working after a restart of nginx, two keys added with an
+ * email and one of them removed, the flag back once private rpc is on,
+ * and a later apply that asks nothing. undo-apply answered no keeps the
+ * keys and the saved password, and the next apply hands nginx the same
+ * keys. After the last undo-apply, answered yes, the container must be
+ * as apply found it.
  *
  * Last, a firewall rule for port 443 with a comment, added before apply
  * while ufw is off, as in a fresh container. An apply stopped after its
@@ -34,16 +40,33 @@
  * app: the settings the tool loads there, and the tool's own paths.
  */
 
+import fs from "node:fs";
 import path from "node:path";
 import { HTTPS_RULE } from "../x1-validator-private-rpc/src/cli/apply-install.js";
 import {
+  NEW_PASSWORD_PROMPT,
+  SAME_PASSWORD_PROMPT,
+  SAVE_PASSWORD_QUESTION,
+} from "../x1-validator-private-rpc/src/cli/apply-key.js";
+import {
   featurePaths,
   gitHookPathOf,
+  hashedApiKeysPathOf,
   homePath,
 } from "../x1-validator-private-rpc/src/cli/feature-paths.js";
-import { API_KEY_HEX_DIGITS } from "../x1-validator-private-rpc/src/lib/api-key.js";
+import { KEYS_AND_PASSWORD_QUESTION } from "../x1-validator-private-rpc/src/cli/undo-apply.js";
+import { makeApiKey } from "../x1-validator-private-rpc/src/lib/api-key.js";
 import { NGINX_UNIT } from "../x1-validator-private-rpc/src/lib/nginx-org.js";
 import { overrideFilePath } from "../x1-validator-private-rpc/src/lib/settings.js";
+import {
+  answersWith,
+  asksForPassword,
+  checkAddAndRemove,
+  checkKeepsKeys,
+  checkSavedPassword,
+  keysIn,
+} from "./_lxd-api-key-checks.js";
+import { checkLogs, checkOwnDev } from "./_lxd-nginx-checks.js";
 import {
   AFFIRM_DISCLAIMER,
   answerInTerminal,
@@ -70,6 +93,8 @@ const PEBBLE_VERSION = "v2.10.3";
 const NODE_CA = "/opt/pebble/node-ca.pem";
 const PASSWORD = "a long password for the system test";
 const STANDIN = `${GUEST_PROJECT}/x1-validator-private-rpc/test/helpers/rpc-standin.js`;
+/** One of Autopilot's jobs, from the project's root, which must stay. */
+const CRONTAB_FIXTURE = "x1-validator-private-rpc/test/fixtures/crontab";
 const FLAG_LINE = "--rpc-port 8899 --private-rpc \\";
 
 /** Installs Pebble, trusts its certificate authorities, and starts it. */
@@ -77,10 +102,10 @@ const PEBBLE_SETUP = `set -e
 systemctl stop pebble 2>/dev/null || true
 systemctl reset-failed pebble 2>/dev/null || true
 mkdir -p /opt/pebble/certs/localhost && cd /opt/pebble
-curl -fsSL -o pebble.tar.gz ${PEBBLE}/releases/download/${PEBBLE_VERSION}/pebble-linux-amd64.tar.gz
+curl -fsSL --retry 3 -o pebble.tar.gz ${PEBBLE}/releases/download/${PEBBLE_VERSION}/pebble-linux-amd64.tar.gz
 tar -xzf pebble.tar.gz
 for f in pebble.minica.pem localhost/cert.pem localhost/key.pem; do
-  curl -fsSL -o certs/$f https://raw.githubusercontent.com/letsencrypt/pebble/${PEBBLE_VERSION}/test/certs/$f
+  curl -fsSL --retry 3 -o certs/$f https://raw.githubusercontent.com/letsencrypt/pebble/${PEBBLE_VERSION}/test/certs/$f
 done
 cp certs/pebble.minica.pem /usr/local/share/ca-certificates/pebble-minica.crt
 update-ca-certificates >/dev/null
@@ -122,7 +147,13 @@ function guestCli() {
 /**
  * Writes the script that makes the stand-in x1console checkout, as the
  * container's user, where the settings say x1console and its start
- * script are.
+ * script are. The script is committed executable, as x1console's is, so
+ * the last check's `git status` sees a command that drops the mode after
+ * the test's `git stash`, which puts the committed mode back. apply's own
+ * edit comes before that, so its unit test covers it.
+ * The user's crontab gets one of Autopilot's jobs, which the last check
+ * looks for. In the container it only fails, since the stand-in has no
+ * `autopilot.sh`.
  * @param {object} settings  The settings the tool loads in the container.
  * @returns {string}
  */
@@ -132,6 +163,8 @@ function x1consoleSetup(settings) {
   return `set -e
 mkdir -p ${folder}
 cp ${GUEST_PROJECT}/x1-validator-private-rpc/test/fixtures/start_validator.sh ${folder}/${script}
+chmod 755 ${folder}/${script}
+crontab ${GUEST_PROJECT}/${CRONTAB_FIXTURE}
 cd ${folder}
 git init -q
 git add ${script}
@@ -305,49 +338,6 @@ function burstOfRequests(name, key, count) {
 }
 
 /**
- * Sends two mistyped requests, one with a doubled slash and one with the
- * key a character short, then checks that nginx's logs hold no key and
- * that no other account can read them.
- * @param {string} name  The container.
- * @param {string} key  The api key.
- * @param {object} settings  The settings the tool loads there.
- * @param {string[]} failures  Collects what's wrong.
- */
-function checkLogs(name, key, settings, failures) {
-  for (const urlPath of [`//${key}/health`, `/${key.slice(0, -1)}/health`]) {
-    const asked = asRootCaptured(name, [
-      "curl",
-      "-s",
-      "-o",
-      "/dev/null",
-      "--cacert",
-      NODE_CA,
-      `https://${HOSTNAME}${urlPath}`,
-    ]);
-    mustPass(asked.status, "Asking nginx with a mistyped url");
-  }
-  const logDir = settings.nginxLogDir;
-  const shortKey = key.slice(0, -1);
-  const leaked = asRootCaptured(name, ["grep", "-rl", shortKey, logDir]);
-  expect(
-    failures,
-    "nginx's logs hold no key, even from a mistyped url",
-    leaked.stdout.trim() === "",
-  );
-  const listed = asRootCaptured(name, ["find", logDir, "-type", "f"]);
-  const logs = listed.stdout.split("\n").filter((line) => line !== "");
-  // As the validator's account, with all its groups, adm among them.
-  const readable = logs.filter(
-    (log) => asUserCaptured(name, ["cat", log]).status === 0,
-  );
-  expect(
-    failures,
-    "nginx writes its logs, and the validator's account can't read them",
-    logs.length > 0 && readable.length === 0,
-  );
-}
-
-/**
  * Lists the paths in the user's home and in the tool's own folder that a
  * run of apply might create in the container, from the app's own paths,
  * moved to where the project and the home folder sit there.
@@ -357,7 +347,7 @@ function checkLogs(name, key, settings, failures) {
 function guestPathsOf(settings) {
   const local = featurePaths();
   return [
-    homePath(settings.vaultPath, GUEST_HOME),
+    hashedApiKeysPathOf(settings, GUEST_HOME),
     gitHookPathOf(settings, GUEST_HOME),
     ...[
       local.tmpDir,
@@ -388,9 +378,9 @@ function recordFoundRule(name) {
 
 /**
  * Checks the container once undo-apply has run: nothing apply made is
- * left, the firewall rule and the cron line are gone, nginx.service is
- * no longer masked, and x1console's checkout is as committed, with no
- * backup beside the start script.
+ * left, the firewall rule and both cron lines are gone while Autopilot's
+ * job stays, nginx.service is no longer masked, and x1console's checkout
+ * is as committed, with no backup beside the start script.
  * @param {string} name  The container.
  * @param {object} watched  The paths apply might make, and those of
  *   them that were there before it ran.
@@ -403,16 +393,23 @@ function checkUndone(name, watched, settings, failures) {
     console.error(`Left behind: ${item}`);
   }
   expect(failures, "undo-apply leaves nothing apply made", left.length === 0);
-  expect(
-    failures,
-    "undo-apply removed the firewall rule",
-    !firewallAllows(name, HTTPS_RULE),
-  );
+  const ruleLeft = firewallAllows(name, HTTPS_RULE);
+  expect(failures, "undo-apply removed the firewall rule", !ruleLeft);
   const crontab = asUserCaptured(name, ["crontab", "-l"]).stdout;
   expect(
     failures,
-    "undo-apply removed the cron line",
-    !crontab.includes(" ensure "),
+    "undo-apply removed both cron lines",
+    !crontab.includes(" ensure"),
+  );
+  const autopilot = fs.readFileSync(
+    path.join(projectRoot(), CRONTAB_FIXTURE),
+    "utf8",
+  );
+  const autopilotKept = crontab.includes(autopilot);
+  expect(
+    failures,
+    "apply and undo-apply kept Autopilot's job in the crontab",
+    autopilotKept,
   );
   const enabled = asRootCaptured(name, [
     "systemctl",
@@ -469,17 +466,38 @@ async function checkKeepsOperatorRule(name, watched, failures) {
   for (const item of left) {
     console.error(`Left behind: ${item}`);
   }
+  const ruleKept =
+    stopped.code === 1 &&
+    foundRule === true &&
+    undone.code === 0 &&
+    left.length === 0 &&
+    ufwHolds(name, operatorRule);
   expect(
     failures,
     "undo-apply leaves a firewall rule that was there before apply, comment and all, while ufw is off",
-    stopped.code === 1 &&
-      foundRule === true &&
-      undone.code === 0 &&
-      left.length === 0 &&
-      ufwHolds(name, operatorRule),
+    ruleKept,
   );
   const removed = asRoot(name, ["ufw", "delete", "allow", HTTPS_RULE]);
   mustPass(removed, "Removing the operator's firewall rule");
+}
+
+/**
+ * Makes what the api keys' checks work with in the container.
+ * @param {string} name  The container.
+ * @param {string[]} failures  Collects what's wrong.
+ * @returns {import("./_lxd-api-key-checks.js").Guest}
+ */
+function guestOf(name, failures) {
+  return {
+    name,
+    cli: guestCli(),
+    hostname: HOSTNAME,
+    ca: NODE_CA,
+    password: PASSWORD,
+    answer: (command, answers) => withAnswers(name, command, answers),
+    tool: (args) => tool(name, args),
+    expect: (what, holds) => expect(failures, what, holds),
+  };
 }
 
 /**
@@ -491,6 +509,7 @@ async function checkKeepsOperatorRule(name, watched, failures) {
  */
 export async function runApplyPhase(name, settingsOf) {
   const failures = [];
+  const guest = guestOf(name, failures);
   const { address, settings } = setUpValidator(name, settingsOf);
   const cli = guestCli();
   const guestPaths = guestPathsOf(settings);
@@ -499,41 +518,36 @@ export async function runApplyPhase(name, settingsOf) {
   const watched = { paths, before };
   const applied = await withAnswers(name, `node ${cli} apply --yes`, [
     AFFIRM_DISCLAIMER,
-    ["A new x1-validator-services password: ", `${PASSWORD}\n`],
-    ["The same password again: ", `${PASSWORD}\n`],
-    ["Save the password", "n\n"],
+    [NEW_PASSWORD_PROMPT, `${PASSWORD}\n`],
+    [SAME_PASSWORD_PROMPT, `${PASSWORD}\n`],
+    [SAVE_PASSWORD_QUESTION, "y\n"],
   ]);
   expect(failures, "apply finishes every stage", applied.code === 0);
-  if (applied.code !== 0) {
+  const [key] = keysIn(guest, applied.output);
+  if (applied.code !== 0 || key === undefined || key === null) {
+    expect(failures, "apply shows the first key's url, in full", false);
     return false;
   }
+  const ruleAdded = firewallAllows(name, HTTPS_RULE);
+  expect(failures, "apply added the firewall rule", ruleAdded);
+  checkSavedPassword(guest, settings);
+  const url = await withAnswers(name, `node ${cli} url`, []);
   expect(
     failures,
-    "apply added the firewall rule",
-    firewallAllows(name, HTTPS_RULE),
+    "url prints the url's form and the number of keys, and asks nothing",
+    url.code === 0 &&
+      url.output.includes(`https://${HOSTNAME}/KEY`) &&
+      url.output.includes("holds 1 api key."),
   );
-  const url = await withAnswers(name, `node ${cli} url`, [
-    ["password: ", `${PASSWORD}\n`],
-  ]);
-  const urlStart = `https://${HOSTNAME}/`;
-  const found = url.output.indexOf(urlStart);
-  const keyStart = found + urlStart.length;
-  const key =
-    found === -1
-      ? ""
-      : url.output.slice(keyStart, keyStart + API_KEY_HEX_DIGITS);
-  const health = asRootCaptured(name, [
-    "curl",
-    "-s",
-    "--cacert",
-    NODE_CA,
-    `https://${HOSTNAME}/${key}/health`,
-  ]).stdout;
+  const reached = answersWith(guest, key, "200");
   expect(
     failures,
-    "a client with the url reaches the rpc through nginx",
-    health === "ok",
+    "a client with the first key reaches the rpc through nginx",
+    reached,
   );
+  const randomKey = makeApiKey();
+  const randomRefused = answersWith(guest, randomKey, "403");
+  expect(failures, "a request with a random key gets 403", randomRefused);
   const refused = asRootCaptured(name, [
     "curl",
     "-s",
@@ -553,7 +567,8 @@ export async function runApplyPhase(name, settingsOf) {
     `nginx forwards a burst of ${limit} keyed requests, and answers more with 429 (${burst.forwarded} and ${burst.limited})`,
     burst.forwarded >= limit && burst.limited > 0,
   );
-  checkLogs(name, key, settings, failures);
+  checkLogs(guest, key, settings);
+  checkOwnDev(guest, key);
   const beforeRestart = tool(name, ["ensure"]);
   expect(
     failures,
@@ -561,11 +576,8 @@ export async function runApplyPhase(name, settingsOf) {
     beforeRestart === 1,
   );
   startRpc(name, address, true);
-  expect(
-    failures,
-    "ensure finds every check ok after the restart",
-    everyCheckOk(name),
-  );
+  const allOk = everyCheckOk(name);
+  expect(failures, "ensure finds every check ok after the restart", allOk);
   const x1consoleDir = homePath(settings.x1consoleDir, GUEST_HOME);
   const stashed = asUser(name, ["git", "-C", x1consoleDir, "stash", "-q"]);
   mustPass(stashed, "Stashing the start script, as an x1console update does");
@@ -578,22 +590,14 @@ export async function runApplyPhase(name, settingsOf) {
   );
   const restarted = asRoot(name, ["systemctl", "restart", NGINX_UNIT]);
   mustPass(restarted, "Restarting nginx");
-  const locked = tool(name, ["ensure", "--quiet"]);
+  const afterRestart = tool(name, ["ensure", "--quiet"]);
+  const stillWorks = answersWith(guest, key, "200") && afterRestart === 0;
   expect(
     failures,
-    "nginx comes back locked without a saved password",
-    locked === 1,
+    "after a restart of nginx, the key works, with no password",
+    stillWorks,
   );
-  const unlocked = await withAnswers(name, `node ${cli} unlock`, [
-    AFFIRM_DISCLAIMER,
-    ["password: ", `${PASSWORD}\n`],
-  ]);
-  const afterUnlock = tool(name, ["ensure", "--quiet"]);
-  expect(
-    failures,
-    "unlock opens nginx again",
-    unlocked.code === 0 && afterUnlock === 0,
-  );
+  const third = await checkAddAndRemove(guest, key);
   const turnedOff = await withAnswers(
     name,
     `node ${cli} turn-off-private-rpc --yes`,
@@ -623,37 +627,26 @@ export async function runApplyPhase(name, settingsOf) {
     turnedOn.code === 0 && onScript.includes(FLAG_LINE),
   );
   startRpc(name, address, true);
+  const allOkAgain = everyCheckOk(name);
   expect(
     failures,
     "ensure finds every check ok once the validator takes the flag again",
-    everyCheckOk(name),
-  );
-  const saving = await withAnswers(name, `node ${cli} apply --yes`, [
-    AFFIRM_DISCLAIMER,
-    ["password: ", `${PASSWORD}\n`],
-    ["Save the password", "y\n"],
-  ]);
-  const restartedSaved = asRoot(name, ["systemctl", "restart", NGINX_UNIT]);
-  mustPass(restartedSaved, "Restarting nginx with the password saved");
-  const unlockedItself = tool(name, ["ensure", "--quiet"]);
-  expect(
-    failures,
-    "with the password saved, nginx unlocks itself after a restart",
-    saving.code === 0 && unlockedItself === 0,
+    allOkAgain,
   );
   const reapplied = await withAnswers(name, `node ${cli} apply --yes`, [
     AFFIRM_DISCLAIMER,
-    ["password: ", `${PASSWORD}\n`],
-    ["Save the password", "y\n"],
   ]);
   expect(
     failures,
-    "a later apply sees the saved password, and doesn't ask again",
-    reapplied.code === 0 && !reapplied.output.includes("Save the password"),
+    "a later apply asks for no password, and makes no key",
+    reapplied.code === 0 &&
+      !asksForPassword(reapplied.output) &&
+      keysIn(guest, reapplied.output).length === 0,
   );
+  await checkKeepsKeys(guest, [key, third], settings);
   const undone = await withAnswers(name, `node ${cli} undo-apply`, [
     AFFIRM_DISCLAIMER,
-    ["Delete the api key and the saved password?", "y\n"],
+    [KEYS_AND_PASSWORD_QUESTION, "y\n"],
   ]);
   expect(failures, "undo-apply finishes", undone.code === 0);
   checkUndone(name, watched, settings, failures);

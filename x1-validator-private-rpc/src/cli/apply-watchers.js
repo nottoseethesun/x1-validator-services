@@ -8,20 +8,22 @@
  *
  * The seventh installs what keeps the flag in place: the tool's git hook
  * in x1console's checkout, which runs ensure after an Update X1 Console
- * pulls new commits, and, when the operator agrees, the cron job that
- * runs ensure every minute. It makes the two folders the cron line
- * needs, which git doesn't track. Without logs/ the line never runs, and
- * without tmp/ its flock fails. The cron line goes in the way Autopilot
- * adds its own: the whole table is read, the one line added, and the
- * table written back, so Autopilot's jobs stay. Another program's git
- * hook stays as it is, and the cron job covers for it. Last, it sends a
- * test alert when x1console's Telegram files are there.
+ * pulls new commits, and, when the operator agrees, two cron jobs: one
+ * runs ensure every minute, the other checks every apiKeyCountCheckHours
+ * hours that nginx holds an api key. It makes the two folders the cron
+ * lines need, which git doesn't track. Without logs/ the lines never
+ * run, and without tmp/ ensure's flock fails. The cron lines go in the
+ * way Autopilot adds its own: the whole table is read, the lines added,
+ * and the table written back, so Autopilot's jobs stay. Another
+ * program's git hook stays as it is, and the cron job covers for it.
+ * Last, it sends a test alert when x1console's Telegram files are there.
  *
- * A later apply may find its own hook or cron line from an earlier run,
- * naming an old path to Node.js or to the tool. It replaces them, rather
- * than add beside them: it knows its hook by the hook's shape, and its
- * cron lines from its record. Each backup copy and cron line it makes
- * has an entry of its own in the record, so undo-apply removes every one.
+ * A later apply may find its own hook or cron lines from an earlier run,
+ * naming an old path to Node.js or to the tool, or another number of
+ * hours. It replaces them, rather than add beside them: it knows its hook
+ * by the hook's shape, and its cron lines from its record. Each backup
+ * copy and cron line it makes has an entry of its own in the record, so
+ * undo-apply removes every one.
  */
 
 import path from "node:path";
@@ -30,6 +32,7 @@ import {
   isToolHook,
   renderCronLine,
   renderGitHook,
+  renderKeyCountCronLine,
 } from "./render-watchers.js";
 import { addPrivateRpc } from "./start-script.js";
 import { readTelegram, sendTelegram } from "./telegram.js";
@@ -120,48 +123,62 @@ async function installHook(context) {
 }
 
 /**
- * Installs the cron line that runs ensure every minute, when the
- * operator agrees and it isn't there yet. A line an earlier apply wrote,
- * which names an old path, is replaced without asking again, since the
- * operator agreed to the job then.
+ * Installs the two cron lines, when the operator agrees and they aren't
+ * there yet. Lines an earlier apply wrote, which name an old path or
+ * another number of hours, are replaced without asking again, since the
+ * operator agreed to the jobs then.
  * @param {object} context  The run.
  * @returns {Promise<void>}
  */
-async function installCronLine(context) {
-  const { host, paths, whatApplyChanged, record, change, prompts, log } =
-    context;
+async function installCronLines(context) {
+  const { host, settings, paths, whatApplyChanged, record, change } = context;
+  const { prompts, log } = context;
   const nodeBin = host.nodePath();
-  const line = renderCronLine({
-    nodeBin,
-    toolCli: paths.toolCli,
-    lockPath: paths.lockPath,
-    logPath: paths.ensureLogPath,
-  });
-  const key = `cronLine:${line}`;
+  const lines = [
+    renderCronLine({
+      nodeBin,
+      toolCli: paths.toolCli,
+      lockPath: paths.lockPath,
+      logPath: paths.ensureLogPath,
+    }),
+    renderKeyCountCronLine({
+      nodeBin,
+      toolCli: paths.toolCli,
+      logPath: paths.ensureLogPath,
+      hours: settings.apiKeyCountCheckHours,
+    }),
+  ];
   const listed = host.run("crontab", ["-l"]);
   const table = listed.status === 0 ? listed.stdout : "";
   const entries = table.split("\n");
-  if (entries.includes(line)) {
-    log.info("watchers", "The cron job that runs ensure is installed already.");
-    record(found(key));
+  if (lines.every((line) => entries.includes(line))) {
+    log.info("watchers", "The cron jobs are installed already.");
+    for (const line of lines) {
+      record(found(`cronLine:${line}`));
+    }
     return;
   }
   const ours = [...whatApplyChanged.keys()]
     .map((recorded) => partsOf(recorded))
     .filter(({ name }) => name === "cronLine")
     .map(({ target }) => target);
-  const kept = entries.filter((entry) => !ours.includes(entry));
-  const replacing = kept.length < entries.length;
+  const kept = entries.filter(
+    (entry) => !ours.includes(entry) && !lines.includes(entry),
+  );
+  const replacing = entries.some((entry) => ours.includes(entry));
   const wanted =
     context.dryRun === true ||
     replacing === true ||
     (await prompts.confirm(
-      "Install the cron job that runs ensure every minute?",
+      "Install the cron jobs that run ensure every minute, and check every " +
+        `${settings.apiKeyCountCheckHours} hours that nginx holds an api key?`,
     ));
   if (wanted === false) {
     log.info(
       "watchers",
-      "No cron job: run ensure yourself after each Update X1 Console.",
+      "No cron jobs: after each Update X1 Console, wait " +
+        `${settings.startScriptQuietSeconds} seconds, then run ensure ` +
+        "yourself.",
     );
     return;
   }
@@ -184,18 +201,21 @@ async function installCronLine(context) {
   const separator = rest === "" || rest.endsWith("\n") ? "" : "\n";
   const what =
     replacing === true
-      ? "replace the line that runs ensure in the crontab"
-      : "add the line that runs ensure to the crontab";
+      ? "replace the tool's lines in the crontab"
+      : "add the tool's two lines to the crontab";
   await change("watchers", what, () => {
     const written = host.run("crontab", ["-"], {
-      input: `${rest}${separator}${line}\n`,
+      input: `${rest}${separator}${lines.join("\n")}\n`,
     });
     if (written.status !== 0) {
       throw new Error(
         `crontab refused the new table: ${written.stderr.trim()}`,
       );
     }
-    record(made(key));
+    for (const line of lines) {
+      const key = `cronLine:${line}`;
+      record(entries.includes(line) ? found(key) : made(key));
+    }
   });
 }
 
@@ -207,7 +227,7 @@ async function installCronLine(context) {
 export async function installWatchers(context) {
   const { host, settings, change, log } = context;
   await installHook(context);
-  await installCronLine(context);
+  await installCronLines(context);
   const telegram = readTelegram(host, settings);
   if (telegram === undefined || telegram === null) {
     log.info(

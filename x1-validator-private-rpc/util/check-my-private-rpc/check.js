@@ -183,9 +183,9 @@ function explain(result, hostname) {
   const reasons = new Map([
     [
       "refused",
-      "nginx refused the key, with http 403. Either the key is wrong, or " +
-        "nginx is locked after a restart. On the validator, the url command " +
-        "prints the right key, and unlock hands nginx the key again.",
+      "nginx refused the key, with http 403: the key isn't one nginx " +
+        "holds. It may be mistyped, or removed with remove-api-key. The " +
+        "tool can't show a key again, so add-api-key makes a new one.",
     ],
     [
       "rate-limited",

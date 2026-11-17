@@ -12,33 +12,38 @@
  * - another program's git hook, which stays
  * - the saved password, offered after systemd's TPM2 answer
  * - the settings apply follows: how long it waits for the certificate
- *   and how often it asks, the address it checks Let's Encrypt at, and
- *   where the start script is
+ *   and how often it asks, the address it checks Let's Encrypt at, every
+ *   path, inside the files it writes too, and where the start script is
  */
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { runApply } from "../src/cli/apply.js";
 import { HTTPS_RULE } from "../src/cli/apply-install.js";
+import { SAVE_PASSWORD_QUESTION } from "../src/cli/apply-key.js";
 import {
   featurePaths,
   gitHookPathOf,
-  homePath,
+  hashedApiKeysPathOf,
 } from "../src/cli/feature-paths.js";
 import { createLog } from "../src/cli/log.js";
 import { RESTART_HOW } from "../src/cli/start-script.js";
 import { readState } from "../src/cli/state.js";
-import { API_KEY_SECRET, secretOf } from "../src/cli/vault.js";
 import { readRecord } from "../src/cli/what-apply-changed.js";
+import { makeApiKey } from "../src/lib/api-key.js";
 import { GATE_PAGE_PATH } from "../src/lib/gate-page.js";
+import { hashApiKey } from "../src/lib/key-hash-map.js";
 import { NGINX_PACKAGES, NGINX_UNIT } from "../src/lib/nginx-org.js";
 import { loadSettings } from "../src/lib/settings.js";
 import { MIN_SYSTEMD_VERSION } from "../src/lib/systemd.js";
 import {
   copyShippedConfig,
   shippedAndChangedSettings,
+  wrongPaths,
 } from "./helpers/config-copies.js";
+import { printedKeys } from "./helpers/applied-validator.js";
 import {
+  autopilotCrontab,
   fakeX1Validator,
   HOME,
   HOSTNAME,
@@ -47,22 +52,6 @@ import {
 import { scriptedPrompts } from "./helpers/scripted-prompts.js";
 
 const PASSWORD = "a long test password";
-
-/** The path settings apply reads. */
-const APPLY_PATHS = [
-  "x1consoleDir",
-  "vaultPath",
-  "nginxConfigPath",
-  "njsModulePath",
-  "startWrapperPath",
-  "systemdDropInPath",
-  "logrotateRulePath",
-  "passwordCredentialPath",
-  "keyHandOffPath",
-  "acmeStatePath",
-  "acmeStagingStatePath",
-  "nginxLogDir",
-];
 
 /**
  * Loads the shipped settings with the hostname set.
@@ -78,10 +67,12 @@ function operatorSettings(more = {}) {
  * Runs apply on a fake validator.
  * @param {object} host  The fake host.
  * @param {object} [run]  More of the run: prompts, options, settings.
- * @returns {Promise<{code: number, lines: string[]}>}
+ * @returns {Promise<{code: number, lines: string[], printed: string[]}>}
+ *   The exit code, the log's lines, and what apply printed as is.
  */
 async function apply(host, run = {}) {
   const lines = [];
+  const printed = [];
   const log = createLog({
     out: (line) => lines.push(line),
     err: (line) => lines.push(line),
@@ -94,10 +85,10 @@ async function apply(host, run = {}) {
     log,
     prompts:
       run.prompts ?? scriptedPrompts({ passwords: [PASSWORD, PASSWORD] }),
+    out: (line) => printed.push(line),
     options: { yes: false, dryRun: false, acmeStaging: false, ...run.options },
-    atExit: run.atExit ?? (() => {}),
   });
-  return { code, lines };
+  return { code, lines, printed };
 }
 
 /**
@@ -112,12 +103,15 @@ function changingCalls(calls) {
     "systemctl is-active",
     "test -e",
   ];
+  // A lock changes nothing on disk, and goes when its holder ends.
+  const locks = ["lockFolder", "unlockFolder"];
   return calls
     .filter(
       (call) =>
         call.kind !== "run" ||
         (call.command === "crontab" && call.args[0] === "-"),
     )
+    .filter((call) => !locks.includes(call.kind))
     .map((call) =>
       call.command === undefined
         ? `${call.kind} ${call.path}`
@@ -129,7 +123,7 @@ function changingCalls(calls) {
 test("a fresh validator goes through every stage, and a second apply changes nothing", async () => {
   const settings = operatorSettings();
   const { host, state, scriptPath } = fakeX1Validator();
-  const { code, lines } = await apply(host, { settings });
+  const { code, lines, printed } = await apply(host, { settings });
   assert.equal(code, 0, lines.join("\n"));
   const logFolder = host.calls.find(
     (call) => call.kind === "makeRootDir" && call.path === settings.nginxLogDir,
@@ -138,11 +132,29 @@ test("a fresh validator goes through every stage, and a second apply changes not
   assert.deepEqual([logFolder.mode, logFolder.group], ["0750", "nginx"]);
   assert.equal(state.nginxInstalled, true);
   assert.deepEqual(
-    [state.masked, state.enabled, state.active, state.unlocked],
-    [false, true, true, true],
+    [state.masked, state.enabled, state.active],
+    [false, true, true],
   );
+  // The key's two urls, printed once, in full, and nginx knows its hash.
+  const [key] = printedKeys(printed);
+  assert.deepEqual(printed, [
+    `https://${HOSTNAME}/${key}`,
+    `wss://${HOSTNAME}/${key}`,
+  ]);
+  assert.deepEqual(state.loadedHashes, [hashApiKey(key)]);
+  assert.equal(lines.join("\n").includes(key), false);
   assert.ok(state.ufwRules.includes(HTTPS_RULE));
-  assert.match(state.crontab, / ensure --quiet >> /);
+  assert.match(state.crontab, /^\* \* \* \* \* flock .* ensure --quiet >> /m);
+  const hours = settings.apiKeyCountCheckHours;
+  assert.match(
+    state.crontab,
+    new RegExp(
+      `^0 \\*/${hours} \\* \\* \\* .* ensure-there-is-at-least-one-rpc-api-key --quiet >> `,
+      "m",
+    ),
+  );
+  // Autopilot's jobs stay in the table.
+  assert.ok(state.crontab.includes(autopilotCrontab()), state.crontab);
   // The cron line can't start without its lock's folder and its log's.
   const { tmpDir, logsDir } = featurePaths();
   assert.ok(host.exists(tmpDir) && host.exists(logsDir));
@@ -152,6 +164,11 @@ test("a fresh validator goes through every stage, and a second apply changes not
     host.files.get(scriptPath),
     /^ {4}--rpc-port 8899 --private-rpc \\$/m,
   );
+  /*-
+   * x1console's restart runs the start script itself, so it stays
+   * executable.
+   */
+  assert.equal(host.fileMode(scriptPath), 0o755);
   const recorded = readState(host, featurePaths().statePath);
   assert.deepEqual(recorded.setup, {
     hostname: HOSTNAME,
@@ -161,16 +178,23 @@ test("a fresh validator goes through every stage, and a second apply changes not
   });
   assert.ok(lines.some((line) => line.endsWith(RESTART_HOW)));
   assert.ok(
-    lines.some((line) =>
-      /The rpc's url: https:\/\/x1-rpc\.example\.com\/…[0-9a-f]{4}$/.test(line),
+    lines.includes(
+      `[hand-over] The rpc's url: https://${HOSTNAME}/…${key.slice(-4)}, shown in full above, and only there.`,
     ),
   );
+  // The second run makes no key, asks for no password, and prints no url.
   const before = host.calls.length;
-  const again = await apply(host, {
-    prompts: scriptedPrompts({ passwords: [PASSWORD] }),
-  });
+  const prompts = scriptedPrompts();
+  const again = await apply(host, { prompts });
   assert.equal(again.code, 0, again.lines.join("\n"));
   assert.deepEqual(changingCalls(host.calls.slice(before)), []);
+  assert.deepEqual(again.printed, []);
+  assert.ok(prompts.asked.every((question) => question.startsWith("Stage ")));
+  assert.ok(
+    again.lines.includes(
+      `[hand-over] The rpc's url: https://${HOSTNAME}/KEY, with an api key in place of KEY.`,
+    ),
+  );
 });
 
 test("the dry run says every change it would make, and makes none", async () => {
@@ -190,7 +214,8 @@ test("the dry run says every change it would make, and makes none", async () => 
     `Would run ufw allow ${HTTPS_RULE}`,
     `Would write ${settings.nginxConfigPath}`,
     "Would add --private-rpc to",
-    "Would add the line that runs ensure to the crontab",
+    "Would make the first api key",
+    "Would add the tool's two lines to the crontab",
   ]) {
     assert.ok(
       lines.some((line) => line.includes(would)),
@@ -221,17 +246,23 @@ test("the preflight lists every problem at once, and changes nothing", async () 
     }
     return true;
   });
+  // A keyed url, which the refusal must not quote.
+  const key = makeApiKey();
   const withHostname = fakeX1Validator({
     files: new Map([
       [
         "/home/validator/.config/solana/cli/config.yml",
-        `json_rpc_url: "http://${PUBLIC_IP}:8899"\n`,
+        `json_rpc_url: "https://${HOSTNAME}/${key}"\n`,
       ],
     ]),
   });
-  await assert.rejects(apply(withHostname.host), {
-    message:
-      /The solana cli's url, http:\/\/203\.0\.113\.10:8899, names this validator/,
+  await assert.rejects(apply(withHostname.host), (error) => {
+    assert.match(
+      error.message,
+      /The solana cli's url names this validator's address or hostname/,
+    );
+    assert.equal(error.message.includes(key), false);
+    return true;
   });
   assert.deepEqual(changingCalls(host.calls), []);
 });
@@ -255,23 +286,6 @@ test("a stop at a stage changes nothing after it, and a later apply picks up", a
   assert.ok(
     later.lines.some((line) => line.includes("nginx is installed already.")),
   );
-});
-
-test("a vault whose api key is null gets a new key, under a new password", async () => {
-  const settings = operatorSettings();
-  const { host } = fakeX1Validator();
-  const homeDir = host.homeDir();
-  const vaultPath = homePath(settings.vaultPath, homeDir);
-  const vault = { version: 1, secrets: { [API_KEY_SECRET]: null } };
-  host.files.set(vaultPath, JSON.stringify(vault));
-  const prompts = scriptedPrompts({ passwords: [PASSWORD, PASSWORD] });
-  const { code, lines } = await apply(host, { settings, prompts });
-  assert.equal(code, 0, lines.join("\n"));
-  assert.ok(prompts.asked.includes("A new x1-validator-services password: "));
-  const written = JSON.parse(host.files.get(vaultPath));
-  const stored = secretOf(written, API_KEY_SECRET);
-  assert.equal(typeof stored, "object");
-  assert.notEqual(stored, null);
 });
 
 test("refuses to replace a file apply didn't write", async () => {
@@ -323,23 +337,19 @@ test("the password is saved only when asked to, and a later apply sees it saved"
   );
   assert.equal(encrypt.input, PASSWORD);
   assert.equal(encrypt.args.at(-1), settings.passwordCredentialPath);
-  assert.match(
-    host.files.get(settings.systemdDropInPath),
-    /^LoadCredentialEncrypted=/m,
-  );
+  assert.ok(prompts.asked.includes(SAVE_PASSWORD_QUESTION));
+  // nginx never needs it, so its drop-in doesn't name it.
+  assert.doesNotMatch(host.files.get(settings.systemdDropInPath), /Credential/);
   assert.equal(lines.join("\n").includes(PASSWORD), false);
-  const again = scriptedPrompts({ ask: () => false, passwords: [PASSWORD] });
+  const again = scriptedPrompts({ ask: () => false });
   const second = await apply(host, { settings, prompts: again });
   assert.equal(second.code, 0, second.lines.join("\n"));
-  assert.ok(second.lines.includes("[key] The password is saved already."));
-  assert.equal(
-    again.asked.some((question) => question.startsWith("Save the password")),
-    false,
+  const filePath = hashedApiKeysPathOf(settings, HOME);
+  assert.ok(
+    second.lines.includes(`[keys] ${filePath} holds 1 api key already.`),
   );
-  assert.match(
-    host.files.get(settings.systemdDropInPath),
-    /^LoadCredentialEncrypted=/m,
-  );
+  assert.ok(again.asked.every((question) => question.startsWith("Stage ")));
+  assert.ok(host.files.has(settings.passwordCredentialPath));
 });
 
 test("the preflight also names a wrong release, old systemd, missing tools and a wrong address", async () => {
@@ -430,7 +440,7 @@ test("stops when the request path fails a check from the server", async () => {
       ? { status: 502, body: "Bad Gateway", certificate: {} }
       : tlsGet(target);
   await assert.rejects(apply(host), {
-    message: "The keyed path's health check answered 502: Bad Gateway",
+    message: /^The keyed path's health check answered 502: Bad Gateway$/m,
   });
 });
 
@@ -443,13 +453,9 @@ test("a run after one that failed with nginx started still records nginx's setup
       : tlsGet(target);
   await assert.rejects(apply(host), { message: /answered 503: behind/ });
   host.tlsGet = tlsGet;
-  const again = await apply(host, {
-    prompts: scriptedPrompts({ passwords: [PASSWORD] }),
-  });
+  const again = await apply(host, { prompts: scriptedPrompts() });
   assert.equal(again.code, 0, again.lines.join("\n"));
-  assert.ok(
-    again.lines.includes("[nginx] nginx runs unlocked, with nothing changed."),
-  );
+  assert.ok(again.lines.includes("[nginx] nginx runs, with nothing changed."));
   const recorded = readState(host, featurePaths().statePath);
   assert.equal(recorded.setup?.hostname, HOSTNAME);
 });
@@ -468,10 +474,10 @@ test("apply waits for the certificate as long, and asks as often, as the setting
       return tlsGet(target);
     }
     asked.push(host.now());
-    return { status: 200, body: "locked\n", certificate: {} };
+    return { status: 503, body: "", certificate: {} };
   };
   await assert.rejects(apply(host, { settings }), {
-    message: "No certificate, or no key, in time: the gate page says locked.",
+    message: "No certificate in time: the gate page says http 503.",
   });
   const waited = asked.at(-1) - asked[0];
   const gaps = new Set(asked.slice(1).map((at, index) => at - asked[index]));
@@ -481,10 +487,16 @@ test("apply waits for the certificate as long, and asks as often, as the setting
   );
 });
 
-test("with --acme-staging, apply uses every configured path, address and timeout, and never a shipped one", async () => {
+test("with --acme-staging, apply uses every configured path, address and timeout, and never a shipped one, in its calls or inside the files it writes", async () => {
   const { shipped, changed } = shippedAndChangedSettings();
   const settings = { ...changed, hostname: HOSTNAME };
   const { host } = fakeX1Validator({ settings, telegram: true });
+  const written = [];
+  const writeRootFile = host.writeRootFile;
+  host.writeRootFile = (filePath, content, mode) => {
+    written.push(String(content));
+    writeRootFile(filePath, content, mode);
+  };
   const urls = [];
   const timeouts = [];
   for (const name of ["httpsGet", "postJson"]) {
@@ -512,15 +524,10 @@ test("with --acme-staging, apply uses every configured path, address and timeout
   assert.equal(code, 0, lines.join("\n"));
   assert.ok(urls.includes(changed.acmeStagingDirectoryUrl), urls.join("\n"));
   assert.ok(!urls.includes(shipped.acmeStagingDirectoryUrl));
-  const touched = host.calls
-    .map((call) => call.path ?? [call.command, ...call.args].join(" "))
-    .join("\n");
-  for (const name of APPLY_PATHS) {
-    const shippedPath = homePath(shipped[name], HOME);
-    const changedPath = homePath(changed[name], HOME);
-    assert.ok(!touched.includes(shippedPath), `${name}: ${shippedPath} used`);
-    assert.ok(touched.includes(changedPath), `${name} was never used`);
-  }
+  assert.deepEqual(wrongPaths(host.calls, shipped, changed, HOME, written), {
+    shippedUsed: [],
+    changedUnused: [],
+  });
   assert.deepEqual(
     [...new Set(timeouts)],
     [changed.requestTimeoutSeconds * 1000],

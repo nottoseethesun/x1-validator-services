@@ -3,9 +3,10 @@
  * @description
  * The commands' questions to the person at the terminal. A confirmation,
  * such as whether to go on with a stage, is skipped with --yes, which
- * answers it yes. A choice, such as whether to save the password, and a
- * password prompt are always asked: --yes never answers those. Questions
- * and the lines that go with them go to stderr, so stdout stays clean.
+ * answers it yes. A choice, such as whether to save the password, a line,
+ * such as an email, and a password prompt are always asked: --yes never
+ * answers those. Questions and the lines that go with them go to stderr,
+ * so stdout stays clean.
  */
 
 import { askLine } from "../lib/ask-line.js";
@@ -28,6 +29,8 @@ async function askYesNo(question, streams) {
  * @property {(question: string) => Promise<boolean>} confirm  Asks,
  *   unless --yes answered it already.
  * @property {(question: string) => Promise<boolean>} ask  Always asks.
+ * @property {(prompt: string) => Promise<string>} line  Asks for a line,
+ *   showing what's typed.
  * @property {(prompt: string) => Promise<string>} password  Asks for a
  *   secret, showing nothing of what's typed.
  * @property {(line: string) => void} say  Prints a line beside the
@@ -53,6 +56,7 @@ export function createPrompts({
   return {
     confirm: async (question) => yes === true || askYesNo(question, streams),
     ask: (question) => askYesNo(question, streams),
+    line: (prompt) => askLine(prompt, streams),
     password: (prompt) => askPassword(prompt, streams),
     say: (line) => output.write(`${line}\n`),
   };

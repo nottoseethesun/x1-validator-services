@@ -53,3 +53,46 @@ export async function sendTelegram(host, telegram, text, timeoutMs) {
     throw new Error(`Telegram answered http ${response.status}.`);
   }
 }
+
+/**
+ * Sends the pending messages, then the new ones, keeping those that
+ * couldn't be sent. A failure is logged only when a message first fails.
+ * Without x1console's Telegram files, alerts are off: each new message
+ * is logged as a problem, and none is kept. ensure and the key count
+ * check share it.
+ * @param {{host: object, settings: object,
+ *   log: import("./log.js").Log}} run  The command's run.
+ * @param {string[]} pending  Messages that failed before.
+ * @param {string[]} fresh  New messages.
+ * @returns {Promise<string[]>} The messages still pending.
+ */
+export async function sendAlerts({ host, settings, log }, pending, fresh) {
+  const telegram = readTelegram(host, settings);
+  if (telegram === undefined || telegram === null) {
+    for (const message of fresh) {
+      log.problem(
+        "alert",
+        `${message} (alerts are off: x1console's Telegram files are missing)`,
+      );
+    }
+    return [];
+  }
+  log.hide(telegram.token);
+  const timeoutMs = settings.requestTimeoutSeconds * 1000;
+  const stillPending = [];
+  for (const message of [...pending, ...fresh]) {
+    try {
+      await sendTelegram(host, telegram, message, timeoutMs);
+      log.info("alert", message);
+    } catch (error) {
+      if (!pending.includes(message)) {
+        log.problem(
+          "alert",
+          `Couldn't send "${message}": ${error.message} It goes at the next run.`,
+        );
+      }
+      stillPending.push(message);
+    }
+  }
+  return stillPending;
+}

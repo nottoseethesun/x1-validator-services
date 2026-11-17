@@ -15,12 +15,12 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { featurePaths } from "../src/cli/feature-paths.js";
 import { renderNginxConfig } from "../src/cli/render-nginx.js";
+import { mapText } from "../src/lib/key-hash-map.js";
 import {
   renderAptPin,
   renderAptSource,
   renderDropIn,
   renderLogrotateRule,
-  renderStartWrapper,
 } from "../src/lib/render-host-files.js";
 import { listFilesUnder } from "../../scripts/_tools.js";
 import { copyShippedConfig } from "./helpers/config-copies.js";
@@ -56,9 +56,6 @@ function shownPath(home, filePath) {
  */
 function rendered() {
   const settings = loadSettings(copyShippedConfig().configDir);
-  const home = "/home/VALIDATOR_USER";
-  const paths = featurePaths();
-  const toolCli = shownPath(home, paths.toolCli);
   return {
     "nginx/nginx.conf.example": renderNginxConfig({
       hostname: "x1-rpc.example.com",
@@ -68,13 +65,8 @@ function rendered() {
       staging: false,
       settings,
     }),
+    "nginx/hashed-api-keys.map.example": mapText(["HASH"]),
     "systemd/x1-validator-private-rpc.conf.example": renderDropIn(settings),
-    "systemd/nginx-start.example": renderStartWrapper({
-      ...settings,
-      validatorUser: "VALIDATOR_USER",
-      nodeBin: `${home}/.nvm/versions/node/v20.0.0/bin/node`,
-      toolCli,
-    }),
     "logrotate/x1-validator-private-rpc.example": renderLogrotateRule(settings),
     "apt/nginx.sources.example": renderAptSource("noble"),
     "apt/99nginx.example": renderAptPin(),
@@ -99,6 +91,20 @@ test("the cron and hook examples run the real command", () => {
     line.endsWith(`/bin/node ${cli} ensure --quiet >> ${log} 2>&1`),
     line,
   );
+  const hours = loadSettings(
+    copyShippedConfig().configDir,
+  ).apiKeyCountCheckHours;
+  const count = example(
+    "cron/x1-validator-private-rpc-api-key-count.cron.example",
+  );
+  const countLine = count.trimEnd().split("\n").at(-1);
+  assert.ok(countLine.startsWith(`0 */${hours} * * * $HOME/`), countLine);
+  assert.ok(
+    countLine.endsWith(
+      `/bin/node ${cli} ensure-there-is-at-least-one-rpc-api-key --quiet >> ${log} 2>&1`,
+    ),
+    countLine,
+  );
   const hook = example("git-hooks/post-merge.example");
   assert.ok(hook.startsWith("#!/bin/sh\n"));
   assert.ok(
@@ -114,7 +120,7 @@ test("the examples' README names every example", () => {
   const names = listFilesUnder(EXAMPLES, ".").filter(
     (name) => name !== "README.md",
   );
-  assert.equal(names.length, 8);
+  assert.equal(names.length, 9);
   for (const name of names) {
     assert.ok(readme.includes(`\`${name}\``), name);
   }

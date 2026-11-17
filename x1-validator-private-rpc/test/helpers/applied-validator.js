@@ -2,14 +2,16 @@
  * @file x1-validator-private-rpc/test/helpers/applied-validator.js
  * @description
  * A fake x1console validator that apply has already set up, for the
- * tests of the commands that come after it: ensure, undo-apply, unlock
- * and url. It also makes the run those commands take, with a log whose
- * lines the test can read.
+ * tests of the commands that come after it: ensure, undo-apply, url and
+ * the api key commands. It also makes the run those commands take, with
+ * a log whose lines the test can read, and the lines printed as is,
+ * where the new keys' urls go.
  */
 
 import { runApply } from "../../src/cli/apply.js";
 import { featurePaths } from "../../src/cli/feature-paths.js";
 import { createLog } from "../../src/cli/log.js";
+import { API_KEY_PATTERN } from "../../src/lib/api-key.js";
 import { loadSettings } from "../../src/lib/settings.js";
 import { copyShippedConfig } from "./config-copies.js";
 import { fakeX1Validator, HOSTNAME } from "./fake-x1-validator.js";
@@ -17,16 +19,20 @@ import { scriptedPrompts } from "./scripted-prompts.js";
 
 export const PASSWORD = "a long test password";
 
+/** A url a command printed, with the key it carries. */
+const PRINTED_URL = new RegExp(`^https://[^/]+/(${API_KEY_PATTERN})$`);
+
 /**
  * Makes a run for a command, with a log the test can read.
  * @param {object} host  The fake host.
  * @param {object} settings  The tool's settings.
- * @param {object} [more]  More of the run: prompts, options and atExit,
- *   which does nothing unless a test passes its own.
- * @returns {object} The run, with `lines` holding what the log printed.
+ * @param {object} [more]  More of the run: prompts and options.
+ * @returns {object} The run, with `lines` holding what the log printed,
+ *   and `printed` what the command printed as is.
  */
 export function commandRun(host, settings, more = {}) {
   const lines = [];
+  const printed = [];
   return {
     host,
     settings,
@@ -37,11 +43,24 @@ export function commandRun(host, settings, more = {}) {
       err: (line) => lines.push(line),
     }),
     prompts: scriptedPrompts({ passwords: [PASSWORD] }),
+    out: (line) => printed.push(line),
     options: {},
-    atExit: () => {},
     lines,
+    printed,
     ...more,
   };
+}
+
+/**
+ * Finds the api keys in the urls a command printed.
+ * @param {string[]} printed  What the command printed as is.
+ * @returns {string[]} The keys, in order, once each.
+ */
+export function printedKeys(printed) {
+  return printed
+    .map((line) => PRINTED_URL.exec(line))
+    .filter((match) => match !== undefined && match !== null)
+    .map((match) => match[1]);
 }
 
 /**
@@ -51,8 +70,10 @@ export function commandRun(host, settings, more = {}) {
  * @param {{savePassword?: boolean, acmeStaging?: boolean}} [choices]
  *   apply's answers, and whether it runs with --acme-staging.
  * @returns {Promise<{host: object, state: object, settings: object,
- *   scriptPath: string}>}
- * @throws {Error} When apply doesn't finish, with its log.
+ *   scriptPath: string, apiKey: string}>} The fake, and the first api
+ *   key, which apply printed.
+ * @throws {Error} When apply doesn't finish, with its log, since every
+ *   test that starts here needs apply's whole set-up.
  */
 export async function appliedValidator(scenario = {}, choices = {}) {
   const settings =
@@ -79,5 +100,6 @@ export async function appliedValidator(scenario = {}, choices = {}) {
   if (code !== 0) {
     throw new Error(`apply failed:\n${run.lines.join("\n")}`);
   }
-  return { host, state, settings, scriptPath };
+  const [apiKey] = printedKeys(run.printed);
+  return { host, state, settings, scriptPath, apiKey };
 }

@@ -20,6 +20,15 @@ const HOUR_MS = 60 * MINUTE_MS;
 export const NEVER_ALERTED = -1;
 
 /**
+ * The notice when ensure put the flag back. It says nothing of the
+ * running validator, which may have restarted without the flag: the
+ * rpc-private check alerts that the rpc is public then.
+ */
+export const FLAG_RESTORED =
+  "An x1console update took --private-rpc out of the start script, and " +
+  "ensure put it back, for the validator's next start.";
+
+/**
  * @typedef {object} CheckState  One alerting check, as the last run left
  *   it.
  * @property {boolean} bad  Whether its last verdict was a problem.
@@ -84,13 +93,6 @@ function alertRules(reminderMs, certificateReminderMs) {
       },
     ],
     ["nginx-active", { title: "nginx is down", repeatMs: null }],
-    [
-      "gate",
-      {
-        title: "nginx is locked, so it refuses every request. Run unlock",
-        repeatMs: null,
-      },
-    ],
     [
       "certificate",
       {
@@ -177,11 +179,7 @@ export function decideAlerts(run) {
     Object.assign(nextChecks, { [name]: decided.next });
   }
   if (flagRestored === true) {
-    messages.push(
-      `${prefix} An x1console update took --private-rpc out of the start ` +
-        "script, and ensure put it back. The running validator keeps a " +
-        "private rpc until its next start, which takes the flag.",
-    );
+    messages.push(`${prefix} ${FLAG_RESTORED}`);
   }
   return {
     messages,

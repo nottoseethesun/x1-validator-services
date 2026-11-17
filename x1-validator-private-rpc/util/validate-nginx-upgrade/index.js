@@ -26,7 +26,8 @@ const PURPOSE = `Proves on this machine that a regular apt upgrade of nginx keep
 x1-validator-private-rpc's gated rpc working. It installs nginx.org's
 previous release, runs it under systemd the way the tool will, upgrades
 it with apt, and checks that systemd followed the new nginx and that the
-api key carried over. Then it removes everything it added.
+new nginx still knows a throwaway api key's hash. Then it removes
+everything it added.
 
 Run it as the validator's account, before installing the tool. It asks
 for sudo itself, and never touches the validator, port 443 or the

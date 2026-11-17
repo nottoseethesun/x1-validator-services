@@ -1,8 +1,8 @@
 # x1-validator-private-rpc: nginx for a private X1 validator rpc.
 #
-# Written by x1-validator-private-rpc. The nginx service starts it through the
-# tool's start wrapper, which puts the api key in the environment. The
-# packaged /etc/nginx/nginx.conf stays untouched and unused.
+# Written by x1-validator-private-rpc. The nginx service starts nginx with
+# this configuration, through the tool's systemd drop-in. The packaged
+# /etc/nginx/nginx.conf stays untouched and unused.
 #
 # For a manual setup, replace x1-rpc.example.com with your hostname (one
 # place) and 203.0.113.10 with the validator's public ipv4 address (two places).
@@ -13,11 +13,14 @@ worker_priority 10;
 pid /run/nginx.pid;
 error_log /var/log/x1-validator-private-rpc/nginx-error.log notice;
 
+# After a reload, the old worker closes what it still holds open within
+# 10 seconds. A websocket's key is checked only when it opens, so this
+# is what ends a removed key's websocket. Its client reconnects, and
+# meets the new list.
+worker_shutdown_timeout 10s;
+
 load_module modules/ngx_http_js_module.so;
 load_module modules/ngx_http_acme_module.so;
-
-# Keep the api key that the start wrapper puts in the environment.
-env X1_RPC_KEY;
 
 events {
     worker_connections 1024;
@@ -26,6 +29,12 @@ events {
 http {
     server_tokens off;
     default_type application/octet-stream;
+
+    # A connection has 5 seconds from its opening to finish its tls
+    # handshake and send its request's header, and each later request on
+    # it has 5 seconds of its own. That stops only the crudest way to fill
+    # nginx's connections, as the tool's docs/architecture.md explains.
+    client_header_timeout 5s;
 
     # The system's dns resolver, used to find the certificate authority.
     resolver 127.0.0.53 ipv6=off;
@@ -37,8 +46,25 @@ http {
         accept_terms_of_service;
     }
 
+    js_engine qjs;
     js_import x1rpc from /etc/nginx/x1-validator-private-rpc/x1-validator-private-rpc.js;
+    js_set $x1_rpc_key_hash x1rpc.keyHash;
     js_set $x1_rpc_path x1rpc.forwardPath;
+    # The url the access log shows: <key> in place of anything that looks
+    # like a key, wherever the client put it, in either case, and even a
+    # character short or long.
+    js_set $x1_rpc_logged_uri x1rpc.loggedUri;
+
+    # Buckets big enough for 64-character hashes, so the list's table
+    # builds at once for any number of keys the tool allows.
+    map_hash_bucket_size 1024;
+    map_hash_max_size 524288;
+
+    # 1 when the key's hash is in nginx's list, 0 otherwise.
+    map $x1_rpc_key_hash $x1_rpc_key_ok {
+        default 0;
+        include /etc/nginx/x1-validator-private-rpc/hashed-api-keys.map;
+    }
 
     map $http_upgrade $x1_rpc_backend {
         websocket 127.0.0.1:8900;
@@ -50,18 +76,10 @@ http {
         ''      close;
     }
 
-    # Logs show <key> in place of anything that looks like a key, as the
-    # client sent it: after any number of slashes, in either case, and
-    # even a character short or long.
-    map $request_uri $x1_rpc_logged_uri {
-        "~^/+[0-9A-Fa-f]{32,}(?<rest>.*)$" "/<key>$rest";
-        default $request_uri;
-    }
-
     log_format x1_rpc '$time_iso8601 $remote_addr $request_method '
                       '"$x1_rpc_logged_uri" $status $body_bytes_sent $request_time';
 
-    # One budget for the key's requests, refilled 20 times a second.
+    # One budget that every key's requests share, refilled 20 times a second.
     limit_req_zone $server_name zone=x1_rpc:1m rate=20r/s;
 
     server {
@@ -76,7 +94,7 @@ http {
 
         access_log /var/log/x1-validator-private-rpc/nginx-access.log x1_rpc;
 
-        # Local-only page: says whether nginx holds a usable key.
+        # Local-only page: says ok, so the tool knows nginx answers.
         location = /x1-rpc-gate {
             allow 203.0.113.10;
             deny all;
@@ -85,15 +103,15 @@ http {
         }
 
         location / {
-            # Critical errors only, so an rpc outage never logs a request.
-            error_log /var/log/x1-validator-private-rpc/nginx-error-keyed.log crit;
+            # No error log: nginx's error lines carry the request line, key and all.
+            error_log /dev/null;
             # Request bodies of at most 10 KB, held in memory. A larger one gets 413.
             client_max_body_size 10k;
             client_body_buffer_size 10k;
             # 20 keyed requests a second, plus a burst of 20 more. The rest get 429.
             limit_req zone=x1_rpc burst=20 nodelay;
             limit_req_status 429;
-            if ($x1_rpc_path = "") {
+            if ($x1_rpc_key_ok = 0) {
                 return 403;
             }
             rewrite ^ $x1_rpc_path break;

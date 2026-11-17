@@ -5,12 +5,17 @@
  * upgrade check's tests. It answers the check's commands from a small
  * state that its apt installs change: the first install puts nginx.org's
  * previous nginx in place and creates nginx's user, and a later one
- * upgrades it, handing over to a new main process. Each scenario changes
- * the starting state, or answers some commands itself.
+ * upgrades it, handing over to a new main process. Its test nginx answers
+ * as the check's configuration would: the gate page says ok, a key whose
+ * hash a list it was given holds gets 200, and any other path 403. Each
+ * scenario changes the starting state, or answers some commands itself.
  */
 
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { API_KEY_PATTERN } from "../../src/lib/api-key.js";
+import { GATE_PAGE_PATH } from "../../src/lib/gate-page.js";
+import { hashApiKey } from "../../src/lib/key-hash-map.js";
 import {
   NGINX_APT_PIN_PATH,
   NGINX_APT_SOURCE_PATH,
@@ -25,6 +30,9 @@ const NJS_SOURCE = fileURLToPath(
 
 const NGINX_ORG =
   "https://nginx.org/packages/ubuntu noble/nginx amd64 Packages";
+
+/** A keyed path, with the key it carries. */
+const KEYED_PATH = new RegExp(`^/(${API_KEY_PATTERN})/$`);
 
 const POLICY = [
   ["nginx", "1.30.6-1~noble", "1.30.5-1~noble"],
@@ -46,6 +54,30 @@ const POLICY = [
 const COLONS = PINNED_FINGERPRINTS.map(
   (fpr) => `pub:-:4096:1:X:1:::-:::scSC::::::23::0:\nfpr:::::::::${fpr}:`,
 ).join("\n");
+
+/**
+ * Answers a request to the test nginx, as its configuration would: the
+ * gate page says ok, a key whose hash one of the files lists gets 200,
+ * and any other path 403.
+ * @param {string} url  The request's url.
+ * @param {Map<string, string>} files  The fake's files.
+ * @returns {{status: number, body: string}}
+ */
+export function testNginxAnswer(url, files) {
+  const { pathname } = new URL(url);
+  if (pathname === GATE_PAGE_PATH) {
+    return { status: 200, body: "ok\n" };
+  }
+  const keyed = KEYED_PATH.exec(pathname);
+  const line =
+    keyed === undefined || keyed === null ? "" : `${hashApiKey(keyed[1])} 1;`;
+  const listed =
+    line !== "" &&
+    [...files.values()].some((text) => String(text).split("\n").includes(line));
+  return listed === true
+    ? { status: 200, body: "ok\n" }
+    : { status: 403, body: "" };
+}
 
 /**
  * Answers the commands about nginx's user, which nginx's package creates.
@@ -137,7 +169,7 @@ function commonAnswer(call, state, files) {
  *   [overrides.respond]  Answers some commands before the common ones.
  * @param {object} [overrides.state]  Changes to the starting state.
  * @param {(url: string) => Promise<object>} [overrides.httpGet]  Answers
- *   the gate page.
+ *   the test nginx's requests, as testNginxAnswer does unless given.
  * @returns {{host: object, state: object}}
  */
 export function fakeValidator(overrides = {}) {
@@ -168,7 +200,7 @@ export function fakeValidator(overrides = {}) {
       NGINX_APT_PIN_PATH,
     ].map((filePath) => path.dirname(filePath)),
     httpsGet: async () => ({ status: 200, body: "-----BEGIN PGP-----" }),
-    httpGet: overrides.httpGet,
+    httpGet: overrides.httpGet ?? (async (url) => testNginxAnswer(url, files)),
   });
   return { host, state };
 }

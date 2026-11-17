@@ -4,10 +4,11 @@
  * Where the feature keeps its own files, found from this file's own
  * location, so the working directory never redirects a run:
  *
- * - the command the start wrapper, the git hook and the cron line call
+ * - the command the git hook and the cron lines call
  * - the key check that nginx runs
  * - the tool's state, and apply's record of what it changed
  * - ensure's alert state, lock and log
+ * - the tool's error log, where apply keeps a configuration nginx refused
  * - the project's `.env`, which holds credentials that belong to one
  *   install
  *
@@ -30,8 +31,10 @@ import { fileURLToPath } from "node:url";
  * @property {string} tmpDir  Disposable files, ensure's lock among them.
  * @property {string} lockPath  ensure's lock, which flock holds while the
  *   cron job's ensure runs.
- * @property {string} logsDir  The folder of ensure's log.
+ * @property {string} logsDir  The folder of the tool's logs.
  * @property {string} ensureLogPath  ensure's log.
+ * @property {string} errorLogPath  The tool's error log, where apply keeps
+ *   an nginx configuration nginx refused.
  * @property {string} envPath  The project's `.env`.
  */
 
@@ -60,6 +63,7 @@ export function featurePaths() {
     lockPath: path.join(tmpDir, "ensure.lock"),
     logsDir,
     ensureLogPath: path.join(logsDir, "ensure.log"),
+    errorLogPath: path.join(logsDir, "error.log"),
     envPath: path.join(featureDir, "..", ".env"),
   };
 }
@@ -86,6 +90,16 @@ export function homePath(value, homeDir) {
 export function startScriptPathOf(settings, homeDir) {
   const x1consoleDir = homePath(settings.x1consoleDir, homeDir);
   return path.join(x1consoleDir, settings.startScriptFile);
+}
+
+/**
+ * Finds hashed-api-keys.json.
+ * @param {object} settings  The tool's settings: hashedApiKeysPath.
+ * @param {string} homeDir  The account's home folder.
+ * @returns {string}
+ */
+export function hashedApiKeysPathOf(settings, homeDir) {
+  return homePath(settings.hashedApiKeysPath, homeDir);
 }
 
 /**

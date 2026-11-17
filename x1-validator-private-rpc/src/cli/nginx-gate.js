@@ -1,14 +1,7 @@
 /**
  * @file x1-validator-private-rpc/src/cli/nginx-gate.js
  * @description
- * Hands the api key to nginx, and checks the request path from the
- * server itself.
- *
- * The hand-over is the one unlock makes. Through sudo, the key goes to
- * the memory-only hand-off file, mode 0600, in a root-only folder that
- * is made when missing, as it is after every reboot. Then nginx restarts,
- * and its start wrapper reads the file and deletes it at once. The key
- * is never an argument of a command: sudo receives it on standard input.
+ * Checks the request path from the server itself.
  *
  * The checks reach nginx on the public address, with the tls server
  * name and the Host header set to the hostname, so they work whatever
@@ -18,12 +11,9 @@
  */
 
 import fs from "node:fs";
-import path from "node:path";
-import { mustSucceed } from "../lib/command-result.js";
+import { makeApiKey } from "../lib/api-key.js";
 import { GATE_PAGE_PATH } from "../lib/gate-page.js";
-import { NGINX_UNIT } from "../lib/nginx-org.js";
 import { pollUntil } from "../lib/poll.js";
-import { systemctl } from "../lib/systemd.js";
 
 /**
  * Reads Let's Encrypt's staging roots, which the tool ships.
@@ -74,14 +64,13 @@ export function askNginx(host, target, urlPath) {
 }
 
 /**
- * Asks for the gate page, which says whether nginx holds a usable key,
- * and keeps the certificate nginx served with it.
+ * Asks for the gate page, which says ok when nginx answers with its
+ * certificate, and keeps the certificate nginx served with it.
  * @param {object} host  The host.
  * @param {Target} target  Where to ask.
  * @returns {Promise<{gate: string, certificate: object|null,
- *   failure: string}>} `unlocked`, `locked`, or what came instead. The
- *   certificate, or null with no answer. Why no answer came, or "" when
- *   one did.
+ *   failure: string}>} `ok`, or what came instead. The certificate, or
+ *   null with no answer. Why no answer came, or "" when one did.
  */
 export async function askGate(host, target) {
   try {
@@ -102,51 +91,28 @@ export async function askGate(host, target) {
 }
 
 /**
- * Reads the gate page, which says whether nginx holds a usable key.
+ * Reads the gate page.
  * @param {object} host  The host.
  * @param {Target} target  Where to ask.
- * @returns {Promise<string>} `unlocked`, `locked`, or what came instead.
+ * @returns {Promise<string>} `ok`, or what came instead.
  */
 export async function readGate(host, target) {
   return (await askGate(host, target)).gate;
 }
 
 /**
- * Hands the api key to nginx and restarts it. The hand-off folder is
- * made, for root alone, only when it's missing, so a folder that was
- * there keeps its own mode.
- * @param {object} host  The host.
- * @param {string} keyHandOffPath  The memory-only hand-off file.
- * @param {string} key  The api key.
- */
-export function handKeyToNginx(host, keyHandOffPath, key) {
-  const folder = path.dirname(keyHandOffPath);
-  if (!host.exists(folder)) {
-    const made = host.sudo("install", ["-d", "-m", "0700", "--", folder]);
-    mustSucceed(made, `Creating ${folder}`);
-  }
-  const written = host.sudo(
-    "sh",
-    ["-c", 'umask 077 && cat > "$1"', "hand-off", keyHandOffPath],
-    { input: key },
-  );
-  mustSucceed(written, `Writing ${keyHandOffPath}`);
-  systemctl(host, ["restart", NGINX_UNIT]);
-}
-
-/**
- * Waits until nginx answers the gate page with `unlocked`: its
- * certificate is in place and checks out, and it holds the key.
+ * Waits until nginx answers the gate page with `ok`: its certificate is
+ * in place and checks out.
  * @param {object} host  The host.
  * @param {Target} target  Where to ask.
  * @param {number} waitMs  How long to wait in all.
  * @param {number} pollMs  How long to wait between two looks.
  * @returns {Promise<string>} The gate page's last answer.
  */
-export async function waitForUnlocked(host, target, waitMs, pollMs) {
+export async function waitForGate(host, target, waitMs, pollMs) {
   const { answer } = await pollUntil(
     () => readGate(host, target),
-    (gate) => gate === "unlocked",
+    (gate) => gate === "ok",
     {
       timeoutMs: waitMs,
       intervalMs: pollMs,
@@ -158,34 +124,42 @@ export async function waitForUnlocked(host, target, waitMs, pollMs) {
 }
 
 /**
- * Checks the whole request path from the server: the gate page says
- * unlocked, the keyed path reaches the rpc's health check, and a path
- * without the key gets a 403.
+ * Checks the whole request path from the server: the gate page says ok,
+ * the keyed path reaches the rpc's health check when there's a key to
+ * try, and a path without a key, or with a random one, gets a 403.
  * @param {object} host  The host.
  * @param {Target} target  Where to ask.
- * @param {string} key  The api key.
+ * @param {string} key  An api key nginx holds, or "" when the caller has
+ *   none in hand, since the tool keeps only the keys' hashes.
  * @returns {Promise<string[]>} What failed, or nothing when all passed.
  */
 export async function requestPathProblems(host, target, key) {
   const problems = [];
   const gate = await readGate(host, target);
-  if (gate !== "unlocked") {
-    problems.push(`The gate page says ${gate}, not unlocked.`);
+  if (gate !== "ok") {
+    problems.push(`The gate page says ${gate}, not ok.`);
   }
   const answer = (urlPath) =>
     askNginx(host, target, urlPath).catch((error) => ({
       status: 0,
       body: error.message,
     }));
-  const health = await answer(`/${key}/health`);
-  if (health.status !== 200 || health.body.trim() !== "ok") {
-    problems.push(
-      `The keyed path's health check answered ${health.status}: ${health.body.trim()}`,
-    );
+  if (key !== "") {
+    const health = await answer(`/${key}/health`);
+    if (health.status !== 200 || health.body.trim() !== "ok") {
+      problems.push(
+        `The keyed path's health check answered ${health.status}: ${health.body.trim()}`,
+      );
+    }
   }
   const refused = await answer("/");
   if (refused.status !== 403) {
-    problems.push(`A path without the key got ${refused.status}, not 403.`);
+    problems.push(`A path without a key got ${refused.status}, not 403.`);
+  }
+  const randomKey = makeApiKey();
+  const stranger = await answer(`/${randomKey}/health`);
+  if (stranger.status !== 403) {
+    problems.push(`A path with a random key got ${stranger.status}, not 403.`);
   }
   return problems;
 }

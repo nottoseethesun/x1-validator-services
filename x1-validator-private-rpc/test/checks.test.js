@@ -6,7 +6,7 @@
  * - ss's listeners, with an interface's suffix, ipv6 and a process
  * - the rpc held by 127.0.0.1 alone or not
  * - nginx on the public address's port 443 alone or not
- * - the certificate's name and days left
+ * - the certificate's name, in any case, and days left
  * - the gate page's answers
  */
 
@@ -91,6 +91,13 @@ test("the certificate must name the hostname and have enough days left", () => {
     judgeCertificate(certificate(30, "DNS:x1-rpc.example.com"), values).status,
     "ok",
   );
+  // nginx asks for the names in lower case, whatever case the setting has.
+  const capitals = { ...values, hostname: "X1-Rpc.Example.com" };
+  assert.equal(
+    judgeCertificate(certificate(30, "DNS:x1-rpc.example.com"), capitals)
+      .status,
+    "ok",
+  );
   assert.deepEqual(
     judgeCertificate(certificate(13, "DNS:x1-rpc.example.com"), values),
     {
@@ -110,8 +117,8 @@ test("the certificate must name the hostname and have enough days left", () => {
   );
 });
 
-test("the gate page: unlocked is ok, locked a problem, anything else unknown", () => {
-  assert.equal(judgeGate("unlocked").status, "ok");
-  assert.equal(judgeGate("locked").status, "problem");
+test("the gate page: ok is ok, anything else unknown", () => {
+  assert.equal(judgeGate("ok").status, "ok");
+  assert.equal(judgeGate("http 500").status, "unknown");
   assert.equal(judgeGate("no answer (connect ECONNREFUSED)").status, "unknown");
 });

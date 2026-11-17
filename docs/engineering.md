@@ -90,7 +90,7 @@ Every list is built from `FEATURES`, the names of the feature folders, so a new 
 `scripts/_coverage.js` judges the lcov report the tests write, with three rules:
 
 1. The lines of all measured files together must be at least 80% covered.
-2. Each file in `HIGH_RISK_FILES`, in `scripts/check.js`, must reach 95% of its lines and of its branches on its own. These are the files whose failure would hurt the validator or leak the api key.
+2. Each file in `HIGH_RISK_FILES`, in `scripts/check.js`, must reach 95% of its lines and of its branches on its own. These are the files whose failure would hurt the validator or leak an api key.
 3. Every module and installed file must appear in the report at all. Node.js reports only the files a test loaded, so a file no test loads would otherwise escape the measure.
 
 The measured files are each feature's `src/` and `util/`: the code that runs on the validator.
@@ -140,14 +140,18 @@ Then it runs two phases:
 
 - **The `nginx` upgrade check.** It runs `util/validate-nginx-upgrade/index.js`, which must pass, and must leave the container as it found it.
 - **apply and the commands after it**, in `scripts/_lxd-apply-phase.js`. Pebble, Let's Encrypt's test server, stands in for Let's Encrypt, and a stand-in rpc plays the validator's. A `git` checkout plays `x1console`, where the settings put it. It checks:
-  - the request path, the firewall rule, the rate limit and `nginx`'s logs
+  - the first key `apply` shows, the saved password `systemd-creds` holds, the request path, a random key's 403, the firewall rule, the rate limit and `nginx`'s logs
+  - that `nginx`'s main process has its own read-only `/dev`, and still serves after a log reopen
   - `ensure`'s failure while the rpc is still public, and every one of its verdicts after the validator's restart
-  - the flag's return after `git stash`, and `unlock` after `nginx` comes back locked
-  - both commands that switch private rpc, and a saved password
-  - that `undo-apply` leaves the container as `apply` found it
+  - the flag's return after `git stash`, and the key still working after a restart of `nginx`
+  - two keys from `add-api-key`, then `remove-api-key` on one of them: it gets 403 and the rest still work
+  - the connections the removed key held open through its removal, which `x1-validator-private-rpc/test/helpers/reload-probe.js` opens. An http/1.1 one kept alive and an http/2 one no longer answer for it, and a websocket closes within the old worker's time limit.
+  - both commands that switch private rpc, and a later `apply` that asks nothing
+  - `undo-apply` answered no, which keeps the keys and the saved password, and the next `apply`, which hands `nginx` the same keys
+  - that the last `undo-apply`, answered yes, leaves the container as `apply` found it, with Autopilot's job still in the `crontab` and the start script still executable
   - last, that a firewall rule for port 443 with a comment, added while `ufw` is off, survives an `apply` stopped after its firewall stage, then `undo-apply`
 
-Both phases decide what counts as left behind the same way, through `scripts/_lxd.js`. The paths come from the app: every absolute path in the settings the tool loads in the container, nginx.org's repository files, the folders above them all, and the `nginx` package and its user. The second phase adds the tool's own paths in the user's home and in the feature's folder. Whatever of those exists after a phase, and didn't before it, is a leftover. The second phase also checks that the firewall rule, the `cron` line and `nginx`'s mask are gone, and that `x1console`'s checkout is as committed. It reads the firewall rule from the rules the `ufw` command added, which `ufw` lists even while it's off, as it is in the container.
+Both phases decide what counts as left behind the same way, through `scripts/_lxd.js`. The paths come from the app: every absolute path in the settings the tool loads in the container, nginx.org's repository files, the folders above them all, and the `nginx` package and its user. The second phase adds the tool's own paths in the user's home and in the feature's folder. Whatever of those exists after a phase, and didn't before it, is a leftover. The second phase also checks that the firewall rule, both `cron` lines and `nginx`'s mask are gone, and that `x1console`'s checkout is as committed. It reads the firewall rule from the rules the `ufw` command added, which `ufw` lists even while it's off, as it is in the container.
 
 The test deletes the container at the end. With `--keep`, it stays, for a look inside.
 

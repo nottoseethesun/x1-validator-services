@@ -111,6 +111,21 @@ export function readSchema(configDir = defaultConfigDir()) {
 }
 
 /**
+ * Tells whether a value has the form the schema asks of one setting, so
+ * a value typed in follows the same rule as the setting.
+ * @param {string} name  The setting.
+ * @param {string} value  The value.
+ * @param {string} configDir  The `app-config` folder.
+ * @returns {boolean}
+ */
+function fitsSetting(name, value, configDir) {
+  const ajv = new Ajv2020({ strict: true });
+  const schema = readSchema(configDir);
+  const rule = new Map(Object.entries(schema.properties)).get(name);
+  return ajv.validate(rule, value);
+}
+
+/**
  * Tells whether a hostname has the form the schema asks of the
  * `hostname` setting, so a hostname typed in follows the same rule.
  * @param {string} hostname  The hostname.
@@ -119,9 +134,19 @@ export function readSchema(configDir = defaultConfigDir()) {
  * @returns {boolean}
  */
 export function isHostname(hostname, configDir = defaultConfigDir()) {
-  const ajv = new Ajv2020({ strict: true });
-  const schema = readSchema(configDir);
-  return ajv.validate(schema.properties.hostname, hostname);
+  return fitsSetting("hostname", hostname, configDir);
+}
+
+/**
+ * Tells whether an email address has the form the schema asks of the
+ * `acmeEmail` setting, so an api key's email follows the same rule.
+ * @param {string} email  The address.
+ * @param {string} [configDir]  The `app-config` folder, the feature's own
+ *   unless a caller passes another.
+ * @returns {boolean}
+ */
+export function isEmail(email, configDir = defaultConfigDir()) {
+  return fitsSetting("acmeEmail", email, configDir);
 }
 
 /**

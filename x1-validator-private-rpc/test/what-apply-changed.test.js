@@ -118,35 +118,35 @@ test("a change is never written over, and a found setting turns changed, at the 
     record.get("firewallRule:443/tcp").applyChangedThisValueAtThisTimestampMS,
     0,
   );
-  const vaultKey = "vault:/home/validator/vault.json";
-  write(found(vaultKey));
-  write(found(vaultKey));
+  const mapKey = "hashedApiKeysMapFile:/etc/nginx/hashed-api-keys.map";
+  write(found(mapKey));
+  write(found(mapKey));
   assert.equal(writes(host, recordPath), 2);
-  const foundVault = record.get(vaultKey);
+  const foundMap = record.get(mapKey);
   assert.deepEqual(
     [
-      foundVault.applyChangedThisFromItsPreviousValue,
-      foundVault.applyChangedThisValueAtThisTimestampMS,
-      foundVault.oldValue,
+      foundMap.applyChangedThisFromItsPreviousValue,
+      foundMap.applyChangedThisValueAtThisTimestampMS,
+      foundMap.oldValue,
     ],
     [false, NEVER_CHANGED, "true"],
   );
   write(made("gitHook:/x1console/.git/hooks/post-merge"));
-  write(made(vaultKey));
+  write(made(mapKey));
   assert.deepEqual(
     [...record.keys()],
     [
       "firewallRule:443/tcp",
       "gitHook:/x1console/.git/hooks/post-merge",
-      vaultKey,
+      mapKey,
     ],
   );
-  const vault = record.get(vaultKey);
+  const map = record.get(mapKey);
   assert.deepEqual(
     [
-      vault.applyChangedThisFromItsPreviousValue,
-      vault.applyChangedThisValueAtThisTimestampMS,
-      vault.oldValue,
+      map.applyChangedThisFromItsPreviousValue,
+      map.applyChangedThisValueAtThisTimestampMS,
+      map.oldValue,
     ],
     [true, 1000, "false"],
   );

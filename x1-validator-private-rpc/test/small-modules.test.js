@@ -24,6 +24,10 @@ import {
   explainTpm2,
 } from "../src/cli/apply-key.js";
 import { featurePaths, homePath } from "../src/cli/feature-paths.js";
+import {
+  newHashedApiKeys,
+  WRONG_PASSWORD,
+} from "../src/cli/hashed-api-keys.js";
 import { checkIn, CRONITOR_URL, cronitorUrl } from "../src/cli/heartbeat.js";
 import { createLog } from "../src/cli/log.js";
 import { createPrompts } from "../src/cli/prompts.js";
@@ -34,7 +38,6 @@ import {
   sendTelegram,
   TOKEN_FILE,
 } from "../src/cli/telegram.js";
-import { encryptSecret } from "../src/cli/vault.js";
 import { maskSecret } from "../src/lib/mask-secret.js";
 import { shippedAndChangedSettings } from "./helpers/config-copies.js";
 import { createFakeHost } from "./helpers/fake-host.js";
@@ -158,7 +161,7 @@ test("Telegram: x1console's two files, and a plain-text send", async () => {
   });
 });
 
-test("the prompts: --yes answers confirmations, never a choice; the password stays hidden", async () => {
+test("the prompts: --yes answers confirmations, never a choice or a line; the password stays hidden", async () => {
   const input = new PassThrough();
   const output = new PassThrough();
   let shown = "";
@@ -174,6 +177,9 @@ test("the prompts: --yes answers confirmations, never a choice; the password sta
   const declined = prompts.ask("Save the password?");
   input.write("nope\n");
   assert.equal(await declined, false);
+  const line = prompts.line("An email: ");
+  input.write("you@example.com\n");
+  assert.equal(await line, "you@example.com");
   const asking = createPrompts({ yes: false, input, output });
   const confirmed = asking.confirm("Stage 2 of 8: install nginx. Go on?");
   input.write("y\n");
@@ -192,7 +198,7 @@ test("explains systemd's three TPM2 answers", () => {
     explainTpm2(
       "partial\n+firmware\n+driver\n+system\n+subsystem\n-libraries\n",
     ),
-    /Install libtss2-esys-3\.0\.2-0t64/,
+    /install libtss2-esys-3\.0\.2-0t64, .* before you answer, since apply asks this only once\.$/,
   );
   assert.match(
     explainTpm2(
@@ -206,23 +212,19 @@ test("explains systemd's three TPM2 answers", () => {
 test("a password may be typed as many times as the settings say, and the last wrong one stops", async () => {
   // A changed count, so code that kept the shipped one would show.
   const tries = shippedAndChangedSettings().changed.passwordTries;
-  const payload = await encryptSecret("the key", "the right password", 1000);
+  const { keys, cipherKey } = await newHashedApiKeys("the right password", 1);
   const wrong = Array.from({ length: tries - 1 }, (_, index) => `no ${index}`);
   const prompts = scriptedPrompts({
     passwords: [...wrong, "the right password"],
   });
-  assert.deepEqual(await askKnownPassword(prompts, payload, tries), {
+  assert.deepEqual(await askKnownPassword(prompts, keys, tries), {
     password: "the right password",
-    plain: "the key",
+    cipherKey,
   });
-  assert.ok(
-    prompts.asked.includes(
-      "The password is wrong, or the vault is damaged. 1 more tries.",
-    ),
-  );
+  assert.ok(prompts.asked.includes(`${WRONG_PASSWORD} 1 more tries.`));
   const stubborn = scriptedPrompts({ passwords: [...wrong, "wrong too"] });
-  await assert.rejects(askKnownPassword(stubborn, payload, tries), {
-    message: "The password is wrong, or the vault is damaged.",
+  await assert.rejects(askKnownPassword(stubborn, keys, tries), {
+    message: WRONG_PASSWORD,
   });
 });
 

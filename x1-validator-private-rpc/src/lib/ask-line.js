@@ -3,7 +3,7 @@
  * @description
  * A prompt on the terminal for one line, which shows what is typed, as
  * askPassword is for a secret. The question goes to stderr, so stdout
- * stays clean. The commands' yes-or-no questions and
+ * stays clean. The commands' yes-or-no questions, add-api-key's email and
  * check-my-private-rpc's hostname share it.
  */
 

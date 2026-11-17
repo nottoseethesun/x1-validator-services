@@ -3,9 +3,9 @@
  * @description
  * A stand-in for Tachyon's rpc, for the LXD system test, never for a
  * validator. It listens on an address's port 8899 for json-rpc and
- * `/health`, and on port 8900 for websocket clients, as the validator's
- * rpc does: on every interface without `--private-rpc`, or on 127.0.0.1
- * with it. It reports one identity, whose gossip address is the public
+ * `/health`, and on port 8900 for websocket clients, whose upgrade it
+ * takes up and holds open, as the validator's rpc does: on every
+ * interface without `--private-rpc`, or on 127.0.0.1 with it. It reports one identity, whose gossip address is the public
  * address given, so apply finds that address as on a validator. Given
  * `--private-rpc`, it carries the flag in its command line, where
  * ensure looks for it.
@@ -62,7 +62,19 @@ function main(args) {
     });
   });
   rpc.listen(RPC_PORT, bindAddress);
-  const websocket = net.createServer((socket) => socket.end());
+  /*-
+   * Takes up each upgrade, and holds the connection open, as a quiet
+   * subscription does, until the client or nginx closes it.
+   */
+  const websocket = net.createServer((socket) => {
+    socket.on("error", () => {});
+    socket.once("data", () => {
+      socket.write(
+        "HTTP/1.1 101 Switching Protocols\r\n" +
+          "Upgrade: websocket\r\nConnection: Upgrade\r\n\r\n",
+      );
+    });
+  });
   websocket.listen(RPC_PORT + 1, bindAddress);
 }
 

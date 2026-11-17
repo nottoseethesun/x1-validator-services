@@ -18,6 +18,7 @@ import { test } from "node:test";
 import {
   decideAlerts,
   emptyAlertState,
+  FLAG_RESTORED,
   isAlertState,
   NEVER_ALERTED,
 } from "../src/cli/alerts.js";
@@ -112,16 +113,13 @@ test("the certificate repeats as often as the settings say, and an unknown verdi
 test("the flag's restoring sends its own notice; pending messages stay in the state", () => {
   const last = { ...emptyAlertState(), pending: ["an older message"] };
   const fine = {
-    name: "gate",
+    name: "nginx-active",
     status: "ok",
-    detail: "The gate page says unlocked.",
+    detail: "nginx is active.",
   };
   const { messages, next } = decide(fine, last, 0, true);
   assert.equal(messages.length, 1);
-  assert.match(
-    messages[0],
-    /An x1console update took --private-rpc out of the start script, and ensure put it back\./,
-  );
+  assert.ok(messages[0].endsWith(`: ${FLAG_RESTORED}`), messages[0]);
   assert.deepEqual(next.pending, ["an older message"]);
 });
 
@@ -152,13 +150,13 @@ test("a check that never alerted keeps -1 as its last alert time, and a recovery
 test("an alert state is refused when a check lacks its last alert time, or holds a wrong one", () => {
   const good = {
     version: 1,
-    checks: { gate: { bad: false, lastAlertAt: NEVER_ALERTED } },
+    checks: { certificate: { bad: false, lastAlertAt: NEVER_ALERTED } },
     pending: [],
   };
   assert.equal(isAlertState(good), true);
   for (const lastAlertAt of [null, undefined, -2, 1.5]) {
     const check = { bad: false, lastAlertAt };
-    const damaged = { ...good, checks: { gate: check } };
+    const damaged = { ...good, checks: { certificate: check } };
     assert.equal(isAlertState(damaged), false, String(lastAlertAt));
   }
   for (const damaged of [

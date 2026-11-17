@@ -6,11 +6,13 @@
  * to its old value, newest first, until the machine is as apply found
  * it. Those settings are:
  *
- * - the cron line and the tool's folders
+ * - the cron lines and the tool's folders
  * - the git hook
  * - the start script's flag and backups
- * - nginx's service, files, logs and certificates
- * - the saved password, the api key and the vault
+ * - nginx's service, files, logs and certificates, the list of the api
+ *   keys' hashes among the files
+ * - the saved password, and the folders apply made for it and for the
+ *   api keys' file
  * - the firewall rule
  * - nginx's packages, and the account their package made
  * - nginx.org's repository
@@ -18,26 +20,36 @@
  *
  * A setting apply found already as it needed it stays as it is. Once
  * every change is undone, the record goes too, with the rest of
- * app-data/. When apply saved the password, the saved password and the
- * api key go together, after one question that names both. The key goes
- * only once the password has, so a saved password never outlasts the
- * key it opens. With no password saved, it asks about the key alone. A
- * later apply then needs a new password, and gives clients a new url.
- * With --dry-run it prints each step and changes nothing.
+ * app-data/.
+ *
+ * The api keys aren't in the record, since keys come and go through
+ * add-api-key and remove-api-key. Before any step, undo-apply asks one
+ * question about them: delete every key, or keep them all. When apply
+ * saved the password, the question names it too, since the two go
+ * together: a yes deletes both, and a no keeps both. A yes gets sudo
+ * first, so a refused one changes nothing. Kept keys stay in
+ * hashed-api-keys.json, and a later apply hands their hashes to nginx
+ * again, so every client's url still works. After a yes, a later apply
+ * makes a new first key, under a new password. nginx's list of hashes
+ * goes either way, with nginx's other files. With --dry-run it prints
+ * the question and each step, and changes nothing. While the api keys'
+ * file is there, undo-apply holds the api keys' lock from its question to
+ * its end, so no key command changes them meanwhile.
  *
  * It takes back only what apply did. The start script loses just the
  * word apply added, and never gets an old backup copied over a newer
  * x1console file. The hook goes only while it's still the tool's. A
  * folder apply made for its files goes only once nothing else is in it.
- * A folder that goes whole, with what nginx or the cron job wrote in it,
- * goes only while the settings still put that folder there, so a damaged
- * record can never aim a removal elsewhere.
+ * Root looks for a folder root made, since it may sit in a folder only
+ * root can look into. A folder that goes whole, with what nginx or the
+ * cron job wrote in it, goes only while the settings still put that
+ * folder there, so a damaged record can never aim a removal elsewhere.
  *
  * nginx stays masked until it's gone, so its package's default site
  * never runs, and its account stays until then too. A step that fails,
  * or that the operator declines, stays in the record. So does a folder,
- * or the vault, while such a step's target is in it. Running undo-apply
- * again retries them.
+ * while such a step's target, or the kept api keys' file, is in it.
+ * Running undo-apply again retries them.
  */
 
 import path from "node:path";
@@ -47,17 +59,14 @@ import {
   updatePackageLists,
 } from "../lib/apt.js";
 import { mustSucceed } from "../lib/command-result.js";
+import { rootLooks } from "../lib/folders-to-make.js";
 import { NGINX_UNIT } from "../lib/nginx-org.js";
 import { systemctl } from "../lib/systemd.js";
+import { hashedApiKeysPathOf } from "./feature-paths.js";
+import { askSudoFirst, withApiKeysLock } from "./hashed-api-keys.js";
 import { isToolHook } from "./render-watchers.js";
 import { removePrivateRpc } from "./start-script.js";
-import { readState, writeState } from "./state.js";
-import {
-  API_KEY_SECRET,
-  readVault,
-  withoutSecret,
-  writeVault,
-} from "./vault.js";
+import { readState, withStartScriptLock, writeState } from "./state.js";
 import {
   oldValueOf,
   partsOf,
@@ -65,21 +74,16 @@ import {
   writeRecord,
 } from "./what-apply-changed.js";
 
-/** The one question before the saved password and the api key go. */
-const SECRETS_QUESTION =
-  "Delete the api key and the saved password? They go together, so a no " +
-  "keeps both. A later apply then makes a new key under a new password, " +
-  "and every client needs the new url.";
+/** The one question about the api keys, when apply saved the password. */
+export const KEYS_AND_PASSWORD_QUESTION =
+  "Delete every api key and the saved password? They go together, so a " +
+  "no keeps both. After a yes, a later apply makes a new key under a new " +
+  "password, and every client needs a new url.";
 
-/** The question before the api key goes, when no password was saved. */
-const KEY_QUESTION =
-  "Delete the api key? A later apply makes a new one, and every client " +
-  "then needs the new url.";
-
-/** The question before a saved password goes without its key. */
-const PASSWORD_QUESTION =
-  "Delete the saved password? Without it, nginx stays locked after a " +
-  "restart until unlock.";
+/** The one question about the api keys, when apply saved no password. */
+const KEYS_QUESTION =
+  "Delete every api key? After a yes, a later apply makes a new one, and " +
+  "every client needs a new url.";
 
 /**
  * Removes apply's line from the crontab, keeping every other line.
@@ -119,17 +123,19 @@ function removeNamedTree(remove, folder, named) {
 
 /**
  * Removes a folder once nothing else is in it.
- * @param {object} host  The host.
+ * @param {{exists: (path: string) => boolean}} looks  What says whether
+ *   the folder is there: the host for the account's own folders, and
+ *   root for root's, which may sit in a folder the account can't see into.
  * @param {string} folder  The folder.
  * @param {(folder: string) => void} removeIfEmpty  Removes it when empty.
  * @returns {string|null} A note when the folder stays.
  */
-function removeFolder(host, folder, removeIfEmpty) {
-  if (!host.exists(folder)) {
+function removeFolder(looks, folder, removeIfEmpty) {
+  if (!looks.exists(folder)) {
     return null;
   }
   removeIfEmpty(folder);
-  const stays = host.exists(folder);
+  const stays = looks.exists(folder);
   return stays === true
     ? `${folder} holds files apply didn't make, so it stays.`
     : null;
@@ -155,6 +161,8 @@ function removeHook(host, hookPath) {
 
 /**
  * Takes the flag apply added out of the start script, keeping its mode.
+ * Its step holds the start script's lock, so an ensure that's running
+ * can't put the flag back in between.
  * @param {object} host  The host.
  * @param {string} scriptPath  The start script.
  */
@@ -184,37 +192,6 @@ async function removeRootFile(host, name, filePath) {
   if (name === "nginxAptSource") {
     await updatePackageLists(host);
   }
-}
-
-/**
- * Deletes the api key from the vault.
- * @param {object} host  The host.
- * @param {string} vaultPath  The vault's file.
- */
-function deleteKey(host, vaultPath) {
-  const vault = readVault(host, vaultPath);
-  if (vault !== undefined && vault !== null) {
-    const rest = withoutSecret(vault, API_KEY_SECRET);
-    writeVault(host, vaultPath, rest);
-  }
-}
-
-/**
- * Removes the vault apply made, once it holds no secret.
- * @param {object} host  The host.
- * @param {string} vaultPath  The vault's file.
- * @returns {string|null} A note when the vault stays.
- */
-function removeVault(host, vaultPath) {
-  const vault = readVault(host, vaultPath);
-  if (vault === undefined || vault === null) {
-    return null;
-  }
-  if (Object.keys(vault.secrets).length > 0) {
-    return `${vaultPath} holds other secrets, so it stays.`;
-  }
-  host.removeUserFile(vaultPath);
-  return null;
 }
 
 /**
@@ -273,18 +250,20 @@ function unmaskNginx(host) {
 
 /**
  * Lists the step that resets one setting apply changed.
- * @param {object} context  The run, with `secretsPaired`: whether the
- *   saved password and the api key go together.
+ * @param {object} context  The run, with `keysKept`: whether the
+ *   operator kept the api keys, and so the saved password.
  * @param {string} key  The setting.
  * @param {import("./what-apply-changed.js").Entry} entry  Its entry.
- * @returns {{what: string, ask?: string, keep?: boolean,
- *   run?: () => (unknown|Promise<unknown>)}} The step, with `keep` for a
- *   setting this version of the tool can't reset.
+ * @returns {{what: string, declined?: boolean, keep?: boolean,
+ *   run?: () => (unknown|Promise<unknown>)}} The step, with `declined`
+ *   for one the operator's answer keeps, and `keep` for a setting this
+ *   version of the tool can't reset.
  */
 function resetStep(context, key, entry) {
-  const { host, settings, paths, secretsPaired } = context;
+  const { host, settings, paths, keysKept } = context;
   const { name, target } = partsOf(key);
   const old = oldValueOf(entry);
+  const asRoot = rootLooks(host);
   const rootTree = (what, named) => () => ({
     what,
     run: () =>
@@ -301,7 +280,7 @@ function resetStep(context, key, entry) {
   const rootFolder = () => ({
     what: `remove the folder ${target}`,
     run: () =>
-      removeFolder(host, target, (empty) => host.removeRootDirIfEmpty(empty)),
+      removeFolder(asRoot, target, (empty) => host.removeRootDirIfEmpty(empty)),
   });
   const rootFile = () => ({
     what: `remove ${target}`,
@@ -311,10 +290,11 @@ function resetStep(context, key, entry) {
     settings.acmeStatePath,
     settings.acmeStagingStatePath,
   ]);
-  const handOffFolder = path.dirname(settings.keyHandOffPath);
+  const cronCommand =
+    / (ensure\S*) --quiet /.exec(target)?.at(1) ?? "a command";
   const steps = {
     cronLine: () => ({
-      what: "remove the line that runs ensure from the crontab",
+      what: `remove the line that runs ${cronCommand} from the crontab`,
       run: () => removeCronLine(host, target),
     }),
     toolTmpFolder: toolFolder,
@@ -325,15 +305,15 @@ function resetStep(context, key, entry) {
     }),
     privateRpcFlag: () => ({
       what: `take --private-rpc out of ${target}`,
-      run: () => removeFlag(host, target),
+      run: () =>
+        withStartScriptLock(host, paths.statePath, () =>
+          removeFlag(host, target),
+        ),
     }),
     startScriptBackup: () => ({
       what: `remove ${target}`,
       run: () => host.removeUserFile(target),
     }),
-    keyHandOffFolder: rootTree(`remove the key's hand-off folder ${target}`, [
-      handOffFolder,
-    ]),
     nginxServiceEnabled: () => ({
       what: `stop, disable and mask ${NGINX_UNIT}`,
       run: () => {
@@ -348,30 +328,18 @@ function resetStep(context, key, entry) {
     ]),
     njsModuleFile: rootFile,
     nginxConfigFile: rootFile,
-    startWrapperFile: rootFile,
     systemdDropInFile: rootFile,
     logrotateRuleFile: rootFile,
+    hashedApiKeysMapFile: rootFile,
     nginxFileFolder: rootFolder,
+    // The question about the api keys, asked first, covers it.
     savedPassword: () => ({
       what: `delete the saved password, ${target}`,
-      ask: secretsPaired === true ? SECRETS_QUESTION : PASSWORD_QUESTION,
+      declined: keysKept,
       run: () => host.removeRootFile(target),
     }),
     savedPasswordFolder: rootFolder,
-    /*-
-     * Paired, the saved password's question covers the key, and heldBy
-     * keeps the key until the password has gone.
-     */
-    apiKey: () => ({
-      what: `delete the api key from ${target}`,
-      ...(secretsPaired === true ? {} : { ask: KEY_QUESTION }),
-      run: () => deleteKey(host, target),
-    }),
-    vault: () => ({
-      what: `remove the vault ${target}`,
-      run: () => removeVault(host, target),
-    }),
-    vaultFolder: () => ({
+    hashedApiKeysFolder: () => ({
       what: `remove the folder ${target}`,
       run: () =>
         removeFolder(host, target, (empty) => host.removeUserDirIfEmpty(empty)),
@@ -414,41 +382,39 @@ function resetStep(context, key, entry) {
 }
 
 /**
- * Finds a change still in the record that this one waits for: one whose
- * target sits in this one's, such as the api key in the vault, or the
- * saved password in its folder. The api key also waits for the saved
- * password, so a saved password never outlasts the key it opens.
+ * Finds what this change waits for: a change still in the record whose
+ * target sits in this one's, such as the saved password in its folder,
+ * or the kept api keys' file, in the folder apply made for it.
  * @param {string} key  The setting.
  * @param {Map<string, object>} left  The changes that stay in the record.
+ * @param {string[]} stays  Files outside the record that stay.
  * @returns {string|null} What holds it back, or null.
  */
-function heldBy(key, left) {
-  const { name, target } = partsOf(key);
-  const holder = [...left.keys()]
-    .map((other) => partsOf(other))
-    .find(
-      (other) =>
-        (target !== "" &&
-          (other.target === target || other.target.startsWith(`${target}/`))) ||
-        (name === "apiKey" && other.name === "savedPassword"),
-    );
-  return holder === undefined || holder === null ? null : holder.target;
+function heldBy(key, left, stays) {
+  const { target } = partsOf(key);
+  const holder = [
+    ...[...left.keys()].map((other) => partsOf(other).target),
+    ...stays,
+  ].find(
+    (other) =>
+      target !== "" && (other === target || other.startsWith(`${target}/`)),
+  );
+  return holder === undefined || holder === null ? null : holder;
 }
 
 /**
- * Runs one step, unless it keeps its change or the operator says no.
+ * Runs one step, unless it keeps its change or the operator said no.
  * @param {object} run  The run.
  * @param {object} step  The step.
  * @returns {Promise<"done"|"kept"|"failed">}
  */
 async function runStep(run, step) {
-  const { log, prompts } = run;
+  const { log } = run;
   if (step.keep === true) {
     log.info("undo-apply", `Kept: ${step.what}.`);
     return "kept";
   }
-  const asks = step.ask !== undefined && step.ask !== null;
-  if (asks === true && !(await prompts.ask(step.ask))) {
+  if (step.declined === true) {
     log.info("undo-apply", `Kept, as asked: the change behind "${step.what}".`);
     return "kept";
   }
@@ -466,31 +432,101 @@ async function runStep(run, step) {
 }
 
 /**
- * Runs undo-apply.
- * @param {object} run  What undo-apply works with: host, settings,
- *   paths, log, prompts, and options {dryRun}.
- * @returns {Promise<number>} The exit code: 1 when a step failed, 0
- *   otherwise.
+ * Asks the one question about the api keys, and deletes their file on a
+ * yes.
+ * @param {object} run  The run.
+ * @param {string} filePath  The api keys' file.
+ * @param {boolean} paired  Whether apply saved the password, which goes
+ *   with the keys.
+ * @returns {Promise<boolean>} Whether the keys stay.
+ * @throws {Error} When sudo refuses after a yes, before anything changes,
+ *   so the api keys' file and nginx's list still agree.
  */
-export async function runUndoApply(run) {
+async function askAboutKeys(run, filePath, paired) {
+  const { host, log, prompts, options } = run;
+  const question = paired === true ? KEYS_AND_PASSWORD_QUESTION : KEYS_QUESTION;
+  if (options.dryRun === true) {
+    log.info("undo-apply", `Would ask: ${question}`);
+    return false;
+  }
+  if (!(await prompts.ask(question))) {
+    log.info(
+      "undo-apply",
+      `Kept, as asked: every api key, in ${filePath}. A later apply hands ` +
+        "them to nginx again.",
+    );
+    return true;
+  }
+  /*-
+   * sudo first, as the key commands get it, so a refused one leaves the
+   * file, and nginx's list keeps no key the file has lost.
+   */
+  askSudoFirst(host);
+  host.removeUserFile(filePath);
+  log.info("undo-apply", `Done: deleted every api key, with ${filePath}.`);
+  return false;
+}
+
+/**
+ * Runs each change's step, newest first, unless what it waits for stays.
+ * @param {object} context  The run, with keysKept.
+ * @param {[string, object][]} newestFirst  The changes apply made.
+ * @param {string[]} stays  Files outside the record that stay.
+ * @returns {Promise<{left: Map<string, object>, failed: boolean}>} The
+ *   changes that stay in the record, and whether a step failed.
+ */
+async function runSteps(context, newestFirst, stays) {
+  const left = new Map();
+  let failed = false;
+  for (const [key, entry] of newestFirst) {
+    const step = resetStep(context, key, entry);
+    const holder = heldBy(key, left, stays);
+    const held = holder !== undefined && holder !== null;
+    if (held === true) {
+      context.log.info(
+        "undo-apply",
+        `Kept, since ${holder} stays: the change behind "${step.what}".`,
+      );
+    }
+    const outcome = held === true ? "kept" : await runStep(context, step);
+    if (outcome !== "done") {
+      left.set(key, entry);
+    }
+    if (outcome === "failed") {
+      failed = true;
+    }
+  }
+  return { left, failed };
+}
+
+/**
+ * Undoes what apply did, after the question about the api keys.
+ * @param {object} run  The run.
+ * @param {string} filePath  The api keys' file.
+ * @param {boolean} fileThere  Whether the file was there at the start.
+ * @returns {Promise<number>} The exit code.
+ */
+async function undoAll(run, filePath, fileThere) {
   const { host, paths, log, options } = run;
   const recordPath = paths.whatApplyChangedPath;
   const record = readRecord(host, recordPath) ?? new Map();
   const newestFirst = [...record]
     .filter(([, entry]) => entry.applyChangedThisFromItsPreviousValue === true)
     .reverse();
+  const names = new Set(newestFirst.map(([key]) => partsOf(key).name));
+  const paired = names.has("savedPassword");
+  const keysKept =
+    fileThere === true && (await askAboutKeys(run, filePath, paired));
   if (newestFirst.length === 0) {
     log.info(
       "undo-apply",
-      "apply hasn't changed anything here, so there is nothing to undo.",
+      fileThere === true
+        ? "apply hasn't changed anything else here."
+        : "apply hasn't changed anything here, so there is nothing to undo.",
     );
     return 0;
   }
-  const names = new Set(newestFirst.map(([key]) => partsOf(key).name));
-  const context = {
-    ...run,
-    secretsPaired: names.has("savedPassword") && names.has("apiKey"),
-  };
+  const context = { ...run, keysKept };
   if (options.dryRun === true) {
     for (const [key, entry] of newestFirst) {
       const step = resetStep(context, key, entry);
@@ -501,26 +537,8 @@ export async function runUndoApply(run) {
     }
     return 0;
   }
-  const left = new Map();
-  let failed = false;
-  for (const [key, entry] of newestFirst) {
-    const step = resetStep(context, key, entry);
-    const holder = heldBy(key, left);
-    const held = holder !== undefined && holder !== null;
-    if (held === true) {
-      log.info(
-        "undo-apply",
-        `Kept, since ${holder} stays: the change behind "${step.what}".`,
-      );
-    }
-    const outcome = held === true ? "kept" : await runStep(run, step);
-    if (outcome !== "done") {
-      left.set(key, entry);
-    }
-    if (outcome === "failed") {
-      failed = true;
-    }
-  }
+  const stays = keysKept === true ? [filePath] : [];
+  const { left, failed } = await runSteps(context, newestFirst, stays);
   if (left.size === 0) {
     host.removeUserTree(path.dirname(recordPath));
     log.info("undo-apply", "Everything apply did is undone.");
@@ -534,4 +552,31 @@ export async function runUndoApply(run) {
     writeState(host, paths.statePath, state);
   }
   return failed === true ? 1 : 0;
+}
+
+/**
+ * Runs undo-apply. While the api keys' file is there, it holds their
+ * lock from its question to its end, as the key commands do, so none of
+ * them changes the keys or nginx's list while it takes them apart.
+ * @param {object} run  What undo-apply works with: host, settings,
+ *   paths, log, prompts, and options {dryRun}.
+ * @returns {Promise<number>} The exit code: 1 when a step failed, 0
+ *   otherwise.
+ * @throws {Error} Before any change: when another command holds the api
+ *   keys' lock, since the two commands' changes would undo each other, or
+ *   when sudo refuses after the yes, so the api keys' file and nginx's
+ *   list still agree.
+ */
+export async function runUndoApply(run) {
+  const { host, settings, options } = run;
+  const homeDir = host.homeDir();
+  const filePath = hashedApiKeysPathOf(settings, homeDir);
+  const fileThere = host.exists(filePath);
+  if (fileThere === true && options.dryRun !== true) {
+    const folder = path.dirname(filePath);
+    return withApiKeysLock(host, folder, () =>
+      undoAll(run, filePath, fileThere),
+    );
+  }
+  return undoAll(run, filePath, fileThere);
 }

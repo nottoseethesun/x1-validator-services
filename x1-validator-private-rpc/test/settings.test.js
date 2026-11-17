@@ -69,10 +69,11 @@ test("a value out of range is refused with its rule and its value", () => {
 
 test("every problem is listed at once", () => {
   const { configDir } = copyShippedConfig(
-    '{"requestTimeoutSeconds": 0, "keyHandOffPath": "relative/path"}',
+    '{"requestTimeoutSeconds": 0, "hashedApiKeysMapPath": "relative/path"}',
   );
   assert.throws(() => loadSettings(configDir), {
-    message: /2 problem\(s\)[\s\S]*keyHandOffPath[\s\S]*requestTimeoutSeconds/,
+    message:
+      /2 problem\(s\)[\s\S]*hashedApiKeysMapPath[\s\S]*requestTimeoutSeconds/,
   });
 });
 

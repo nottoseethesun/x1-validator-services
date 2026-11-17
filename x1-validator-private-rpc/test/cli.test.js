@@ -81,12 +81,13 @@ test("help opens with what the tool is for and ends with the exit codes", () => 
     "undo-apply",
     "turn-off-private-rpc",
     "turn-on-private-rpc",
-    "unlock",
+    "add-api-key",
+    "remove-api-key",
     "url",
+    "ensure-there-is-at-least-one-rpc-api-key",
   ]) {
     assert.match(help, new RegExp(`^  ${command}\\b`, "m"), command);
   }
-  assert.doesNotMatch(help, /decrypt-key/);
 });
 
 test("the version option prints the project's version", () => {
@@ -170,13 +171,9 @@ function standInMakers(host, settings, refusal = "") {
     prompts: () => scriptedPrompts(),
     out: (line) => out.push(line),
     err: (line) => err.push(line),
-    write: (text) => out.push(text),
-    stdin: () => "",
-    stdoutIsTerminal: () => false,
     setExitCode: (exitCode) => {
       code = exitCode;
     },
-    atExit: () => {},
   };
   return { makers, out, err, code: () => code, shown: () => shown };
 }
@@ -192,10 +189,11 @@ test("each run that can change the system shows the disclaimer first, and a refu
     [["undo-apply", "--dry-run"], false],
     [["turn-off-private-rpc"], true],
     [["turn-on-private-rpc"], true],
-    [["unlock"], true],
+    [["add-api-key"], true],
+    [["remove-api-key"], true],
     [["url"], false],
     [["ensure"], false],
-    [["decrypt-key", "--password-stdin"], false],
+    [["ensure-there-is-at-least-one-rpc-api-key"], false],
   ];
   for (const [args, shows] of cases) {
     const { host } = fakeX1Validator();
@@ -231,8 +229,19 @@ test("each command runs with its options, and a failure exits 1 with its reason"
   assert.deepEqual(url.err, [
     "[url] apply hasn't set nginx up yet. Run apply first.",
   ]);
+  const add = standInMakers(host, settings);
+  const adding = buildProgram(add.makers);
+  await adding.parseAsync(["node", "cli", "add-api-key", "--count", "2"]);
+  const addCommand = adding.commands.find(
+    (each) => each.name() === "add-api-key",
+  );
+  assert.deepEqual(addCommand.opts(), { count: 2 });
+  assert.deepEqual(add.err, [
+    "[add-api-key] apply hasn't set nginx up yet. Run apply first.",
+  ]);
   for (const args of [
     ["ensure", "--quiet"],
+    ["ensure-there-is-at-least-one-rpc-api-key", "--quiet"],
     ["undo-apply", "--dry-run"],
   ]) {
     const run = standInMakers(host, settings);
@@ -249,8 +258,10 @@ test("each on/off option reaches its command as a boolean, false when left out",
   const cases = [
     [["apply", "--dry-run"], { yes: false, dryRun: true, acmeStaging: false }],
     [["ensure", "--quiet"], { quiet: true, fromGitHook: false }],
+    [["ensure-there-is-at-least-one-rpc-api-key"], { quiet: false }],
     [["undo-apply"], { dryRun: false }],
     [["turn-off-private-rpc"], { yes: false }],
+    [["add-api-key"], { count: 1 }],
   ];
   for (const [args, options] of cases) {
     const program = buildProgram(standInMakers(host, settings).makers);
@@ -260,10 +271,39 @@ test("each on/off option reaches its command as a boolean, false when left out",
   }
 });
 
-test("decrypt-key needs --password-stdin", () => {
-  const { program, err } = testProgram();
-  assert.throws(() => program.parse(["node", "cli", "decrypt-key"]), {
-    code: "commander.missingMandatoryOptionValue",
-  });
-  assert.match(err(), /required option '--password-stdin' not specified/);
+test("add-api-key refuses a bad --count before the disclaimer, naming the option", async () => {
+  const settings = loadSettings(
+    copyShippedConfig('{"hostname": "x1-rpc.example.com"}').configDir,
+  );
+  const cases = [
+    ["--count", "0"],
+    ["--count", "1.5"],
+    ["--count", "two"],
+  ];
+  for (const [option, value] of cases) {
+    const { host } = fakeX1Validator();
+    const run = standInMakers(host, settings);
+    const program = buildProgram(run.makers);
+    let err = "";
+    for (const command of [program, ...program.commands]) {
+      command.exitOverride().configureOutput({
+        writeErr: (text) => {
+          err += text;
+        },
+      });
+    }
+    const args = ["node", "cli", "add-api-key", option, value];
+    await assert.rejects(program.parseAsync(args), {
+      code: "commander.invalidArgument",
+      exitCode: 1,
+    });
+    const flags = program.commands
+      .find((each) => each.name() === "add-api-key")
+      .options.find((each) => each.long === option).flags;
+    assert.ok(
+      err.includes(`option '${flags}' argument '${value}' is invalid.`),
+      err,
+    );
+    assert.equal(run.shown(), 0, `${option} ${value}`);
+  }
 });

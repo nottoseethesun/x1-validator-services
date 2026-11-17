@@ -19,12 +19,15 @@ import { Command } from "commander";
 import { showDisclaimer } from "../lib/disclaimer.js";
 import { createHost } from "../lib/host.js";
 import { loadSettings, overrideFilePath } from "../lib/settings.js";
+import { parseCount, runAddApiKey } from "./add-api-key.js";
 import { runApply } from "./apply.js";
 import { runEnsure } from "./ensure.js";
+import { runEnsureApiKey } from "./ensure-there-is-at-least-one-rpc-api-key.js";
 import { featurePaths } from "./feature-paths.js";
-import { runDecryptKey, runUnlock, runUrl } from "./key-commands.js";
+import { runUrl } from "./key-commands.js";
 import { createLog } from "./log.js";
 import { createPrompts } from "./prompts.js";
+import { runRemoveApiKey } from "./remove-api-key.js";
 import {
   runTurnOffPrivateRpc,
   runTurnOnPrivateRpc,
@@ -49,9 +52,9 @@ export const EXIT_CODES = [
 
 /**
  * Whether a command's run shows the disclaimer first: each run that can
- * change the system, when a person runs it. url, decrypt-key and a dry
- * run change nothing. ensure can, but cron and the tool's git hook run
- * it, with nobody at the terminal to answer.
+ * change the system, when a person runs it. url, the key count check and
+ * a dry run change nothing. ensure can, but cron and the tool's git hook
+ * run it, with nobody at the terminal to answer.
  */
 const SHOWS_DISCLAIMER = {
   always: () => true,
@@ -84,12 +87,7 @@ export function projectVersion() {
  *   Makes the prompts.
  * @property {(line: string) => void} out  Prints a line on stdout.
  * @property {(line: string) => void} err  Prints a line on stderr.
- * @property {(text: string) => void} write  Writes to stdout as is.
- * @property {() => string} stdin  Reads stdin whole.
- * @property {() => boolean} stdoutIsTerminal  Whether stdout is one.
  * @property {(code: number) => void} setExitCode  Sets the exit code.
- * @property {(callback: () => void) => void} atExit  Runs a callback as
- *   the process exits, however it ends: Ctrl-C at a prompt included.
  */
 
 /**
@@ -107,13 +105,9 @@ export function realMakers() {
     prompts: (yes) => createPrompts({ yes }),
     out: (line) => console.log(line),
     err: (line) => console.error(line),
-    write: (text) => process.stdout.write(text),
-    stdin: () => readFileSync(0, "utf8"),
-    stdoutIsTerminal: () => process.stdout.isTTY === true,
     setExitCode: (code) => {
       process.exitCode = code;
     },
-    atExit: (callback) => process.once("exit", callback),
   };
 }
 
@@ -140,16 +134,19 @@ function action(makers, name, work, showsDisclaimer) {
         ? makers.showDisclaimer(host)
         : "";
       if (refusal === "") {
+        const settings = makers.settings();
+        const overridePath = makers.overridePath();
+        const paths = makers.paths();
+        const prompts = makers.prompts(options.yes === true);
         code = await work({
           host,
-          settings: makers.settings(),
-          overridePath: makers.overridePath(),
-          paths: makers.paths(),
+          settings,
+          overridePath,
+          paths,
           log,
-          prompts: makers.prompts(options.yes === true),
+          prompts,
           out: makers.out,
           err: makers.err,
-          atExit: makers.atExit,
           options,
         });
       } else {
@@ -238,29 +235,42 @@ function addCommands(program, makers) {
       ),
     );
   program
-    .command("unlock")
-    .description("ask for the password, and restart nginx with the key")
-    .action(action(makers, "unlock", runUnlock, SHOWS_DISCLAIMER.always));
+    .command("add-api-key")
+    .description(
+      "ask for the password and an optional email, make api keys, and print each one's urls, once",
+    )
+    .option("--count <n>", "how many api keys to make", parseCount, 1)
+    .action(
+      action(makers, "add-api-key", runAddApiKey, SHOWS_DISCLAIMER.always),
+    );
   program
-    .command("url")
-    .description("ask for the password, and print the rpc's full urls")
-    .action(action(makers, "url", runUrl, SHOWS_DISCLAIMER.never));
-  program
-    .command("decrypt-key", { hidden: true })
-    .requiredOption("--password-stdin", "read the password from stdin")
+    .command("remove-api-key")
+    .description("ask for an api key, and remove it so nginx refuses it")
     .action(
       action(
         makers,
-        "decrypt-key",
-        (run) => {
-          const decryptRun = {
-            ...run,
-            stdinText: makers.stdin(),
-            stdoutIsTerminal: makers.stdoutIsTerminal(),
-            write: makers.write,
-          };
-          return runDecryptKey(decryptRun);
-        },
+        "remove-api-key",
+        runRemoveApiKey,
+        SHOWS_DISCLAIMER.always,
+      ),
+    );
+  program
+    .command("url")
+    .description(
+      "print the rpc's url forms, and how many api keys nginx's list holds",
+    )
+    .action(action(makers, "url", runUrl, SHOWS_DISCLAIMER.never));
+  program
+    .command("ensure-there-is-at-least-one-rpc-api-key")
+    .description(
+      "check that nginx's list holds an api key, and send an alert when it doesn't",
+    )
+    .option("-q, --quiet", "print only the alert, when there is one", false)
+    .action(
+      action(
+        makers,
+        "ensure-there-is-at-least-one-rpc-api-key",
+        runEnsureApiKey,
         SHOWS_DISCLAIMER.never,
       ),
     );
@@ -283,7 +293,7 @@ export function buildProgram(makers = realMakers()) {
     .version(version, "-v, --version", "print the version and exit")
     .helpOption("-h, --help", "print this help and exit")
     .addHelpText("beforeAll", `${PURPOSE}\n`)
-    .addHelpText("after", EXIT_CODES)
+    .addHelpText("afterAll", EXIT_CODES)
     .showHelpAfterError()
     .action(() => program.help());
   addCommands(program, makers);

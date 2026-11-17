@@ -7,7 +7,10 @@
  * fails while writing nginx.org's repository files, leaves every change
  * on record. After a run that failed at either point, or while waiting
  * for the certificate, undo-apply leaves the machine as apply found it,
- * and skips a package on record that apt never installed.
+ * and skips a package on record that apt never installed. On a first
+ * install, a configuration nginx -t refuses leaves none of the files the
+ * run wrote for nginx, is kept in the tool's error log, and undo-apply
+ * takes all back.
  */
 
 import assert from "node:assert/strict";
@@ -64,11 +67,17 @@ function machineOf(host, state) {
  * @param {{host: object, state: object, settings: object}} validator
  *   The fake validator.
  * @param {string} failure  Part of the message apply must fail with.
+ * @param {() => void} [between]  Checks the machine once apply stopped,
+ *   before undo-apply runs.
  * @returns {Promise<{names: string[], lines: string[]}>} The names in
  *   apply's record once it stopped, oldest first, and what undo-apply
  *   printed.
  */
-async function failThenUndo({ host, state, settings }, failure) {
+async function failThenUndo(
+  { host, state, settings },
+  failure,
+  between = () => {},
+) {
   const before = machineOf(host, state);
   const applying = commandRun(host, settings, {
     prompts: scriptedPrompts({ passwords: [PASSWORD, PASSWORD] }),
@@ -79,6 +88,7 @@ async function failThenUndo({ host, state, settings }, failure) {
   );
   const record = readRecord(host, featurePaths().whatApplyChangedPath);
   const names = [...record.keys()].map((key) => partsOf(key).name);
+  between();
   const undoing = commandRun(host, settings, {
     prompts: scriptedPrompts({ ask: () => true }),
   });
@@ -86,6 +96,44 @@ async function failThenUndo({ host, state, settings }, failure) {
   assert.deepEqual(machineOf(host, state), before);
   return { names, lines: undoing.lines };
 }
+
+test("on a first install, a configuration nginx -t refuses leaves none of the files the run wrote for nginx, is kept in the tool's error log, and undo-apply leaves the machine as apply found it", async () => {
+  // The one nginx call to refuse, set once the fake's settings are known.
+  let refused = "";
+  const validator = freshValidator({
+    respond: (call) =>
+      call.kind === "sudo" &&
+      call.command === "nginx" &&
+      call.args.join(" ") === refused
+        ? { status: 1, stderr: "nginx: [emerg] unknown directive" }
+        : undefined,
+  });
+  const { host, settings } = validator;
+  // Only a test of the configured nginx.conf is refused.
+  refused = `-t -c ${settings.nginxConfigPath}`;
+  const { errorLogPath } = featurePaths();
+  const { names } = await failThenUndo(
+    validator,
+    "nginx refused the configuration",
+    () => {
+      const written = [
+        settings.njsModulePath,
+        settings.nginxConfigPath,
+        settings.systemdDropInPath,
+        settings.logrotateRulePath,
+      ];
+      for (const filePath of written) {
+        assert.equal(host.files.has(filePath), false, filePath);
+      }
+      assert.match(
+        host.files.get(errorLogPath),
+        /^nginx said: nginx: \[emerg\] unknown directive$/m,
+      );
+    },
+  );
+  // The tool's logs folder, made for the error log, is on record.
+  assert.ok(names.includes("toolLogsFolder"), names.join(", "));
+});
 
 test("a run that dies during apt's install of nginx leaves it on record, and undo-apply removes it", async () => {
   const validator = freshValidator({
@@ -136,12 +184,9 @@ test("after a run that waited in vain for the certificate, undo-apply leaves the
   const tlsGet = host.tlsGet;
   host.tlsGet = async (target) =>
     target.path === GATE_PAGE_PATH
-      ? { status: 200, body: "locked\n", certificate: {} }
+      ? { status: 503, body: "", certificate: {} }
       : tlsGet(target);
-  const { names } = await failThenUndo(
-    validator,
-    "No certificate, or no key, in time",
-  );
+  const { names } = await failThenUndo(validator, "No certificate in time");
   assert.ok(
     names.includes("nginxConfigFile") && names.includes("nginxServiceEnabled"),
     names.join(", "),

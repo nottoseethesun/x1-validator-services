@@ -28,28 +28,24 @@
     "description": "ufw's rule that lets https in, on tcp port 443.",
     "oldValueDatatype": "boolean"
   },
-  "vaultFolder": {
-    "description": "A folder apply made to hold the vault.",
-    "oldValueDatatype": "boolean"
-  },
-  "vault": {
-    "description": "The vault, which holds x1-validator-services' secrets, each encrypted with the password.",
-    "oldValueDatatype": "boolean"
-  },
-  "apiKey": {
-    "description": "The api key, encrypted in the vault.",
+  "hashedApiKeysFolder": {
+    "description": "A folder apply made to hold hashed-api-keys.json, the api keys' hashes and records.",
     "oldValueDatatype": "boolean"
   },
   "savedPasswordFolder": {
-    "description": "A folder apply made to hold the saved password.",
+    "description": "A folder apply made to hold the saved password, or a folder above it.",
     "oldValueDatatype": "boolean"
   },
   "savedPassword": {
-    "description": "The x1-validator-services password, saved encrypted by systemd-creds, so nginx unlocks itself after a restart.",
+    "description": "The x1-validator-services password, saved encrypted by systemd-creds, so the tool can read the api keys' records unattended.",
     "oldValueDatatype": "boolean"
   },
   "nginxFileFolder": {
-    "description": "A folder apply made to hold one of nginx's files.",
+    "description": "A folder apply made to hold one of nginx's files, or to hold nginx's log folder.",
+    "oldValueDatatype": "boolean"
+  },
+  "hashedApiKeysMapFile": {
+    "description": "nginx's list of the api keys' hashes, which apply writes from hashed-api-keys.json.",
     "oldValueDatatype": "boolean"
   },
   "njsModuleFile": {
@@ -60,12 +56,8 @@
     "description": "nginx's configuration for the private rpc.",
     "oldValueDatatype": "boolean"
   },
-  "startWrapperFile": {
-    "description": "The start wrapper, which systemd runs to start nginx, and which hands nginx the api key.",
-    "oldValueDatatype": "boolean"
-  },
   "systemdDropInFile": {
-    "description": "The drop-in, which points systemd's nginx.service at the start wrapper.",
+    "description": "The drop-in, which has systemd's nginx.service start nginx with the tool's configuration.",
     "oldValueDatatype": "boolean"
   },
   "logrotateRuleFile": {
@@ -88,10 +80,6 @@
     "description": "Whether systemd's nginx.service is enabled, so nginx starts at boot.",
     "oldValueDatatype": "boolean"
   },
-  "keyHandOffFolder": {
-    "description": "The memory-only folder through which apply and unlock hand nginx the api key.",
-    "oldValueDatatype": "boolean"
-  },
   "startScriptBackup": {
     "description": "A copy of x1console's start script, saved before apply added --private-rpc.",
     "oldValueDatatype": "boolean"
@@ -109,11 +97,11 @@
     "oldValueDatatype": "boolean"
   },
   "toolLogsFolder": {
-    "description": "The tool's logs/ folder, which holds ensure's log.",
+    "description": "The tool's logs/ folder, which holds ensure's log and the tool's error log.",
     "oldValueDatatype": "boolean"
   },
   "cronLine": {
-    "description": "The crontab line that runs ensure every minute.",
+    "description": "A crontab line apply adds: the one that runs ensure every minute, or the one that checks every few hours that nginx holds an api key.",
     "oldValueDatatype": "boolean"
   }
 }

@@ -129,7 +129,7 @@ test("nginx's refusals, an rpc it can't reach, an rpc error and answers that are
     [
       () => ({ status: 403, body: "" }),
       0,
-      "nginx refused the key, with http 403. Either the key is wrong, or nginx is locked after a restart.",
+      "nginx refused the key, with http 403: the key isn't one nginx holds.",
     ],
     [
       (id) => (id > 2 ? { status: 429, body: "" } : slotAnswer(id)),

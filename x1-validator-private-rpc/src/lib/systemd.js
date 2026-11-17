@@ -78,6 +78,18 @@ export function unitFileState(host, unit) {
 }
 
 /**
+ * Reads whether a unit runs now, as `systemctl is-active` prints it.
+ * @param {object} host  The host.
+ * @param {string} unit  The unit, such as `nginx.service`.
+ * @returns {string} Such as `active`, `inactive`, `activating` or
+ *   `failed`.
+ */
+export function unitActiveState(host, unit) {
+  const answered = host.run("systemctl", ["is-active", unit]);
+  return answered.stdout.trim();
+}
+
+/**
  * Runs a `systemctl` command that changes something, through sudo.
  * @param {object} host  The host.
  * @param {string[]} args  The command's arguments, such as

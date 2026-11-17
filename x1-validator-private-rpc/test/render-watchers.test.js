@@ -24,7 +24,7 @@ const PATHS = {
   logPath: "/var/log/a tool/run.log",
 };
 
-test("the git hook runs ensure from the hook, and never fails the pull", () => {
+test("the git hook runs ensure in the foreground, so git waits for the flag, and never fails the pull", () => {
   assert.equal(
     renderGitHook(PATHS),
     "#!/bin/sh\n" +

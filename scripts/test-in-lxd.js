@@ -210,9 +210,10 @@ async function main() {
     "scripts/test-in-lxd.js",
     "Runs x1-validator-private-rpc end to end in a throwaway Ubuntu 24.04 " +
       "LXD container. First comes the nginx upgrade check, which must leave " +
-      "the container clean. Then come apply, ensure, turn-off-private-rpc, " +
-      "turn-on-private-rpc, unlock, url and undo-apply, with Pebble in place " +
-      "of Let's Encrypt. They end with the container as apply found it. " +
+      "the container clean. Then come apply, ensure, url, add-api-key, " +
+      "remove-api-key, the key count check, turn-off-private-rpc, " +
+      "turn-on-private-rpc and undo-apply, with Pebble in place of Let's " +
+      "Encrypt. They end with the container as apply found it. " +
       "Then it deletes the container.",
     [
       "0  both phases passed",

@@ -8,14 +8,13 @@
   "required": [
     "x1consoleDir",
     "startScriptFile",
-    "vaultPath",
+    "hashedApiKeysPath",
     "nginxConfigPath",
     "njsModulePath",
-    "startWrapperPath",
+    "hashedApiKeysMapPath",
     "systemdDropInPath",
     "logrotateRulePath",
     "passwordCredentialPath",
-    "keyHandOffPath",
     "acmeDirectoryUrl",
     "acmeStatePath",
     "acmeStagingDirectoryUrl",
@@ -36,6 +35,8 @@
     "startScriptQuietSeconds",
     "passwordMinLength",
     "passwordTries",
+    "maxApiKeys",
+    "apiKeyCountCheckHours",
     "checkQueryCount"
   ],
   "properties": {
@@ -67,8 +68,8 @@
       "type": "string",
       "pattern": "^[A-Za-z0-9._-]+$"
     },
-    "vaultPath": {
-      "description": "The vault that the x1-validator-services password unlocks.",
+    "hashedApiKeysPath": {
+      "description": "The api keys' file: each key's SHA-256 hash, with a record whose values the x1-validator-services password encrypts. The keys themselves are never kept.",
       "$ref": "#/$defs/homePath"
     },
     "nginxConfigPath": {
@@ -76,15 +77,15 @@
       "$ref": "#/$defs/systemPath"
     },
     "njsModulePath": {
-      "description": "Where the tool installs the api-key check that nginx runs.",
+      "description": "Where the tool installs the key check that nginx runs.",
       "$ref": "#/$defs/systemPath"
     },
-    "startWrapperPath": {
-      "description": "Where the tool installs the script that starts nginx with the api key.",
+    "hashedApiKeysMapPath": {
+      "description": "Where the tool writes nginx's list of the api keys' hashes, which nginx checks each request against.",
       "$ref": "#/$defs/systemPath"
     },
     "systemdDropInPath": {
-      "description": "Where the tool writes the systemd drop-in that starts nginx through the start wrapper.",
+      "description": "Where the tool writes the systemd drop-in that starts nginx with the tool's configuration.",
       "$ref": "#/$defs/systemPath"
     },
     "logrotateRulePath": {
@@ -93,10 +94,6 @@
     },
     "passwordCredentialPath": {
       "description": "Where systemd keeps the saved, encrypted password.",
-      "$ref": "#/$defs/systemPath"
-    },
-    "keyHandOffPath": {
-      "description": "The memory-only file through which the tool hands nginx the api key at a start.",
       "$ref": "#/$defs/systemPath"
     },
     "acmeDirectoryUrl": {
@@ -138,7 +135,7 @@
       "maximum": 86400
     },
     "certificateWaitSeconds": {
-      "description": "How long apply waits for the first certificate.",
+      "description": "How long apply waits for the first certificate, and then for the request path's checks to pass after a reload.",
       "type": "integer",
       "minimum": 10,
       "maximum": 3600
@@ -180,7 +177,7 @@
       "maximum": 5
     },
     "gatePollMs": {
-      "description": "How long apply and unlock wait between two looks at nginx's gate page, while they wait for it to say unlocked.",
+      "description": "How long apply waits between two looks at nginx's gate page, while it waits for nginx to answer with its certificate, and between two rounds of the request path's checks after a reload.",
       "type": "integer",
       "minimum": 100,
       "maximum": 10000
@@ -208,6 +205,18 @@
       "type": "integer",
       "minimum": 1,
       "maximum": 10
+    },
+    "maxApiKeys": {
+      "description": "The most api keys there may be. add-api-key refuses to go past it.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 500000
+    },
+    "apiKeyCountCheckHours": {
+      "description": "How often, in hours, a cron job checks that nginx holds at least one api key.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 24
     },
     "checkQueryCount": {
       "description": "How many queries check-my-private-rpc sends through the keyed url, one right after another.",

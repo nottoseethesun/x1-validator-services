@@ -62,16 +62,16 @@ const HIGH_RISK_PERCENT = 95;
 
 /**
  * Files held to HIGH_RISK_PERCENT each, as paths from the project's root:
- * the ones whose failure would hurt the validator or leak the api key.
+ * the ones whose failure would hurt the validator or leak an api key.
  * They are:
  *
- * - the api-key check nginx runs, and nginx's configuration, which also
+ * - the key check nginx runs, and nginx's configuration, which also
  *   hides the key in nginx's logs
  * - the text of the files the tool installs into nginx, systemd and apt
  * - the trust in nginx.org's signing key, with the reading of the key
  *   files apt already has
- * - the key's making, its encryption in the vault, and the output that
- *   hides it
+ * - the key's making, its hash in nginx's list, the encryption of its
+ *   record, and the output that hides it
  * - the edits to the validator's start script
  * - apply's record of what it changed, and undo-apply, which puts back
  *   only what the record says
@@ -84,7 +84,8 @@ const HIGH_RISK_FILES = [
   "x1-validator-private-rpc/src/lib/nginx-repo.js",
   "x1-validator-private-rpc/src/lib/nginx-org.js",
   "x1-validator-private-rpc/src/lib/api-key.js",
-  "x1-validator-private-rpc/src/cli/vault.js",
+  "x1-validator-private-rpc/src/lib/key-hash-map.js",
+  "x1-validator-private-rpc/src/cli/hashed-api-keys.js",
   "x1-validator-private-rpc/src/cli/log.js",
   "x1-validator-private-rpc/src/cli/start-script.js",
   "x1-validator-private-rpc/src/cli/turn-private-rpc.js",

@@ -2,11 +2,12 @@
  * @file x1-validator-private-rpc/src/cli/log.js
  * @description
  * The commands' opt-in logger. Each line carries a stage tag, such as
- * `[nginx] started`. Secrets the logger is told about, the api key, the
+ * `[nginx] started`. Secrets the logger is told about, each api key, the
  * Telegram token and the Cronitor url, are masked down to their last
- * four characters wherever they appear in a line. The password is never handed to the
- * logger, nor logged in any other way. Nothing patches console: the
- * logger writes through the functions it is given, console's by default.
+ * four characters wherever they appear in a line. The password is never
+ * handed to the logger, nor logged in any other way. Nothing patches
+ * console: the logger writes through the functions it is given,
+ * console's by default.
  */
 
 import { MASK_TAIL_LENGTH, maskSecret } from "../lib/mask-secret.js";

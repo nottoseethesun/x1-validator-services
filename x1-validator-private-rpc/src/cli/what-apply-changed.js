@@ -240,6 +240,19 @@ export function found(key) {
 }
 
 /**
+ * Records each folder a step is about to make, outermost first, under
+ * one setting's name, so undo-apply removes each once it's empty.
+ * @param {(observation: Observation) => void} record  Records a setting.
+ * @param {string} name  The setting's name, such as `nginxFileFolder`.
+ * @param {string[]} folders  The folders the step makes.
+ */
+export function recordFoldersMade(record, name, folders) {
+  for (const folder of folders) {
+    record(made(`${name}:${folder}`));
+  }
+}
+
+/**
  * Names a value's type, as the record writes it.
  * @param {unknown} value  The value.
  * @returns {string} `string`, `integer` or `boolean`, or otherwise the

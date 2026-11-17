@@ -6,9 +6,11 @@
  * writes, which answers each one as the test's scenario needs. Files
  * live in a map, where writing a file or making a folder also creates
  * every missing folder above it, and removing a folder that still holds
- * anything fails, as on the real host. Requests go to functions the test
- * gives. Every call is recorded in order, so a test can check what was
- * done and in what order. Nothing touches the machine.
+ * anything fails, as on the real host. A locked folder stays locked
+ * until its release, so a second lock on it fails. Requests go to
+ * functions the test gives. Every call is recorded in order, so a test
+ * can check what was done and in what order. Nothing touches the
+ * machine.
  */
 
 import path from "node:path";
@@ -28,7 +30,8 @@ function addFolders(files, folder) {
  * Removes an empty folder, as `rmdir` does.
  * @param {Map<string, string|Buffer>} files  The fake's files.
  * @param {string} folder  The folder.
- * @throws {Error} When the folder still holds anything.
+ * @throws {Error} When the folder still holds anything, as `rmdir` does,
+ *   so a test meets the host's own refusal.
  */
 function removeEmptyFolder(files, folder) {
   if ([...files.keys()].some((name) => name.startsWith(`${folder}/`))) {
@@ -63,6 +66,27 @@ function removeTree(files, folder) {
  *   given.
  */
 
+/** The kinds of call the real host makes through sudo. */
+const SUDO_KINDS = new Set([
+  "sudo",
+  "writeRootFile",
+  "makeRootDir",
+  "removeRootFile",
+  "removeRootDir",
+  "removeRootDirIfEmpty",
+  "removeRootTree",
+]);
+
+/**
+ * Picks out the calls the real host makes through sudo, which can't ask
+ * for a password with no terminal, as under cron.
+ * @param {FakeCall[]} calls  The fake's calls.
+ * @returns {FakeCall[]}
+ */
+export function sudoCalls(calls) {
+  return calls.filter((call) => SUDO_KINDS.has(call.kind));
+}
+
 /**
  * Builds a fake host.
  * @param {object} scenario  How the fake answers.
@@ -90,7 +114,7 @@ export function createFakeHost({
   respond,
   files = new Map(),
   folders = [],
-  httpGet = async () => ({ status: 200, body: "unlocked\n" }),
+  httpGet = async () => ({ status: 200, body: "ok\n" }),
   httpsGet = async () => ({ status: 404, body: "" }),
   postJson = async () => ({ status: 404, body: "" }),
   tlsGet = async () => {
@@ -105,6 +129,7 @@ export function createFakeHost({
   const calls = [];
   const modes = new Map();
   const modified = new Map();
+  const locks = new Set();
   let clock = 0;
   const needFile = (filePath) => {
     if (!files.has(filePath)) {
@@ -130,6 +155,7 @@ export function createFakeHost({
     files,
     modes,
     modified,
+    locks,
     run: command("run"),
     sudo,
     // Recorded as a `sudo` call, since only the waiting differs.
@@ -189,6 +215,19 @@ export function createFakeHost({
     }),
     // Unrecorded, like makeTempDir: it changes only the account's files.
     removeUserTree: (folder) => removeTree(files, folder),
+    // A test takes a lock itself to play another command that holds it.
+    lockFolder: (folder) => {
+      needFile(folder);
+      calls.push({ kind: "lockFolder", path: folder });
+      if (locks.has(folder)) {
+        return null;
+      }
+      locks.add(folder);
+      return () => {
+        calls.push({ kind: "unlockFolder", path: folder });
+        locks.delete(folder);
+      };
+    },
     fileMode: (filePath) => {
       needFile(filePath);
       return modes.get(filePath) ?? 0o644;

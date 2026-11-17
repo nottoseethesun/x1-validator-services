@@ -1,6 +1,6 @@
 # Security
 
-This page records the security decisions that no tool checks by itself. LP Ranger's security guide is the authority for the rules, as [CLAUDE.md](../CLAUDE.md) says. How x1-validator-private-rpc keeps its api key is in that feature's [Api Key Security](../x1-validator-private-rpc/README.md#api-key-security) section.
+This page records the security decisions that no tool checks by itself. LP Ranger's security guide is the authority for the rules, as [CLAUDE.md](../CLAUDE.md) says. How x1-validator-private-rpc keeps its api keys is in that feature's [Api Key Security](../x1-validator-private-rpc/README.md#api-key-security) section.
 
 ## The Audit in CI
 

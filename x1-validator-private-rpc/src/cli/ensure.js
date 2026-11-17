@@ -9,12 +9,19 @@
  * it does nothing and exits 0.
  *
  * It never edits the start script in the middle of an update: between
- * x1console's `git stash` and the end of its `git pull`, an edit would
- * make the pull fail. So every run but the hook's, a run by hand
- * included, leaves the script alone while `.git/index.lock` exists, or
- * while the script changed less than startScriptQuietSeconds ago, and
- * leaves the flag for a later run. The hook passes --from-git-hook,
- * which skips that wait, since git has finished when it runs the hook.
+ * x1console's `git stash` and the end of its `git pull`, an edit could
+ * make the pull fail, when the update changes the start script. So every
+ * run but the hook's, a run by hand included, leaves the script alone
+ * while `.git/index.lock` exists, or while the script changed less than
+ * startScriptQuietSeconds ago, and leaves the flag for a later run. The
+ * hook passes --from-git-hook, which skips that wait, since git has
+ * finished when it runs the hook.
+ *
+ * It holds the start script's lock from its read of whether private rpc
+ * is on until it has put the flag back or left it, so a command that
+ * takes the flag out can't run in between. While another command holds
+ * the lock, ensure changes nothing and exits 0, and its next run does
+ * the work.
  *
  * While private rpc isn't on, before apply's flag stage or after
  * turn-off-private-rpc, ensure leaves the start script alone, and skips
@@ -33,8 +40,13 @@ import { homePath, startScriptPathOf } from "./feature-paths.js";
 import { checkIn } from "./heartbeat.js";
 import { targetOf } from "./nginx-gate.js";
 import { addPrivateRpc } from "./start-script.js";
-import { hasSetup, readState } from "./state.js";
-import { readTelegram, sendTelegram } from "./telegram.js";
+import {
+  hasSetup,
+  lockStartScript,
+  readState,
+  START_SCRIPT_LOCKED,
+} from "./state.js";
+import { sendAlerts } from "./telegram.js";
 
 /** The checks that the rpc is private, skipped while private rpc is off. */
 const PRIVACY_CHECKS = ["flag-in-script", "flag-running", "rpc-private"];
@@ -70,9 +82,14 @@ export function restoreFlag(host, values) {
   const changedAt = host.modifiedAt(scriptPath);
   const recent = host.now() - changedAt < quietMs;
   if (fromGitHook === false && (locked === true || recent === true)) {
+    const seconds = quietMs / 1000;
     return {
       status: "deferred",
-      detail: "x1console may be updating, so ensure tries again next run.",
+      detail:
+        "x1console may be updating, so ensure left the start script alone. " +
+        "The cron job tries again every minute. Without it, run ensure " +
+        "again once the update is done and the script has gone unchanged " +
+        `for ${seconds} seconds.`,
     };
   }
   const mode = host.fileMode(scriptPath);
@@ -103,47 +120,66 @@ function readAlertState(host, alertStatePath) {
 }
 
 /**
- * Sends the pending messages, then the new ones, keeping those that
- * couldn't be sent. A failure is logged only when a message first fails.
- * @param {object} context  The run.
- * @param {string[]} pending  Messages that failed before.
- * @param {string[]} fresh  New messages.
- * @returns {Promise<string[]>} The messages still pending.
+ * Prints what a run without --quiet found: why the checks that the rpc
+ * is private were skipped, when they were, and every check's verdict.
+ * @param {object} log  The logger.
+ * @param {string} privateRpc  The operator's choice.
+ * @param {import("./checks.js").Check[]} checks  The checks it ran.
  */
-async function sendAlerts(context, pending, fresh) {
-  const { host, settings, log } = context;
-  const telegram = readTelegram(host, settings);
-  if (telegram === undefined || telegram === null) {
-    for (const message of fresh) {
-      log.problem(
-        "alert",
-        `${message} (alerts are off: x1console's Telegram files are missing)`,
-      );
-    }
-    return [];
+function printReport(log, privateRpc, checks) {
+  if (privateRpc === "off") {
+    log.info(
+      "ensure",
+      "Private rpc is off, as turn-off-private-rpc set it: ensure leaves " +
+        "the start script alone, and doesn't check that the rpc is private.",
+    );
   }
-  log.hide(telegram.token);
-  const stillPending = [];
-  for (const message of [...pending, ...fresh]) {
-    try {
-      await sendTelegram(
-        host,
-        telegram,
-        message,
-        settings.requestTimeoutSeconds * 1000,
-      );
-      log.info("alert", message);
-    } catch (error) {
-      if (!pending.includes(message)) {
-        log.problem(
-          "alert",
-          `Couldn't send "${message}": ${error.message} It goes at the next run.`,
-        );
-      }
-      stillPending.push(message);
-    }
+  if (privateRpc === "") {
+    log.info(
+      "ensure",
+      "apply hasn't added --private-rpc yet, so ensure leaves the start " +
+        "script alone, and doesn't check that the rpc is private.",
+    );
   }
-  return stillPending;
+  for (const check of checks) {
+    log.info("ensure", `${check.status}: ${check.detail}`);
+  }
+}
+
+/**
+ * Reads whether private rpc is on, and puts the flag back while it is,
+ * holding the start script's lock from the one to the other.
+ * @param {object} run  What ensure works with.
+ * @returns {{privateRpc: string, flag: object|null}|null} The operator's
+ *   choice, and how the restore went, which is null unless private rpc
+ *   is on. Null when another command holds the lock.
+ */
+function keepFlagLocked(run) {
+  const { host, settings, paths, options } = run;
+  const release = lockStartScript(host, paths.statePath);
+  if (release === undefined || release === null) {
+    return null;
+  }
+  try {
+    const state = readState(host, paths.statePath);
+    const privateRpc =
+      state === undefined || state === null ? "" : state.privateRpc;
+    if (privateRpc !== "on") {
+      return { privateRpc, flag: null };
+    }
+    const homeDir = host.homeDir();
+    const scriptPath = startScriptPathOf(settings, homeDir);
+    const x1consoleDir = homePath(settings.x1consoleDir, homeDir);
+    const flag = restoreFlag(host, {
+      scriptPath,
+      x1consoleDir,
+      fromGitHook: options.fromGitHook === true,
+      quietMs: settings.startScriptQuietSeconds * 1000,
+    });
+    return { privateRpc, flag };
+  } finally {
+    release();
+  }
 }
 
 /**
@@ -159,19 +195,17 @@ export async function runEnsure(run) {
   if (!hasSetup(state)) {
     return 0;
   }
-  const privateRpcOn = state.privateRpc === "on";
+  const kept = keepFlagLocked(run);
+  if (kept === undefined || kept === null) {
+    if (options.quiet !== true) {
+      log.info("ensure", START_SCRIPT_LOCKED);
+    }
+    return 0;
+  }
+  const { privateRpc, flag } = kept;
+  const privateRpcOn = privateRpc === "on";
   const homeDir = host.homeDir();
-  const x1consoleDir = homePath(settings.x1consoleDir, homeDir);
   const scriptPath = startScriptPathOf(settings, homeDir);
-  const flag =
-    privateRpcOn === true
-      ? restoreFlag(host, {
-          scriptPath,
-          x1consoleDir,
-          fromGitHook: options.fromGitHook === true,
-          quietMs: settings.startScriptQuietSeconds * 1000,
-        })
-      : null;
   const target = targetOf(state.setup, settings);
   const found = await runChecks({
     host,
@@ -210,23 +244,7 @@ export async function runEnsure(run) {
     log.info("ensure", flag.detail);
   }
   if (options.quiet !== true) {
-    if (state.privateRpc === "off") {
-      log.info(
-        "ensure",
-        "Private rpc is off, as turn-off-private-rpc set it: ensure leaves " +
-          "the start script alone, and doesn't check that the rpc is private.",
-      );
-    }
-    if (state.privateRpc === "") {
-      log.info(
-        "ensure",
-        "apply hasn't added --private-rpc yet, so ensure leaves the start " +
-          "script alone, and doesn't check that the rpc is private.",
-      );
-    }
-    for (const check of checks) {
-      log.info("ensure", `${check.status}: ${check.detail}`);
-    }
+    printReport(log, privateRpc, checks);
   }
   await checkIn(host, {
     envPath: paths.envPath,

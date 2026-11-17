@@ -7,6 +7,7 @@
  * - running commands, with or without sudo, or on the person's terminal
  * - writing and removing files root owns, and files the tool's own
  *   account owns, and reading files
+ * - locking a folder, so two commands never change its files at once
  * - http and https requests, json posts, and https requests to an
  *   address under a hostname, which also report the server's certificate
  * - name lookups, and the machine's own addresses
@@ -377,6 +378,36 @@ function removeUserDirIfEmpty(folder) {
 }
 
 /**
+ * Takes flock's exclusive lock on a folder, without waiting. This
+ * process opens the folder and hands it to flock, which locks it and
+ * exits. The lock belongs to the open folder, which this process keeps
+ * open, so it lasts until the release closes it, or until this process
+ * ends, when the kernel closes it. So a command that's killed never
+ * leaves the lock behind, and no lock file is ever made.
+ * @param {string} folder  The folder, which must exist.
+ * @returns {(() => void)|null} What lets go of the lock, or null when
+ *   another process holds it.
+ * @throws {Error} When flock fails for another reason, since the caller
+ *   then can't tell whether another command holds the lock.
+ */
+function lockFolder(folder) {
+  const opened = fs.openSync(folder, "r");
+  const locked = spawnSync(
+    "flock",
+    ["--nonblock", "--exclusive", "--conflict-exit-code", "75", "3"],
+    { stdio: ["ignore", "ignore", "pipe", opened], encoding: "utf8" },
+  );
+  if (locked.status === 0) {
+    return () => fs.closeSync(opened);
+  }
+  fs.closeSync(opened);
+  if (locked.status === 75) {
+    return null;
+  }
+  throw new Error(`flock couldn't lock ${folder}: ${locked.stderr.trim()}`);
+}
+
+/**
  * Builds the real host.
  * @param {object} [options]  How to build it.
  * @param {string[]} [options.sudoPrefix]  The command that runs another
@@ -441,6 +472,7 @@ export function createHost({ sudoPrefix = ["sudo"] } = {}) {
     removeUserDirIfEmpty,
     removeUserTree: (folder) =>
       fs.rmSync(folder, { recursive: true, force: true }),
+    lockFolder,
     fileMode: (filePath) => fs.statSync(filePath).mode & 0o777,
     modifiedAt: (filePath) => fs.statSync(filePath).mtimeMs,
     homeDir: () => os.userInfo().homedir,

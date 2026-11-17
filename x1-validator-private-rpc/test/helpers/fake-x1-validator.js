@@ -4,8 +4,10 @@
  * A fake host that plays a stock x1console validator for apply, ensure
  * and undo-apply: Ubuntu 24.04 with systemd 255 and no TPM2 chip,
  * x1console's start script and git checkout where the settings put them,
- * a running validator whose rpc listens on every interface, ufw, an
- * empty crontab, and the hostname's A record pointing at the validator.
+ * the script executable, as x1console's git holds it, a running
+ * validator whose rpc listens on every interface, ufw, a crontab holding
+ * one of Autopilot's jobs, and the hostname's A record pointing at the
+ * validator.
  * Its commands change a small state, as the real ones would change the
  * machine:
  *
@@ -20,14 +22,12 @@
  * ufw is on, unless a scenario turns it off. Its status then lists no
  * rules, though it still holds them. A folder root makes with mode 0700
  * hides what it holds from the validator's account, as on a real system.
- * A restart of nginx takes the key from the hand-off file only where the
- * settings put it, as the start wrapper does. systemd reads nginx's
- * drop-in only at a daemon-reload, and a restart fails with
- * 243/CREDENTIALS while the drop-in it read names a saved password whose
- * file is gone. nginx, once started with
- * the key, answers the gate page, the keyed path and a path without the
- * key, with a certificate for the hostname. A scenario changes the
- * starting state.
+ * nginx reads the list of the api keys' hashes where the settings put
+ * it, as its map's include does, at each start, restart and reload, and
+ * fails to start or reload while the list is missing. Once started, it
+ * answers the gate page with ok, a key whose hash it read with the rpc's
+ * health check, and any other path with a 403, with a certificate for
+ * the hostname. A scenario changes the starting state.
  */
 
 import fs from "node:fs";
@@ -35,13 +35,19 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { featurePaths, homePath } from "../../src/cli/feature-paths.js";
 import { CHAT_ID_FILE, TOKEN_FILE } from "../../src/cli/telegram.js";
+import { API_KEY_PATTERN } from "../../src/lib/api-key.js";
 import { GATE_PAGE_PATH } from "../../src/lib/gate-page.js";
+import { hashApiKey } from "../../src/lib/key-hash-map.js";
 import { NGINX_UNIT, PINNED_FINGERPRINTS } from "../../src/lib/nginx-org.js";
 import { shippedSettings } from "./config-copies.js";
 import { createFakeHost } from "./fake-host.js";
 
 export const HOME = "/home/validator";
 export const HOSTNAME = "x1-rpc.example.com";
+export const ANOTHER_HOSTNAME = "another.example.com";
+
+/** A keyed health check's path, with the key it carries. */
+const KEYED_HEALTH = new RegExp(`^/(${API_KEY_PATTERN})/health$`);
 export const PUBLIC_IP = "203.0.113.10";
 export const IDENTITY = "ValidatorIdentity1111111111111111111111111111";
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -66,6 +72,18 @@ function startScript() {
 }
 
 /**
+ * Reads the fixture crontab: one of Autopilot's jobs, as x1console's
+ * `setautopilot.sh` writes it, which apply and undo-apply must keep.
+ * @returns {string}
+ */
+export function autopilotCrontab() {
+  return fs.readFileSync(
+    fileURLToPath(new URL("../fixtures/crontab", import.meta.url)),
+    "utf8",
+  );
+}
+
+/**
  * Makes the machine's starting state.
  * @param {object} [changes]  How this scenario differs.
  * @returns {object}
@@ -77,10 +95,10 @@ function startingState(changes = {}) {
     masked: false,
     enabled: false,
     active: false,
-    unlocked: false,
+    loadedHashes: [],
     ufwActive: true,
     ufwRules: ["22/tcp", "8000:10000/tcp"],
-    crontab: null,
+    crontab: autopilotCrontab(),
     rpcAddress: "0.0.0.0",
     flagRunning: false,
     certificateDays: 89,
@@ -248,8 +266,8 @@ function systemAnswer(line, state) {
 }
 
 /**
- * Answers the commands that install and remove packages and users, root's
- * folders, and root's look at whether a path exists.
+ * Answers the commands that install and remove packages and users, and
+ * root's look at whether a path exists.
  * @param {object} call  The command.
  * @param {string} line  Its command line.
  * @param {object} state  The machine's state.
@@ -279,30 +297,31 @@ function packageAnswer(call, line, state, files) {
   if (call.command === "test" && call.args[0] === "-e") {
     return { status: files.has(call.args[1]) ? 0 : 1 };
   }
-  if (call.command === "install" && call.args[0] === "-d") {
-    const folder = call.args.at(-1);
-    const mode = call.args.at(call.args.indexOf("-m") + 1);
-    if (mode === "0700") {
-      state.rootOnlyFolders.push(folder);
-    }
-    files.set(folder, "");
-    return {};
-  }
   return undefined;
 }
 
 /**
- * Says whether the drop-in systemd last read names a saved password whose
- * file is gone, so nginx can't start.
+ * Has nginx read its list of the keys' hashes, as a start, a restart or
+ * a reload does.
  * @param {object} state  The machine's state.
  * @param {Map<string, string>} files  The fake's files.
- * @returns {boolean}
+ * @returns {object} The command's answer: a failure while the list is
+ *   missing, which leaves nginx as it was.
  */
-function credentialGone(state, files) {
-  const named = /^LoadCredentialEncrypted=[^:]+:(.+)$/m.exec(
-    state.loadedDropIn ?? "",
-  );
-  return named !== undefined && named !== null && !files.has(named[1]);
+function loadHashes(state, files) {
+  const text = files.get(state.mapPath);
+  if (text === undefined || text === null) {
+    return {
+      status: 1,
+      stderr: `Job for ${NGINX_UNIT} failed: ${state.mapPath} is missing.`,
+    };
+  }
+  const hashes = text
+    .split("\n")
+    .filter((line) => line !== "")
+    .map((line) => line.split(" ")[0]);
+  Object.assign(state, { active: true, loadedHashes: hashes });
+  return {};
 }
 
 /**
@@ -315,52 +334,48 @@ function credentialGone(state, files) {
  */
 function changeAnswer(call, line, state, files) {
   const systemctlVerbs = new Map([
-    ["mask", () => Object.assign(state, { masked: true })],
-    ["unmask", () => Object.assign(state, { masked: false })],
-    ["enable", () => Object.assign(state, { enabled: true })],
     [
-      "restart",
+      "mask",
       () => {
-        // The start wrapper reads the hand-off file where the settings
-        // put it, hands nginx the key in it, and deletes it.
-        const handedOver = files.get(state.handOffPath);
-        files.delete(state.handOffPath);
-        Object.assign(state, {
-          active: true,
-          unlocked: handedOver !== undefined && handedOver !== null,
-          key: handedOver ?? state.key,
-        });
+        state.masked = true;
       },
     ],
-    // systemd reads the drop-in only now, or at boot.
     [
-      "daemon-reload",
-      () => Object.assign(state, { loadedDropIn: files.get(state.dropInPath) }),
+      "unmask",
+      () => {
+        state.masked = false;
+      },
+    ],
+    [
+      "enable",
+      () => {
+        state.enabled = true;
+      },
+    ],
+    [
+      "disable",
+      () => {
+        Object.assign(state, { enabled: false, active: false });
+      },
+    ],
+    ["start", () => loadHashes(state, files)],
+    ["restart", () => loadHashes(state, files)],
+    [
+      "reload",
+      () =>
+        state.active === true
+          ? loadHashes(state, files)
+          : { status: 1, stderr: `${NGINX_UNIT} isn't active.` },
     ],
   ]);
   if (call.kind === "sudo" && call.command === "systemctl") {
-    if (call.args[0] === "disable") {
-      Object.assign(state, { enabled: false, active: false, unlocked: false });
-    }
-    if (call.args[0] === "restart" && credentialGone(state, files)) {
-      Object.assign(state, { active: false, unlocked: false });
-      return {
-        status: 1,
-        stderr: `Job for ${NGINX_UNIT} failed (243/CREDENTIALS).`,
-      };
-    }
-    systemctlVerbs.get(call.args[0])?.();
-    return {};
+    return systemctlVerbs.get(call.args[0])?.() ?? {};
   }
   if (call.kind === "sudo" && call.command === "ufw") {
     return ufwAnswer(call, state);
   }
   if (line === "crontab -") {
     state.crontab = call.input;
-    return {};
-  }
-  if (call.kind === "sudo" && call.command === "sh") {
-    files.set(call.args.at(-1), call.input);
     return {};
   }
   if (call.kind === "sudo" && call.command === "systemd-creds") {
@@ -401,18 +416,14 @@ async function nginxAnswer(state, target, clock) {
     altNames: `DNS:${target.hostname}`,
     issuer: "Let's Encrypt",
   };
-  const key = state.key ?? "";
   if (target.path === GATE_PAGE_PATH) {
-    return {
-      status: 200,
-      body: state.unlocked === true ? "unlocked\n" : "locked\n",
-      certificate,
-    };
+    return { status: 200, body: "ok\n", certificate };
   }
+  const keyed = KEYED_HEALTH.exec(target.path);
   if (
-    state.unlocked === true &&
-    key !== "" &&
-    target.path === `/${key}/health`
+    keyed !== undefined &&
+    keyed !== null &&
+    state.loadedHashes.includes(hashApiKey(keyed[1]))
   ) {
     return { status: 200, body: "ok", certificate };
   }
@@ -429,9 +440,9 @@ async function nginxAnswer(state, target, clock) {
  * @param {boolean} [scenario.telegram]  Whether x1console's Telegram
  *   files exist.
  * @param {object} [scenario.settings]  The settings that say where
- *   x1console's checkout and start script are, and where the start
- *   wrapper reads the hand-off file: the shipped ones, unless the test
- *   changes them.
+ *   x1console's checkout and start script are, and where nginx reads the
+ *   list of the keys' hashes: the shipped ones, unless the test changes
+ *   them.
  * @returns {{host: object, state: object, scriptPath: string}} The fake,
  *   its state, and where its start script is.
  */
@@ -439,8 +450,7 @@ export function fakeX1Validator(scenario = {}) {
   const settings = scenario.settings ?? shippedSettings();
   const state = {
     ...startingState(scenario.state),
-    handOffPath: settings.keyHandOffPath,
-    dropInPath: settings.systemdDropInPath,
+    mapPath: settings.hashedApiKeysMapPath,
   };
   const paths = featurePaths();
   const x1consoleDir = homePath(settings.x1consoleDir, HOME);
@@ -506,8 +516,6 @@ export function fakeX1Validator(scenario = {}) {
       "/etc/systemd/system",
       "/etc/logrotate.d",
       "/etc/nginx",
-      "/usr/local",
-      "/run",
       "/var/log",
       path.join(x1consoleDir, ".git", "hooks"),
       // Without the slash it ends in, as the folders made under it name it.
@@ -546,6 +554,16 @@ export function fakeX1Validator(scenario = {}) {
     addresses: ["127.0.0.1", PUBLIC_IP],
   });
   host.posts = posts;
+  // x1console's restart runs the script itself, so it must stay executable.
+  host.modes.set(scriptPath, 0o755);
+  const makeRootDir = host.makeRootDir;
+  // Mode 0700 makes a folder only root may look into, as on the host.
+  host.makeRootDir = (folder, mode, group) => {
+    if (mode === "0700") {
+      state.rootOnlyFolders.push(folder);
+    }
+    makeRootDir(folder, mode, group);
+  };
   const exists = host.exists;
   // The validator's account can't see inside a folder root keeps to itself.
   host.exists = (filePath) =>

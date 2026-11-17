@@ -230,9 +230,10 @@ async function checkAddress(host, { hostname, publicIp }, problems) {
     url !== null &&
     (url.includes(publicIp) || url.includes(hostname))
   ) {
+    // The url isn't quoted: a keyed one would show its api key.
     problems.push(
-      `The solana cli's url, ${url}, names this validator. Under ` +
-        "--private-rpc, Autopilot's health check would then fail and " +
+      "The solana cli's url names this validator's address or hostname. " +
+        "Under --private-rpc, Autopilot's health check would then fail and " +
         "wipe and restart the validator. Point the cli at X1's public rpc " +
         "first, from x1console's network menu.",
     );

@@ -9,16 +9,19 @@
  * - The running validator carries it too: the process that listens on
  *   the rpc port, found by that port and never by a name pattern.
  * - The rpc and its websocket listen on 127.0.0.1 alone.
- * - The start wrapper's Node.js and `src/cli.js` still exist.
  * - nginx is active, and listens on the public address's port 443 alone.
- * - The gate page says unlocked.
+ * - The gate page says ok.
  * - The certificate is valid for the hostname, with enough days left.
+ *
+ * Whether nginx's list holds an api key is a check of its own, which
+ * ensure-there-is-at-least-one-rpc-api-key makes every few hours.
  *
  * Reading the machine goes through the host. Every judgment is a pure
  * function of what was read, so tests feed it captured output.
  */
 
 import { NGINX_UNIT } from "../lib/nginx-org.js";
+import { unitActiveState } from "../lib/systemd.js";
 import { askGate } from "./nginx-gate.js";
 import { readStartScript } from "./start-script.js";
 
@@ -141,10 +144,13 @@ export function judgeCertificate(certificate, values) {
     };
   }
   const daysLeft = Math.floor((certificate.validTo - now) / DAY_MS);
+  // A dns name ignores case, and nginx lowercases the names it asks for.
+  const wanted = `dns:${hostname.toLowerCase()}`;
   const named = certificate.altNames
+    .toLowerCase()
     .split(",")
     .map((name) => name.trim())
-    .includes(`DNS:${hostname}`);
+    .includes(wanted);
   const good = named === true && daysLeft >= warningDays;
   return {
     name: "certificate",
@@ -157,19 +163,15 @@ export function judgeCertificate(certificate, values) {
 }
 
 /**
- * Judges the gate page's answer: unlocked is ok, locked a problem, and
- * no answer unknown, since the nginx and certificate checks say why.
+ * Judges the gate page's answer: ok is ok, and anything else unknown,
+ * since the nginx and certificate checks say why.
  * @param {string} gate  The answer.
  * @returns {Check}
  */
 export function judgeGate(gate) {
-  const statuses = new Map([
-    ["unlocked", "ok"],
-    ["locked", "problem"],
-  ]);
   return {
     name: "gate",
-    status: statuses.get(gate) ?? "unknown",
+    status: gate === "ok" ? "ok" : "unknown",
     detail: `The gate page says ${gate}.`,
   };
 }
@@ -206,33 +208,6 @@ export function runningFlag(host, rpcPort) {
 }
 
 /**
- * Finds whether the start wrapper's Node.js and `src/cli.js` exist.
- * @param {object} host  The host.
- * @param {string} wrapperPath  The start wrapper.
- * @returns {Check}
- */
-function wrapperPaths(host, wrapperPath) {
-  const text = host.exists(wrapperPath) ? host.readText(wrapperPath) : "";
-  const named = ["NODE_BIN", "TOOL_CLI"].map((name) => {
-    const line = text.split("\n").find((entry) => entry.startsWith(`${name}=`));
-    return line === undefined || line === null
-      ? ""
-      : line.slice(name.length + 2, -1);
-  });
-  const missing = named.filter((value) => value === "" || !host.exists(value));
-  return {
-    name: "wrapper-paths",
-    status: missing.length === 0 ? "ok" : "problem",
-    detail:
-      missing.length === 0
-        ? "The start wrapper's Node.js and src/cli.js exist."
-        : "A path in the start wrapper is gone, so a start with the saved " +
-          "password will leave nginx locked. Run apply again to write the " +
-          "paths anew.",
-  };
-}
-
-/**
  * Runs every check ensure makes.
  * @param {object} context  The run: host, settings, setup, target and
  *   startScriptPath.
@@ -248,7 +223,7 @@ export async function runChecks(context) {
   } catch {
     flagInScript = false;
   }
-  const active = host.run("systemctl", ["is-active", NGINX_UNIT]).stdout.trim();
+  const active = unitActiveState(host, NGINX_UNIT);
   const { gate, certificate, failure } = await askGate(host, target);
   const rpcListed = host.run("ss", [
     "-ltnH",
@@ -272,7 +247,6 @@ export async function runChecks(context) {
     },
     runningFlag(host, setup.rpcPort),
     judgeRpcListeners(rpcSockets, setup.rpcPort),
-    wrapperPaths(host, settings.startWrapperPath),
     {
       name: "nginx-active",
       status: active === "active" ? "ok" : "problem",

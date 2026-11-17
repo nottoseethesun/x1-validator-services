@@ -12,7 +12,11 @@
  *   that brought nothing new and so ran no hook. flock skips a run while
  *   the previous one is still going.
  *
- * Both name the Node.js and the `src/cli.js` the tool runs from, by full
+ * It also writes the cron line that runs
+ * `ensure-there-is-at-least-one-rpc-api-key` every few hours, on the
+ * hour, and adds its output to ensure's log.
+ *
+ * Each names the Node.js and the `src/cli.js` the tool runs from, by full
  * path, quoted for the shell. A hook is known as the tool's by its
  * shape, whatever paths it names. Every function here is pure.
  */
@@ -54,6 +58,23 @@ export function isToolHook(text) {
 }
 
 /**
+ * Refuses a path that can't go in a crontab line.
+ * @param {string[]} values  The paths.
+ * @throws {Error} When a path holds a `%` or a line break, which cron
+ *   would read as the end of the command.
+ */
+function refuseCronBreaks(values) {
+  for (const value of values) {
+    if (/[%\n]/.test(value)) {
+      throw new Error(
+        `${JSON.stringify(value)} can't go in a crontab line, since cron ` +
+          "reads a % or a line break as the end of the command.",
+      );
+    }
+  }
+}
+
+/**
  * Writes the crontab line that runs `ensure` every minute.
  * @param {object} values  What the line needs, each by full path.
  * @param {string} values.nodeBin  The Node.js the tool runs with.
@@ -65,16 +86,31 @@ export function isToolHook(text) {
  *   would read as the end of the command.
  */
 export function renderCronLine({ nodeBin, toolCli, lockPath, logPath }) {
-  for (const value of [nodeBin, toolCli, lockPath, logPath]) {
-    if (/[%\n]/.test(value)) {
-      throw new Error(
-        `${JSON.stringify(value)} can't go in a crontab line, since cron ` +
-          "reads a % or a line break as the end of the command.",
-      );
-    }
-  }
+  refuseCronBreaks([nodeBin, toolCli, lockPath, logPath]);
   return (
     `* * * * * flock -n ${shellQuote(lockPath)} ${shellQuote(nodeBin)} ` +
     `${shellQuote(toolCli)} ensure --quiet >> ${shellQuote(logPath)} 2>&1`
+  );
+}
+
+/**
+ * Writes the crontab line that runs
+ * `ensure-there-is-at-least-one-rpc-api-key` every few hours.
+ * @param {object} values  What the line needs.
+ * @param {string} values.nodeBin  The Node.js the tool runs with.
+ * @param {string} values.toolCli  The tool's `src/cli.js`.
+ * @param {string} values.logPath  Where the runs' output goes: ensure's
+ *   log.
+ * @param {number} values.hours  How many hours apart the runs are.
+ * @returns {string} The line, without its line end.
+ * @throws {Error} When a path holds a `%` or a line break, which cron
+ *   would read as the end of the command.
+ */
+export function renderKeyCountCronLine({ nodeBin, toolCli, logPath, hours }) {
+  refuseCronBreaks([nodeBin, toolCli, logPath]);
+  return (
+    `0 */${hours} * * * ${shellQuote(nodeBin)} ${shellQuote(toolCli)} ` +
+    `ensure-there-is-at-least-one-rpc-api-key --quiet >> ` +
+    `${shellQuote(logPath)} 2>&1`
   );
 }

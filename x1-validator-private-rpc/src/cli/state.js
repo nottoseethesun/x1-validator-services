@@ -3,15 +3,20 @@
  * @description
  * The tool's state, in `app-data/state.json`. It holds what apply set
  * nginx up with: the hostname, the address and the rpc port, which
- * ensure, unlock and url read. It also holds the operator's choice of a
- * private or a public rpc. The choice starts out unset. apply's flag
- * stage and turn-on-private-rpc set it on, turn-off-private-rpc sets it
- * off, and ensure follows it. So until apply has added the flag, or the
- * operator has turned private rpc on, ensure leaves the start script
- * alone. And it holds whether a saved password is left from before the
- * vault's newest key, so apply treats it as no saved password until the
- * operator answers the save question again. What apply changed on the
- * machine is in its own record, which what-apply-changed.js keeps.
+ * ensure and url read, and which add-api-key and remove-api-key need
+ * before they run. It also holds the operator's choice of a private or a
+ * public rpc. The choice starts out unset. apply's flag stage and
+ * turn-on-private-rpc set it on, turn-off-private-rpc sets it off, and
+ * ensure follows it. So until apply has added the flag, or the operator
+ * has turned private rpc on, ensure leaves the start script alone. And
+ * it holds whether a saved password is left from an earlier api keys'
+ * file, so apply treats it as no saved password until the operator
+ * answers the save question again. What apply changed on the machine is
+ * in its own record, which what-apply-changed.js keeps.
+ *
+ * The state's folder also carries the start script's lock. ensure holds
+ * it while it reads the choice and puts the flag back, and so do the
+ * commands that take the flag out, so none undoes another's change.
  */
 
 import path from "node:path";
@@ -28,7 +33,7 @@ const FORMAT_VERSION = 1;
  *   `--private-rpc` in the start script: "on" or "off", or "" until apply
  *   or turn-on-private-rpc first turns it on.
  * @property {boolean} savedPasswordStale  Whether a saved password is
- *   left from before the vault's newest key, and so can't open it.
+ *   left from an earlier api keys' file, and so can't open this one.
  */
 
 /**
@@ -109,4 +114,48 @@ export function hasSetup(state) {
 export function writeState(host, statePath, state) {
   host.makeUserDir(path.dirname(statePath), 0o755);
   host.writeUserFile(statePath, `${JSON.stringify(state, null, 2)}\n`, 0o644);
+}
+
+/** What a command says when another one holds the start script's lock. */
+export const START_SCRIPT_LOCKED =
+  "Another command is changing the start script, so this one changed " +
+  "nothing. Run it again once that one is done.";
+
+/**
+ * Takes the start script's lock: flock's lock on the folder of the
+ * tool's state, which records whether private rpc is on. ensure holds
+ * it from its read of that choice to its write of the start script, and
+ * each command that takes the flag out holds it for its own read and
+ * write, so neither undoes the other's change. The host keeps it until
+ * it's let go, or until the command ends, even when it's killed.
+ * @param {object} host  The host.
+ * @param {string} statePath  The state's file, whose folder must exist.
+ * @returns {(() => void)|null} What lets go of it, or null when another
+ *   command holds it.
+ */
+export function lockStartScript(host, statePath) {
+  return host.lockFolder(path.dirname(statePath));
+}
+
+/**
+ * Runs a change to the start script while holding its lock.
+ * @template T
+ * @param {object} host  The host.
+ * @param {string} statePath  The state's file, whose folder must exist.
+ * @param {() => T} change  The change.
+ * @returns {Promise<T>} What the change returns.
+ * @throws {Error} When another command holds the lock, before the change
+ *   starts, since that command's change and this one would undo each
+ *   other.
+ */
+export async function withStartScriptLock(host, statePath, change) {
+  const release = lockStartScript(host, statePath);
+  if (release === undefined || release === null) {
+    throw new Error(START_SCRIPT_LOCKED);
+  }
+  try {
+    return await change();
+  } finally {
+    release();
+  }
 }
