@@ -20,6 +20,7 @@
  */
 
 import path from "node:path";
+import { withFolderLock } from "./folder-lock.js";
 
 const FORMAT_VERSION = 1;
 
@@ -148,14 +149,7 @@ export function lockStartScript(host, statePath) {
  *   starts, since that command's change and this one would undo each
  *   other.
  */
-export async function withStartScriptLock(host, statePath, change) {
-  const release = lockStartScript(host, statePath);
-  if (release === undefined || release === null) {
-    throw new Error(START_SCRIPT_LOCKED);
-  }
-  try {
-    return await change();
-  } finally {
-    release();
-  }
+export function withStartScriptLock(host, statePath, change) {
+  const folder = path.dirname(statePath);
+  return withFolderLock(host, folder, START_SCRIPT_LOCKED, change);
 }

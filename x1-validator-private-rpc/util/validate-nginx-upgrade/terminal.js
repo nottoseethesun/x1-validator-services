@@ -11,7 +11,7 @@ const PREFIX = "[validate-nginx-upgrade]";
 
 /** What the check says when it passes. */
 export const PASSED =
-  "Passed: an apt upgrade of nginx keeps the gated rpc working.";
+  "Passed: an apt upgrade of nginx keeps the keyed url working.";
 
 /**
  * Builds how the check talks to the person at the terminal.

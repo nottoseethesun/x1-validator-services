@@ -72,6 +72,8 @@ const HIGH_RISK_PERCENT = 95;
  *   files apt already has
  * - the key's making, its hash in nginx's list, the encryption of its
  *   record, and the output that hides it
+ * - the lock that keeps a removed key from coming back through another
+ *   key command's write
  * - the edits to the validator's start script
  * - apply's record of what it changed, and undo-apply, which puts back
  *   only what the record says
@@ -86,6 +88,7 @@ const HIGH_RISK_FILES = [
   "x1-validator-private-rpc/src/lib/api-key.js",
   "x1-validator-private-rpc/src/lib/key-hash-map.js",
   "x1-validator-private-rpc/src/cli/hashed-api-keys.js",
+  "x1-validator-private-rpc/src/cli/folder-lock.js",
   "x1-validator-private-rpc/src/cli/log.js",
   "x1-validator-private-rpc/src/cli/start-script.js",
   "x1-validator-private-rpc/src/cli/turn-private-rpc.js",

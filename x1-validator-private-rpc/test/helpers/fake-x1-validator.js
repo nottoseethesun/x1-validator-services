@@ -12,7 +12,7 @@
  * machine:
  *
  * - apt installs nginx and its modules, which count as installed until
- *   nginx itself is purged
+ *   nginx itself is purged, and nginx's log folder, which goes with it
  * - userdel removes the account nginx's package made
  * - systemctl masks and starts nginx
  * - ufw adds and deletes rules, skips one it holds, and overwrites one
@@ -38,7 +38,11 @@ import { CHAT_ID_FILE, TOKEN_FILE } from "../../src/cli/telegram.js";
 import { API_KEY_PATTERN } from "../../src/lib/api-key.js";
 import { GATE_PAGE_PATH } from "../../src/lib/gate-page.js";
 import { hashApiKey } from "../../src/lib/key-hash-map.js";
-import { NGINX_UNIT, PINNED_FINGERPRINTS } from "../../src/lib/nginx-org.js";
+import {
+  NGINX_LOG_DIR,
+  NGINX_UNIT,
+  PINNED_FINGERPRINTS,
+} from "../../src/lib/nginx-org.js";
 import { shippedSettings } from "./config-copies.js";
 import { createFakeHost } from "./fake-host.js";
 
@@ -277,16 +281,24 @@ function systemAnswer(line, state) {
 function packageAnswer(call, line, state, files) {
   const apt = "apt -o Apt::Cmd::Disable-Script-Warning=true";
   if (line.includes(`${apt} install`)) {
+    // nginx.org's package makes nginx's log folder.
+    files.set(NGINX_LOG_DIR, "");
     Object.assign(state, { nginxInstalled: true, nginxUser: true });
     return {};
   }
   if (line.includes(`${apt} purge`)) {
     /*-
-     * nginx and its modules count as installed until nginx itself goes.
-     * nginx.org's package leaves its user behind, as the real one does.
+     * nginx and its modules count as installed until nginx itself goes,
+     * with its log folder. nginx.org's package leaves its user behind,
+     * as the real one does.
      */
     if (call.args.includes("nginx")) {
       Object.assign(state, { nginxInstalled: false });
+      for (const name of [...files.keys()]) {
+        if (name === NGINX_LOG_DIR || name.startsWith(`${NGINX_LOG_DIR}/`)) {
+          files.delete(name);
+        }
+      }
     }
     return {};
   }
@@ -355,7 +367,15 @@ function changeAnswer(call, line, state, files) {
     [
       "disable",
       () => {
+        // Once nginx's package is gone, systemd 255 has no unit to disable.
+        if (state.nginxInstalled === false) {
+          return {
+            status: 1,
+            stderr: `Failed to disable unit: Unit file ${NGINX_UNIT} does not exist.\n`,
+          };
+        }
         Object.assign(state, { enabled: false, active: false });
+        return {};
       },
     ],
     ["start", () => loadHashes(state, files)],
@@ -514,7 +534,6 @@ export function fakeX1Validator(scenario = {}) {
       "/etc/apt/sources.list.d",
       "/etc/apt/preferences.d",
       "/etc/systemd/system",
-      "/etc/logrotate.d",
       "/etc/nginx",
       "/var/log",
       path.join(x1consoleDir, ".git", "hooks"),

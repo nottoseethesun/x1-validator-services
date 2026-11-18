@@ -7,6 +7,7 @@
  * them any state.
  */
 
+import { GATE_PAGE_NAME } from "../../src/lib/gate-page.js";
 import { MIN_SYSTEMD_VERSION } from "../../src/lib/systemd.js";
 
 /**
@@ -70,7 +71,7 @@ export function keyProblems(answers, when) {
   const problems = [];
   if (answers.gate !== "ok") {
     problems.push(
-      `${when} the gate page never said ok. Its last answer was ${answers.gate}.`,
+      `${when} ${GATE_PAGE_NAME} never said ok. Its last answer was ${answers.gate}.`,
     );
   }
   if (answers.keyed !== 200) {

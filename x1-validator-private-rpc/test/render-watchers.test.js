@@ -1,9 +1,11 @@
 /**
  * @file x1-validator-private-rpc/test/render-watchers.test.js
  * @description
- * Tests the two watchers that run `ensure`. The tool's git hook can never
- * fail a pull, and is known as the tool's whatever paths it names. The
- * crontab line runs every minute under flock.
+ * Tests the two watchers that run `ensure`, and the key count check's
+ * cron line. The tool's git hook can never fail a pull, and is known as
+ * the tool's whatever paths it names. Each cron line first makes the
+ * folders it writes in, then runs its command: ensure every minute under
+ * flock, the key count check every few hours.
  * Each names its paths quoted for the shell, and the cron line refuses a
  * path that cron would cut short.
  */
@@ -14,6 +16,7 @@ import {
   isToolHook,
   renderCronLine,
   renderGitHook,
+  renderKeyCountCronLine,
 } from "../src/cli/render-watchers.js";
 
 // Any paths will do. The spaces show each is quoted for the shell.
@@ -50,11 +53,22 @@ test("the tool's hook is known whatever paths it names, and no other is", () => 
   }
 });
 
-test("the cron line runs ensure every minute, under flock, into its log", () => {
+test("the cron line makes its folders, then runs ensure every minute, under flock, into its log", () => {
   assert.equal(
     renderCronLine(PATHS),
-    `* * * * * flock -n '${PATHS.lockPath}' '${PATHS.nodeBin}' ` +
+    "* * * * * mkdir -m 755 '/run/a tool' '/var/log/a tool' 2>/dev/null; " +
+      `flock -n '${PATHS.lockPath}' '${PATHS.nodeBin}' ` +
       `'${PATHS.toolCli}' ensure --quiet >> '${PATHS.logPath}' 2>&1`,
+  );
+});
+
+test("the key count line makes its log's folder, then runs the check every few hours, into ensure's log", () => {
+  assert.equal(
+    renderKeyCountCronLine({ ...PATHS, hours: 3 }),
+    "0 */3 * * * mkdir -m 755 '/var/log/a tool' 2>/dev/null; " +
+      `'${PATHS.nodeBin}' '${PATHS.toolCli}' ` +
+      "ensure-there-is-at-least-one-rpc-api-key --quiet >> " +
+      `'${PATHS.logPath}' 2>&1`,
   );
 });
 

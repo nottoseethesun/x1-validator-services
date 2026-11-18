@@ -42,9 +42,9 @@ import { readAppliedState } from "./state.js";
 /** The form --count takes: a whole number, 1 or more. */
 const COUNT_PATTERN = /^[1-9][0-9]*$/;
 
-/** The prompt for the new keys' email, which shows what's typed. */
+/** The prompt for the new keys' one email, which shows what's typed. */
 export const EMAIL_PROMPT =
-  "An email for each new api key, or Enter for none: ";
+  "One email for every api key this run makes, or Enter for none: ";
 
 /** What the command says before it asks for the email again. */
 export const NOT_AN_EMAIL = "That isn't an email address.";

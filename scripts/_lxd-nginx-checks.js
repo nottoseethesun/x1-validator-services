@@ -5,32 +5,40 @@
  * its apply phase.
  *
  * The logs must hold no key, wherever a client put it, and show `<key>`
- * in its place, since the njs mask's errors would go nowhere. No other
- * account may read them.
+ * in its place, since the njs mask's errors would go nowhere. Their files
+ * keep the mode nginx.org's package gives them, so only root, nginx and
+ * the adm group can read them.
  *
  * nginx runs with a /dev of its own, read-only, so its master can't hand
  * the machine's /dev/null to the nginx account when it reopens its logs.
  * In the container, /dev/null is the host's, which shows as nobody's, so
  * the check is of nginx's /dev, not of /dev/null's owner. Then it has
  * nginx reopen its logs, as logrotate does each night, and checks the key
- * still works. Never on a validator.
+ * still works.
+ *
+ * nginx can't open its logs once their folder is gone, so the drop-in
+ * makes it before each start, and the key commands before their reload.
+ * The check deletes it and restarts nginx, then deletes it again for the
+ * add-api-key check that follows. Never on a validator.
  */
 
-import { NGINX_UNIT } from "../x1-validator-private-rpc/src/lib/nginx-org.js";
+import {
+  NGINX_LOG_DIR,
+  NGINX_UNIT,
+} from "../x1-validator-private-rpc/src/lib/nginx-org.js";
 import { answersWith } from "./_lxd-api-key-checks.js";
-import { asRoot, asRootCaptured, asUserCaptured, mustPass } from "./_lxd.js";
+import { asRoot, asRootCaptured, mustPass } from "./_lxd.js";
 
 /**
  * Sends requests with the key where the logs' mask must still find it:
  * after a doubled slash, a character short, in the query string alone,
  * and in the query string as well as the path. Then it checks that
- * nginx's logs hold no key but show `<key>` in its place, and that no
- * other account can read them.
+ * nginx's logs hold no key but show `<key>` in its place, and that their
+ * files have the mode nginx.org's package gives them.
  * @param {import("./_lxd-api-key-checks.js").Guest} guest  The container.
  * @param {string} key  The api key.
- * @param {object} settings  The settings the tool loads there.
  */
-export function checkLogs(guest, key, settings) {
+export function checkLogs(guest, key) {
   const { name } = guest;
   const urlPaths = [
     `//${key}/health`,
@@ -50,7 +58,7 @@ export function checkLogs(guest, key, settings) {
     ]);
     mustPass(asked.status, "Asking nginx with a mistyped url");
   }
-  const logDir = settings.nginxLogDir;
+  const logDir = NGINX_LOG_DIR;
   const shortKey = key.slice(0, -1);
   const leaked = asRootCaptured(name, ["grep", "-rl", shortKey, logDir]);
   guest.expect(
@@ -69,13 +77,12 @@ export function checkLogs(guest, key, settings) {
   );
   const listed = asRootCaptured(name, ["find", logDir, "-type", "f"]);
   const logs = listed.stdout.split("\n").filter((line) => line !== "");
-  // As the validator's account, with all its groups, adm among them.
-  const readable = logs.filter(
-    (log) => asUserCaptured(name, ["cat", log]).status === 0,
+  const modes = logs.map((log) =>
+    asRootCaptured(name, ["stat", "-c", "%a %U %G", log]).stdout.trim(),
   );
   guest.expect(
-    "nginx writes its logs, and the validator's account can't read them",
-    logs.length > 0 && readable.length === 0,
+    "nginx writes its logs, with the mode nginx.org's package gives them: 640, owner nginx, group adm",
+    logs.length > 0 && modes.every((mode) => mode === "640 nginx adm"),
   );
 }
 
@@ -135,4 +142,29 @@ export function checkOwnDev(guest, key) {
     "after nginx reopens its logs, the key still works",
     answersWith(guest, key, "200"),
   );
+}
+
+/**
+ * Deletes nginx's log folder and restarts nginx. The drop-in must make
+ * the folder again, as nginx.org's package makes it, root's with mode
+ * 755, and nginx must start and take the key. Then it deletes the folder
+ * again, so the add-api-key check that follows fails unless its reload
+ * makes it.
+ * @param {import("./_lxd-api-key-checks.js").Guest} guest  The container.
+ * @param {string} key  The api key.
+ */
+export function checkLogFolderComesBack(guest, key) {
+  const { name } = guest;
+  const folder = NGINX_LOG_DIR;
+  mustPass(asRoot(name, ["rm", "-rf", "--", folder]), "Deleting nginx's logs");
+  const restarted = asRoot(name, ["systemctl", "restart", NGINX_UNIT]);
+  const made = asRootCaptured(name, ["stat", "-c", "%a %U %G", folder]);
+  guest.expect(
+    "with its log folder deleted, nginx starts again, the drop-in makes the folder as nginx.org's package does, root's with mode 755, and the key works",
+    restarted === 0 &&
+      made.stdout.trim() === "755 root root" &&
+      answersWith(guest, key, "200"),
+  );
+  const again = asRoot(name, ["rm", "-rf", "--", folder]);
+  mustPass(again, "Deleting nginx's logs again, for add-api-key's reload");
 }

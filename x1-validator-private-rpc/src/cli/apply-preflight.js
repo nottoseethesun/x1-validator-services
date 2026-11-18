@@ -232,10 +232,13 @@ async function checkAddress(host, { hostname, publicIp }, problems) {
   ) {
     // The url isn't quoted: a keyed one would show its api key.
     problems.push(
-      "The solana cli's url names this validator's address or hostname. " +
-        "Under --private-rpc, Autopilot's health check would then fail and " +
-        "wipe and restart the validator. Point the cli at X1's public rpc " +
-        "first, from x1console's network menu.",
+      "The solana cli's url names this validator's address or hostname, " +
+        "and Autopilot's health check uses that url. Under --private-rpc, " +
+        "the rpc no longer answers on the validator's address, and the " +
+        "keyed url can stop answering, for example while nginx restarts. " +
+        "A failed check makes Autopilot delete the ledger and restart the " +
+        "validator. Point the cli at X1's public rpc first, from " +
+        "x1console's network menu.",
     );
   }
   let found;

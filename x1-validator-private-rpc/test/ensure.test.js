@@ -4,12 +4,13 @@
  * Tests ensure on a fake validator that apply set up:
  *
  * - nothing before apply
- * - the flag put back after an update, with one notice
+ * - the flag put back after an update, with one notice and one alert
  * - a run skipped while another command holds the start script's lock
  * - an update waited out, for as long as the settings say, and while git
  *   holds its lock in the checkout they name, unless the git hook runs
  *   ensure
- * - the reason the flag couldn't go back, in the alert
+ * - the reason the flag couldn't go back, in the alert, and no alert that
+ *   it's back
  * - a public rpc's alert and its repeats, as often as the settings say
  * - the certificate's warning, as many days ahead as they say, and its
  *   alert's repeats, as often as they say
@@ -28,11 +29,12 @@ import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { NEVER_ALERTED } from "../src/cli/alerts.js";
+import { FLAG_RESTORED, NEVER_ALERTED } from "../src/cli/alerts.js";
 import { runEnsure } from "../src/cli/ensure.js";
 import { featurePaths, homePath } from "../src/cli/feature-paths.js";
 import { CRONITOR_URL } from "../src/cli/heartbeat.js";
 import { lockStartScript, START_SCRIPT_LOCKED } from "../src/cli/state.js";
+import { GATE_PAGE_NAME } from "../src/lib/gate-page.js";
 import { appliedValidator, commandRun } from "./helpers/applied-validator.js";
 import { shippedAndChangedSettings } from "./helpers/config-copies.js";
 import { sudoCalls } from "./helpers/fake-host.js";
@@ -103,9 +105,11 @@ test("before apply has run, ensure does nothing and exits 0", async () => {
 
 test("puts the flag back after an update, and says so once", async () => {
   const { host, settings, scriptPath } = await appliedValidator(
-    { state: PRIVATE },
+    { state: PRIVATE, telegram: true },
     {},
   );
+  const restored = () =>
+    telegramTexts(host).filter((text) => text.endsWith(FLAG_RESTORED));
   host.files.set(scriptPath, scriptWithoutFlag());
   host.modified.set(scriptPath, host.now());
   await host.sleep(settings.startScriptQuietSeconds * 1000);
@@ -120,8 +124,10 @@ test("puts the flag back after an update, and says so once", async () => {
       line.includes(`Put --private-rpc back into ${scriptPath}`),
     ),
   );
+  assert.equal(restored().length, 1);
   const second = await ensure(host, settings);
   assert.deepEqual(second.lines, []);
+  assert.equal(restored().length, 1);
 });
 
 test("skips its run while another command holds the start script's lock, and the next run puts the flag back", async () => {
@@ -207,6 +213,10 @@ test("when the flag can't go back, the alert says why", async () => {
     text.includes("couldn't put it back"),
   );
   assert.ok(alert.includes("must hold exactly one line of the form"), alert);
+  assert.equal(
+    telegramTexts(host).some((text) => text.endsWith(FLAG_RESTORED)),
+    false,
+  );
 });
 
 test("a public rpc alerts once, then again after the reminder interval", async () => {
@@ -419,5 +429,5 @@ test("with every setting changed, it reports every check without --quiet, and no
     loud.lines.every((line) => line.startsWith("[ensure] ok: ")),
     loud.lines.join("\n"),
   );
-  assert.ok(loud.lines.includes("[ensure] ok: The gate page says ok."));
+  assert.ok(loud.lines.includes(`[ensure] ok: ${GATE_PAGE_NAME} says ok.`));
 });

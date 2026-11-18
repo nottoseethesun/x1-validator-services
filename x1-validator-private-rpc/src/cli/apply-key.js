@@ -16,8 +16,9 @@
  * nothing then, unless the saved password is marked stale, as below.
  *
  * With the password in hand, the stage offers to save it with systemd's
- * encrypted credentials, so the tool can read the records unattended. It
- * shows first what systemd said about a TPM2 chip and what that means.
+ * encrypted credentials, so that features to come can read the records
+ * unattended. It shows first what systemd said about a TPM2 chip and
+ * what that means.
  * The question is asked even with --yes, which skips only confirmations.
  * A password saved for an earlier file can't open a new one. So when the
  * stage makes a new file while a password is saved, it asks again, and
@@ -173,7 +174,7 @@ export async function askNewPassword(prompts, settings) {
  * Hands nginx the file's hashes when its list differs from them. Before
  * the write, it records the list and each folder the write makes, as
  * nginx's files' folders, so undo-apply removes them. A record of a file
- * the write then failed to make does no harm: removing it removes
+ * or folder that then wasn't made does no harm: removing it removes
  * nothing.
  * @param {object} context  The run.
  * @param {import("./hashed-api-keys.js").HashedApiKeys} keys  The file.

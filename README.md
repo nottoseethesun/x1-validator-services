@@ -8,7 +8,7 @@
 
 ## Overview
 
-X1 Validator Services is a home for features powered by code that runs on the validator itself, such as a gated (by an api key) X1 rpc service.
+X1 Validator Services holds features whose code runs on an X1 validator itself. The first, x1-validator-private-rpc, makes the validator's rpc private and puts it behind an https url that carries an api key.
 
 ## Install
 
@@ -24,7 +24,7 @@ cd ~/x1-validator-services
 npm ci --omit=dev --ignore-scripts
 ```
 
-`--omit=dev` leaves out the development tools, and `--ignore-scripts` skips the set-up step that only they need.
+`--omit=dev` leaves out the development tools, and `--ignore-scripts` skips the `prepare` script, which installs the pre-commit hook, a development tool.
 
 ### Each Feature
 

@@ -162,8 +162,6 @@ test("undoes everything apply did, newest first, until nothing is left", async (
     settings.njsModulePath,
     settings.hashedApiKeysMapPath,
     settings.systemdDropInPath,
-    settings.logrotateRulePath,
-    settings.nginxLogDir,
     settings.passwordCredentialPath,
     path.dirname(settings.passwordCredentialPath),
     keysFile,
@@ -274,6 +272,11 @@ test("the dry run says each step, and changes nothing", async () => {
   assert.ok(
     lines[0].startsWith("[undo-apply] Would ask: Delete every api key?"),
   );
+  // The keys' file goes before any step, so no step lists it.
+  assert.equal(
+    lines[1],
+    `[undo-apply] After a yes, it would first delete every api key, with ${hashedApiKeysPathOf(settings, HOME)}. The steps below assume that yes.`,
+  );
   assert.deepEqual([...host.files.keys()].sort(), files);
   assert.equal(
     host.calls.slice(before).filter((call) => call.kind !== "run").length,
@@ -331,14 +334,20 @@ test("a folder stays when the settings moved it, or when others use it", async (
   const { host, settings } = await appliedValidator();
   const nginxFolder = path.dirname(settings.nginxConfigPath);
   host.files.set(`${nginxFolder}/another-tool.conf`, "");
-  const moved = { ...settings, nginxLogDir: `${settings.nginxLogDir}-moved` };
+  const certificates = settings.acmeStatePath;
+  const moved = { ...settings, acmeStatePath: `${certificates}-moved` };
   const { code, lines } = await undoApply(host, moved);
   assert.equal(code, 0, lines.join("\n"));
-  assert.ok(host.files.has(settings.nginxLogDir));
+  assert.equal(
+    host.calls.some(
+      (call) => call.kind === "removeRootTree" && call.path === certificates,
+    ),
+    false,
+  );
   assert.ok(host.files.has(nginxFolder));
   assert.ok(
     lines.includes(
-      `[undo-apply] ${settings.nginxLogDir} isn't where the settings now put it, so it stays. Remove it by hand if apply made it.`,
+      `[undo-apply] ${certificates} isn't where the settings now put it, so it stays. Remove it by hand if apply made it.`,
     ),
   );
   assert.ok(
@@ -505,6 +514,10 @@ test("a step that fails stays recorded, and a second undo-apply retries it", asy
     ),
   );
   assert.ok(state.ufwRules.includes(HTTPS_RULE));
+  assert.equal(
+    first.lines.at(-1),
+    `[undo-apply] The steps above that failed or were skipped stay in ${featurePaths().whatApplyChangedPath}. Running undo-apply again retries them.`,
+  );
   ufwWorks = true;
   const second = await undoApply(host, settings);
   assert.equal(second.code, 0, second.lines.join("\n"));

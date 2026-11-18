@@ -169,7 +169,7 @@ Once the name resolves to the server and port 443 is open, `nginx`'s ACME module
 - Port 443 must reach `nginx` from the internet.
 - `CAA` records, if any, must allow the certificate authority.
 
-Fix the dns before starting `nginx` with the site. Certificate authorities limit failed attempts. `nginx` logs the module's progress to `/var/log/x1-validator-private-rpc/nginx-error.log`.
+Fix the dns before you run `apply`, which starts `nginx`. Certificate authorities limit failed attempts. `nginx` logs the module's progress to `/var/log/nginx/error.log`.
 
 ## Changing or Removing the Record
 
@@ -186,5 +186,5 @@ Fix the dns before starting `nginx` with the site. Certificate authorities limit
 | The panel refuses the record | A `CNAME` with the same name, a hostname as an `A` value, or invalid characters | Remove the conflict, and put the address in the value field |
 | Works on one machine, not another | Caching | Wait for the TTL, and compare with the provider's name server |
 | `nginx` gets no certificate | The name resolves elsewhere, port 443 is closed, `CAA` leaves the authority out, or a stray `AAAA` | Check each one, then read `nginx`'s error log |
-| The browser warns about the certificate | `nginx` has no certificate yet, the certificate is still from Let's Encrypt's staging service, or the configuration names another host | Check the hostname in the configuration. After staging, run `apply` without `--acme-staging` |
+| The browser warns about the certificate | `nginx` has no certificate yet, the certificate is still from Let's Encrypt's staging service, or the configuration names another host | Check `hostname` in your settings, `x1-validator-private-rpc/app-config/user-configurable/private-rpc.json`, then run `apply` again. After staging, run `apply` without `--acme-staging` |
 | The whole domain stopped working after a raw edit | A syntax error, or a serial that did not go up | Restore the backup, then add the one line again with care |

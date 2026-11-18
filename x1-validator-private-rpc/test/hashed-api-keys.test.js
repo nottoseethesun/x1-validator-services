@@ -9,7 +9,8 @@
  * - a wrong password refused through passwordCheck, also with no record
  * - a damaged file refused, never written over
  * - nginx's list: one line per hash, counted the same way everywhere,
- *   an empty one reported, and nginx reloaded only while it runs
+ *   an empty one reported, and nginx reloaded only while it runs, after
+ *   its log folder is made again when it's missing
  * - the api keys' lock: held for a change, let go after it even when it
  *   fails, and refused while another command holds it
  */
@@ -42,7 +43,11 @@ import {
 } from "../src/cli/hashed-api-keys.js";
 import { makeApiKey } from "../src/lib/api-key.js";
 import { countMapLines, hashApiKey, mapText } from "../src/lib/key-hash-map.js";
-import { NGINX_UNIT } from "../src/lib/nginx-org.js";
+import {
+  NGINX_LOG_DIR,
+  NGINX_LOG_DIR_MODE,
+  NGINX_UNIT,
+} from "../src/lib/nginx-org.js";
 import { createFakeHost } from "./helpers/fake-host.js";
 
 const PASSWORD = "a long test password";
@@ -52,14 +57,16 @@ const MAP = "/etc/nginx/x1-validator-private-rpc/keys.map";
 /**
  * Makes a fake host whose nginx is running or not.
  * @param {boolean} [active]  Whether nginx is active.
+ * @param {string[]} [folders]  The folders there at the start.
  * @returns {object}
  */
-function fakeHost(active = false) {
+function fakeHost(active = false, folders = []) {
   return createFakeHost({
     respond: (call) =>
       call.command === "systemctl" && call.args[0] === "is-active"
         ? { stdout: active === true ? "active\n" : "inactive\n" }
         : undefined,
+    folders,
   });
 }
 
@@ -203,7 +210,7 @@ test("nginx's list has one line per hash, and the same count everywhere", async 
   );
 });
 
-test("handing nginx the list reloads a running nginx only, and reports an empty list", async () => {
+test("handing nginx the list reloads a running nginx only, after making its log folder when it's missing, and reports an empty list", async () => {
   const lines = [];
   const log = createLog({
     out: (line) => lines.push(line),
@@ -214,19 +221,33 @@ test("handing nginx the list reloads a running nginx only, and reports an empty 
   const settings = { hashedApiKeysMapPath: MAP };
   assert.equal(handListToNginx({ host: stopped, settings, log }, keys, "t"), 2);
   assert.equal(reloadNginx(stopped), false);
-  const reloads = (host) =>
-    host.calls.filter(
-      (call) =>
-        call.command === "systemctl" &&
-        call.args.join(" ") === `reload ${NGINX_UNIT}`,
-    ).length;
-  assert.equal(reloads(stopped), 0);
+  const isReload = (call) =>
+    call.command === "systemctl" &&
+    call.args.join(" ") === `reload ${NGINX_UNIT}`;
+  const isMade = (call) => call.kind === "makeRootDir";
+  // A stopped nginx gets no reload, and no folder.
+  assert.equal(stopped.calls.filter(isReload).length, 0);
+  assert.equal(stopped.calls.some(isMade), false);
   const running = fakeHost(true);
   keys.records.clear();
   assert.equal(handListToNginx({ host: running, settings, log }, keys, "t"), 0);
-  assert.equal(reloads(running), 1);
+  assert.equal(running.calls.filter(isReload).length, 1);
+  // nginx can't open its logs in a missing folder, so it's made first,
+  // as nginx.org's package makes it.
+  const madeAt = running.calls.findIndex(isMade);
+  assert.deepEqual(running.calls[madeAt], {
+    kind: "makeRootDir",
+    path: NGINX_LOG_DIR,
+    mode: NGINX_LOG_DIR_MODE,
+    group: undefined,
+  });
+  assert.ok(madeAt < running.calls.findIndex(isReload));
   assert.equal(running.files.get(MAP), "");
   assert.deepEqual(lines, [`ERR [t] ${NO_API_KEY}`]);
+  const kept = fakeHost(true, [NGINX_LOG_DIR]);
+  handListToNginx({ host: kept, settings, log }, keys, "t");
+  assert.equal(kept.calls.filter(isReload).length, 1);
+  assert.equal(kept.calls.some(isMade), false);
 });
 
 test("a change to the keys holds their lock, lets it go even when it fails, and is refused while another command holds it", async () => {

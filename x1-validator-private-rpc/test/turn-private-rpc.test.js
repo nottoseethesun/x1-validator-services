@@ -6,9 +6,11 @@
  *
  * - off takes the flag out after asking, and ensure then leaves it out,
  *   once startScriptQuietSeconds has passed and when the git hook runs
- *   it, and stops checking that the rpc is private
+ *   it, and stops checking that the rpc is private, but still alerts
+ *   when nginx is down or its certificate needs attention
  * - off takes out a flag that ensure put back while its question waited,
- *   and refuses while another command holds the start script's lock
+ *   and keeps an update's change made meanwhile, and refuses while
+ *   another command holds the start script's lock
  * - with every setting changed, both edit the start script where the
  *   settings put it
  * - on puts the flag back, for ensure to keep there again
@@ -114,7 +116,7 @@ function restartPublic(host, state) {
   );
 }
 
-test("turn-off takes the flag out after asking, and ensure leaves it out", async () => {
+test("turn-off takes the flag out after asking, and ensure leaves it out, but still alerts on nginx and its certificate", async () => {
   const { host, state, settings, scriptPath } = await appliedValidator({
     state: PRIVATE,
     telegram: true,
@@ -136,12 +138,22 @@ test("turn-off takes the flag out after asking, and ensure leaves it out", async
   const fromHook = await ensure(host, settings, { fromGitHook: true });
   assert.equal(fromHook.code, 0, fromHook.lines.join("\n"));
   assert.doesNotMatch(host.files.get(scriptPath), FLAG);
-  const alerts = host.posts.filter((post) =>
-    post.url.startsWith("https://api.telegram.org/"),
-  );
-  assert.equal(
-    alerts.some((post) => post.body.text.includes("The rpc is public")),
-    false,
+  // Clients still use the keyed url, so nginx and its certificate alert.
+  state.certificateDays = settings.certificateWarningDays - 1;
+  assert.equal((await ensure(host, settings)).code, 1);
+  state.active = false;
+  assert.equal((await ensure(host, settings)).code, 1);
+  const alerts = host.posts
+    .filter((post) => post.url.startsWith("https://api.telegram.org/"))
+    .map((post) => post.body.text);
+  const titles = [
+    "The certificate needs attention",
+    "nginx is down",
+    "The rpc is public",
+  ];
+  assert.deepEqual(
+    titles.map((title) => alerts.some((text) => text.includes(title))),
+    [true, true, false],
   );
 });
 
@@ -189,18 +201,27 @@ test("turn-off takes out a flag that ensure put back while its question waited",
     new URL("fixtures/start_validator.sh", import.meta.url),
     "utf8",
   );
+  const before = "--maximum-full-snapshots-to-retain 50";
+  const after = "--maximum-full-snapshots-to-retain 25";
+  assert.ok(original.includes(before));
   // An Update X1 Console took the flag out, and brought no new commits.
   host.files.set(scriptPath, original);
   host.modified.set(scriptPath, host.now());
   await host.sleep(settings.startScriptQuietSeconds * 1000);
   const off = await turn(runTurnOffPrivateRpc, host, settings, async () => {
-    // cron's ensure runs while the question waits.
-    await ensure(host, settings);
+    /*-
+     * While the question waits, an update changes another line, and its
+     * git hook's ensure puts the flag back.
+     */
+    host.files.set(scriptPath, original.replace(before, after));
+    host.modified.set(scriptPath, host.now());
+    await ensure(host, settings, { fromGitHook: true });
     assert.match(host.files.get(scriptPath), FLAG);
     return true;
   });
   assert.equal(off.code, 0, off.lines.join("\n"));
-  assert.doesNotMatch(host.files.get(scriptPath), FLAG);
+  // Only the flag comes out: the update's change stays.
+  assert.equal(host.files.get(scriptPath), original.replace(before, after));
   assert.equal(choice(host), "off");
 });
 

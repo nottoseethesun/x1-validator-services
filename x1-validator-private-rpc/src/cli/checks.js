@@ -2,8 +2,9 @@
  * @file x1-validator-private-rpc/src/cli/checks.js
  * @description
  * ensure's checks, each reported as ok, problem or unknown, with a line
- * that says what was found. They're the cheap ones from the hand-off's
- * Verification Checks:
+ * that says what was found. They're the cheap ones from the Verification
+ * Checks in the hand-off the project started from,
+ * project-kickoff-documents/x1-validator-private-rpc-handoff.md:
  *
  * - The start script carries `--private-rpc`.
  * - The running validator carries it too: the process that listens on
@@ -20,6 +21,7 @@
  * function of what was read, so tests feed it captured output.
  */
 
+import { GATE_PAGE_NAME } from "../lib/gate-page.js";
 import { NGINX_UNIT } from "../lib/nginx-org.js";
 import { unitActiveState } from "../lib/systemd.js";
 import { askGate } from "./nginx-gate.js";
@@ -113,7 +115,7 @@ export function judgeNginxListeners(listeners, publicIp) {
     return {
       name: "nginx-listens",
       status: "problem",
-      detail: `Port 80 or 443 is held other than as ${publicIp}:443 alone: ${held}.`,
+      detail: `Only ${publicIp}:443 should listen on ports 80 and 443, but what listens there is: ${held}.`,
     };
   }
   return {
@@ -172,7 +174,7 @@ export function judgeGate(gate) {
   return {
     name: "gate",
     status: gate === "ok" ? "ok" : "unknown",
-    detail: `The gate page says ${gate}.`,
+    detail: `${GATE_PAGE_NAME} says ${gate}.`,
   };
 }
 

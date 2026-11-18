@@ -5,23 +5,24 @@
  * keeps an api key itself: it shows each key once, when it makes it, and
  * keeps the key's SHA-256 hash. nginx checks each request by hashing the
  * key the request carries and looking for that hash in its list, so it
- * needs no password, and restarts on its own.
+ * needs no password, and a restart of nginx, or a reboot, needs nobody to
+ * type one.
  *
  * hashed-api-keys.json, which the hashedApiKeysPath setting names, holds
- * every hash as a readable json key, so nginx's list and remove-api-key
- * need no password. Its value is the key's record, a json
+ * every hash as an unencrypted json key, so nginx's list and
+ * remove-api-key need no password. Its value is the key's record, a json
  * object that can grow: createdAtTimestampMS, the time the key was made,
  * and email, "" when none was given. Every value in a record is encrypted
  * with the x1-validator-services password, as LP Ranger's key store
  * encrypts a private key: AES-256-GCM, with its key from PBKDF2-SHA-512 at
  * 600,000 rounds. The file has one salt, so one opening derives one
  * encryption key, which opens every record, and each value has its own
- * iv. An encrypted value is
- * one string, the iv, GCM's tag and the ciphertext in base64url, joined by
- * dots, and its plain text is the value's json. passwordCheck, a known
- * text encrypted the same way, lets a typed password be checked even when
- * the file holds no record. The file has mode 0600, in a folder with mode
- * 0700, and is written whole to a new file that then replaces the old one.
+ * iv. An encrypted value is one string, the iv, GCM's tag and the
+ * ciphertext in base64url, joined by dots, and its plain text is the
+ * value's json. passwordCheck, a known text encrypted the same way, lets
+ * a typed password be checked even when the file holds no record. The
+ * file has mode 0600, in a folder with mode 0700, and is written whole to
+ * a new file that then replaces the old one.
  *
  * nginx's list, which the hashedApiKeysMapPath setting names, has the
  * form src/lib/key-hash-map.js gives. The tool writes it from the file's
@@ -33,8 +34,7 @@
  * lock, from its read of the file to its last write, so no two of them
  * change the keys at once. add-api-key, remove-api-key and undo-apply's
  * yes get sudo before their first change, so a refused sudo changes
- * nothing.
- * docs/architecture.md says why.
+ * nothing. docs/architecture.md says why.
  */
 
 import crypto from "node:crypto";
@@ -48,8 +48,13 @@ import {
   hashApiKey,
   mapText,
 } from "../lib/key-hash-map.js";
-import { NGINX_UNIT } from "../lib/nginx-org.js";
+import {
+  NGINX_LOG_DIR,
+  NGINX_LOG_DIR_MODE,
+  NGINX_UNIT,
+} from "../lib/nginx-org.js";
 import { systemctl, unitActiveState } from "../lib/systemd.js";
+import { withFolderLock } from "./folder-lock.js";
 
 /** PBKDF2's rounds, as LP Ranger's key store uses. */
 export const PBKDF2_ITERATIONS = 600000;
@@ -317,16 +322,8 @@ export function readHashedApiKeys(host, filePath) {
  * @throws {Error} When another command holds the lock, before the change
  *   starts, since its change and this one would undo each other.
  */
-export async function withApiKeysLock(host, folder, change) {
-  const release = host.lockFolder(folder);
-  if (release === undefined || release === null) {
-    throw new Error(KEYS_LOCKED);
-  }
-  try {
-    return await change();
-  } finally {
-    release();
-  }
+export function withApiKeysLock(host, folder, change) {
+  return withFolderLock(host, folder, KEYS_LOCKED, change);
 }
 
 /**
@@ -435,7 +432,11 @@ export function readMapCount(host, mapPath) {
 
 /**
  * Has a running nginx read its configuration again, its list with it.
- * A reload keeps nginx answering throughout.
+ * A reload keeps nginx answering throughout. nginx opens its logs again
+ * as it reloads, and can't once their folder is gone. It then keeps its
+ * old configuration without a word, since the reload only signals it,
+ * so the folder is made again first when it's missing, as nginx.org's
+ * package makes it.
  * @param {object} host  The host.
  * @returns {boolean} Whether nginx was running, and so reloaded.
  */
@@ -443,6 +444,9 @@ export function reloadNginx(host) {
   const running = unitActiveState(host, NGINX_UNIT);
   if (running !== "active") {
     return false;
+  }
+  if (!host.exists(NGINX_LOG_DIR)) {
+    host.makeRootDir(NGINX_LOG_DIR, NGINX_LOG_DIR_MODE);
   }
   systemctl(host, ["reload", NGINX_UNIT]);
   return true;

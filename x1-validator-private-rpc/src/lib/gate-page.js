@@ -9,3 +9,9 @@
 
 /** The gate page's path. */
 export const GATE_PAGE_PATH = "/x1-rpc-gate";
+
+/**
+ * How messages name the gate page, which the operator may never have
+ * heard of: its path, then what it's for, set off by commas.
+ */
+export const GATE_PAGE_NAME = `${GATE_PAGE_PATH}, nginx's page for the tool's own checks,`;

@@ -6,7 +6,8 @@
  * name nginx.org's repository. Names that nginx.org decides
  * are constants here, not settings: its signing key's address and the
  * two fingerprints the tool trusts, its repository, the three packages,
- * the systemd unit they install, and the apt files its instructions name.
+ * the systemd unit and the log folder they install, and the apt files
+ * the tool adds for them.
  *
  * Each module package is built for one exact nginx version, which leads
  * its version string: `1.30.5+1.0.1-1~noble` is njs 1.0.1 built for
@@ -50,6 +51,14 @@ export const NGINX_PACKAGES = [
   "nginx-module-acme",
 ];
 export const NGINX_UNIT = "nginx.service";
+
+/**
+ * nginx's log folder. nginx.org's package makes it with this mode, its
+ * logrotate rule rotates each `.log` file in it daily and keeps 52, and
+ * purging the package removes it.
+ */
+export const NGINX_LOG_DIR = "/var/log/nginx";
+export const NGINX_LOG_DIR_MODE = "0755";
 
 /**
  * @typedef {object} PackageVersion

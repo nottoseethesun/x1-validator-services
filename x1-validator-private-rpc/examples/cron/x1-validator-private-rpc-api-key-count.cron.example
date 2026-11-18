@@ -3,6 +3,6 @@
 # none, since nginx then refuses every request.
 # apply installs this line for you, with apiKeyCountCheckHours in place of
 # the 2. To install it by hand, as the validator's account, run crontab -e
-# and paste the line below. First make the logs/ folder its output goes to,
-# as the ensure example says.
-0 */2 * * * $HOME/.nvm/versions/node/v20.0.0/bin/node $HOME/x1-validator-services/x1-validator-private-rpc/src/cli.js ensure-there-is-at-least-one-rpc-api-key --quiet >> $HOME/x1-validator-services/x1-validator-private-rpc/logs/ensure.log 2>&1
+# and paste the line below. It makes the logs/ folder its output goes to,
+# when it's missing.
+0 */2 * * * mkdir -m 755 $HOME/x1-validator-services/x1-validator-private-rpc/logs 2>/dev/null; $HOME/.nvm/versions/node/v20.0.0/bin/node $HOME/x1-validator-services/x1-validator-private-rpc/src/cli.js ensure-there-is-at-least-one-rpc-api-key --quiet >> $HOME/x1-validator-services/x1-validator-private-rpc/logs/ensure.log 2>&1

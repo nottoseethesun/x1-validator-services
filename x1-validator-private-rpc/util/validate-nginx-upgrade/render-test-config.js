@@ -16,6 +16,7 @@ import {
   MAP_HASH_BUCKET_SIZE,
   MAP_HASH_MAX_SIZE,
 } from "../../src/lib/key-hash-map.js";
+import { NGINX_LOG_DIR } from "../../src/lib/nginx-org.js";
 
 /**
  * Writes the test configuration.
@@ -30,7 +31,7 @@ export function renderTestNginxConfig({ port, njsModulePath, mapPath }) {
 user nginx;
 worker_processes 1;
 pid /run/nginx.pid;
-error_log /var/log/nginx/error.log notice;
+error_log ${NGINX_LOG_DIR}/error.log notice;
 
 load_module modules/ngx_http_js_module.so;
 load_module modules/ngx_http_acme_module.so;

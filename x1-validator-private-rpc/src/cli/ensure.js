@@ -14,8 +14,8 @@
  * run but the hook's, a run by hand included, leaves the script alone
  * while `.git/index.lock` exists, or while the script changed less than
  * startScriptQuietSeconds ago, and leaves the flag for a later run. The
- * hook passes --from-git-hook, which skips that wait, since git has
- * finished when it runs the hook.
+ * hook passes --from-git-hook, which skips that wait, since the merge is
+ * done when git runs the hook.
  *
  * It holds the start script's lock from its read of whether private rpc
  * is on until it has put the flag back or left it, so a command that

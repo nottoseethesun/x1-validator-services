@@ -36,9 +36,14 @@ test("reads systemctl show's properties", () => {
   assert.equal(properties.get("ActiveState"), "active");
 });
 
-test("reads an installed package's version, or nothing", () => {
+test("reads an installed package's version, held or not, or nothing", () => {
   assert.equal(
     parseDpkgQuery("install ok installed 1.30.6-1~noble"),
+    "1.30.6-1~noble",
+  );
+  // What dpkg says of a package the operator holds back with apt-mark.
+  assert.equal(
+    parseDpkgQuery("hold ok installed 1.30.6-1~noble"),
     "1.30.6-1~noble",
   );
   assert.equal(

@@ -61,7 +61,7 @@ Formatting and the code checks a change is written against.
 
 ## Test
 
-The gates. `check` runs all of them but the system test.
+The checks and tests. `check` runs all of them but the system test.
 
 | Command | Flags | Description | Example |
 | ------- | ----- | ----------- | ------- |

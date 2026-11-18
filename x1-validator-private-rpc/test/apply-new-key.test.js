@@ -302,7 +302,9 @@ test("a new key nginx refuses for a moment, while its reload takes the new list,
   // Each round asks with the new key and with a random one.
   assert.ok(keyedAsks > 4, String(keyedAsks));
   assert.ok(
-    run.lines.includes("[nginx] The request path checks out from the server."),
+    run.lines.includes(
+      "[nginx] Test requests from this machine through nginx: the new api key got through, and requests without a key or with a random one got 403.",
+    ),
   );
 });
 

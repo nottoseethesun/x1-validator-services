@@ -8,8 +8,13 @@
  * used: every problem is listed at once, each naming the setting, what
  * it must be and what it is, and the tool refuses to go on. An unknown
  * setting is refused too, since a misspelled one would otherwise be
- * ignored without a word. So is any file in the operator's folder other
- * than the override file and its README, such as a misnamed override.
+ * ignored without a word. So is any other json file in the operator's
+ * folder, such as a misnamed override, but not a hidden one, such as an
+ * editor's lock file.
+ *
+ * A key that starts with `_` is a note, such as the warning beside a
+ * setting in the shipped file, since json has no comments. The schema
+ * allows it, and the settings leave it out.
  *
  * Settings are read when a command runs, never as a module loads, and
  * nothing keeps a copy of a default elsewhere.
@@ -24,9 +29,6 @@ const SETTINGS_FILE = "private-rpc.json";
 const SCHEMA_FILE = "private-rpc.schema.json";
 const DEFAULTS_FOLDER = "app-defaults-for-user-configurable";
 const OVERRIDES_FOLDER = "user-configurable";
-
-/** The file that explains the operator's folder, which the tool ships. */
-const OVERRIDES_README = "README.md";
 
 /**
  * Finds the feature's `app-config` folder from this file's own location.
@@ -58,9 +60,13 @@ export function overrideFilePath(configDir = defaultConfigDir()) {
 }
 
 /**
- * Refuses a file in the operator's folder that the tool doesn't read.
- * Settings saved under another name, such as `private_rpc.json`, would
- * otherwise leave the tool on its defaults without a word.
+ * Refuses a json file in the operator's folder that the tool doesn't
+ * read. Settings saved under another name, such as `private_rpc.json`,
+ * would otherwise leave the tool on its defaults without a word. Other
+ * files pass, such as the folder's README, or `private-rpc.json.save`,
+ * which nano leaves when its ssh session drops in the middle of an edit.
+ * So does a file whose name starts with a dot, such as
+ * `.#private-rpc.json`, the lock Emacs keeps while an edit is unsaved.
  * @param {string} overridePath  The operator's override file.
  * @throws {Error} Naming each such file, so no setting is ignored.
  */
@@ -71,12 +77,18 @@ function refuseUnreadFiles(overridePath) {
   }
   const unread = fs
     .readdirSync(folder)
-    .filter((name) => name !== SETTINGS_FILE && name !== OVERRIDES_README);
+    .filter(
+      (name) =>
+        name !== SETTINGS_FILE &&
+        name.endsWith(".json") &&
+        !name.startsWith("."),
+    );
   if (unread.length > 0) {
     throw new Error(
       `${folder} holds ${unread.join(", ")}, which the tool doesn't read. ` +
-        `It reads your settings from ${SETTINGS_FILE} alone, so move them ` +
-        "there and remove the other file(s).",
+        `It reads your settings from ${SETTINGS_FILE} alone, so move any ` +
+        "settings in the other file(s) into it, then remove the other " +
+        "file(s).",
     );
   }
 }
@@ -150,13 +162,17 @@ export function isEmail(email, configDir = defaultConfigDir()) {
 }
 
 /**
- * Describes one schema problem in the operator's words.
+ * Describes one schema problem in the operator's words. A problem with a
+ * setting also gives the schema's description of it, which says what
+ * the setting must be, since Ajv's own words may only quote a pattern.
  * @param {object} error  One of Ajv's errors.
  * @param {object} settings  The merged settings.
  * @param {string} overridePath  The operator's override file.
+ * @param {Map<string, string>} descriptions  Each setting's description
+ *   in the schema.
  * @returns {string}
  */
-function describeProblem(error, settings, overridePath) {
+function describeProblem(error, settings, overridePath, descriptions) {
   if (error.keyword === "additionalProperties") {
     const name = error.params.additionalProperty;
     return (
@@ -169,10 +185,13 @@ function describeProblem(error, settings, overridePath) {
     return `The settings: ${error.message}. Check ${overridePath}.`;
   }
   const value = new Map(Object.entries(settings)).get(name) ?? null;
-  return (
-    `${name}: ${error.message} (it is ${JSON.stringify(value)}). ` +
-    `Change it in ${overridePath}.`
-  );
+  return [
+    `${name}: ${error.message} (it is ${JSON.stringify(value)}).`,
+    descriptions.get(name) ?? "",
+    `Change it in ${overridePath}.`,
+  ]
+    .filter((part) => part !== "")
+    .join(" ");
 }
 
 /**
@@ -189,8 +208,14 @@ export function settingsProblems(schema, settings, overridePath) {
   if (validate(settings)) {
     return [];
   }
+  const descriptions = new Map(
+    Object.entries(schema.properties).map(([name, rule]) => [
+      name,
+      rule.description ?? "",
+    ]),
+  );
   return validate.errors.map((error) =>
-    describeProblem(error, settings, overridePath),
+    describeProblem(error, settings, overridePath, descriptions),
   );
 }
 
@@ -199,8 +224,8 @@ export function settingsProblems(schema, settings, overridePath) {
  * @param {string} [configDir]  The `app-config` folder, the feature's own
  *   unless a test passes another.
  * @returns {object} The settings, each key holding its value.
- * @throws {Error} Listing every problem, when a file is broken, a file
- *   the tool doesn't read sits beside the override, or a setting is
+ * @throws {Error} Listing every problem, when a file is broken, a json
+ *   file the tool doesn't read sits beside the override, or a setting is
  *   wrong or unknown, so no command runs on settings the operator didn't
  *   mean.
  */
@@ -227,6 +252,8 @@ export function loadSettings(configDir = defaultConfigDir()) {
     );
   }
   return Object.fromEntries(
-    Object.entries(merged).filter(([name]) => name !== "$schema"),
+    Object.entries(merged).filter(
+      ([name]) => name !== "$schema" && !name.startsWith("_"),
+    ),
   );
 }

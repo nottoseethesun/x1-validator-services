@@ -15,6 +15,8 @@
  *   certificate
  * - the access log shows each url through the njs module's mask, which
  *   njs-key-check.test.js tests
+ * - the logs are .log files in nginx's own folder, which nginx.org's
+ *   logrotate rule rotates
  * - the keyed location writes no error log, since nginx's error lines
  *   carry the key
  * - after a reload, the old worker closes what it holds open within a
@@ -34,6 +36,7 @@ import {
   MAP_HASH_BUCKET_SIZE,
   MAP_HASH_MAX_SIZE,
 } from "../src/lib/key-hash-map.js";
+import { NGINX_LOG_DIR } from "../src/lib/nginx-org.js";
 import { shippedAndChangedSettings } from "./helpers/config-copies.js";
 
 /** The settings the configuration reads. */
@@ -42,7 +45,6 @@ const USED = [
   "hashedApiKeysMapPath",
   "acmeDirectoryUrl",
   "acmeStatePath",
-  "nginxLogDir",
   "nginxWorkerPriority",
   "websocketIdleTimeoutSeconds",
   "rateLimitRequestsPerSecond",
@@ -163,6 +165,17 @@ test("the access log shows each url through the njs module's mask, and never the
   assert.ok(text.includes("js_set $x1_rpc_logged_uri x1rpc.loggedUri;"));
   assert.match(text, /log_format x1_rpc [^;]*"\$x1_rpc_logged_uri"/);
   assert.doesNotMatch(text, /\$request_uri/);
+});
+
+test("the logs are .log files in nginx's own folder, where nginx.org's logrotate rule rotates them", () => {
+  const { text } = renderChanged();
+  const logs = [...text.matchAll(/^\s*(?:error|access)_log (\S+?)[ ;]/gm)]
+    .map((match) => match[1])
+    .filter((file) => file !== "/dev/null" && file !== "off");
+  assert.deepEqual(logs, [
+    `${NGINX_LOG_DIR}/error.log`,
+    `${NGINX_LOG_DIR}/access.log`,
+  ]);
 });
 
 test("the keyed location writes no error log, since nginx's error lines carry the key", () => {

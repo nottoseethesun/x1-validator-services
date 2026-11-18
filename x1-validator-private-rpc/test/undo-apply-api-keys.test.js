@@ -72,6 +72,12 @@ test("keeps the api keys and the saved password when told no, with their folders
   assert.equal(asked.length, 1);
   assert.equal(host.files.get(keysFile), keysText);
   assert.ok(host.files.has(settings.passwordCredentialPath));
+  assert.ok(
+    lines.includes(
+      `[undo-apply] Skipped, as asked: delete the saved password, ${settings.passwordCredentialPath}.`,
+    ),
+    lines.join("\n"),
+  );
   // nginx's list goes with nginx's other files.
   assert.equal(host.files.has(settings.hashedApiKeysMapPath), false);
   for (const [stays, folder] of [
@@ -80,7 +86,7 @@ test("keeps the api keys and the saved password when told no, with their folders
   ]) {
     assert.ok(
       lines.includes(
-        `[undo-apply] Kept, since ${stays} stays: the change behind "remove the folder ${folder}".`,
+        `[undo-apply] Skipped, since ${stays} stays: remove the folder ${folder}.`,
       ),
       lines.join("\n"),
     );

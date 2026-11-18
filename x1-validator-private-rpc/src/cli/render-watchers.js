@@ -16,11 +16,15 @@
  * `ensure-there-is-at-least-one-rpc-api-key` every few hours, on the
  * hour, and adds its output to ensure's log.
  *
+ * Each cron line first makes any folder it writes in that's missing, so
+ * deleting `tmp/` or `logs/` stops no run.
+ *
  * Each names the Node.js and the `src/cli.js` the tool runs from, by full
  * path, quoted for the shell. A hook is known as the tool's by its
  * shape, whatever paths it names. Every function here is pure.
  */
 
+import path from "node:path";
 import { shellQuote } from "../lib/render-host-files.js";
 
 /**
@@ -75,7 +79,23 @@ function refuseCronBreaks(values) {
 }
 
 /**
- * Writes the crontab line that runs `ensure` every minute.
+ * Writes the start of a crontab line's command, which makes the folders
+ * of the files the line writes when they're missing, with the mode apply
+ * gives them. It never makes a folder above them, so a line left behind
+ * after the project moved makes nothing at the old place. Its errors go
+ * nowhere, since a folder that's there already is the usual case, and the
+ * line runs on either way.
+ * @param {string[]} files  The files, by full path.
+ * @returns {string}
+ */
+function makeFoldersOf(files) {
+  const folders = files.map((file) => shellQuote(path.dirname(file)));
+  return `mkdir -m 755 ${folders.join(" ")} 2>/dev/null; `;
+}
+
+/**
+ * Writes the crontab line that runs `ensure` every minute, after making
+ * any missing folder of its lock or its log.
  * @param {object} values  What the line needs, each by full path.
  * @param {string} values.nodeBin  The Node.js the tool runs with.
  * @param {string} values.toolCli  The tool's `src/cli.js`.
@@ -88,14 +108,16 @@ function refuseCronBreaks(values) {
 export function renderCronLine({ nodeBin, toolCli, lockPath, logPath }) {
   refuseCronBreaks([nodeBin, toolCli, lockPath, logPath]);
   return (
-    `* * * * * flock -n ${shellQuote(lockPath)} ${shellQuote(nodeBin)} ` +
-    `${shellQuote(toolCli)} ensure --quiet >> ${shellQuote(logPath)} 2>&1`
+    `* * * * * ${makeFoldersOf([lockPath, logPath])}flock -n ` +
+    `${shellQuote(lockPath)} ${shellQuote(nodeBin)} ${shellQuote(toolCli)} ` +
+    `ensure --quiet >> ${shellQuote(logPath)} 2>&1`
   );
 }
 
 /**
  * Writes the crontab line that runs
- * `ensure-there-is-at-least-one-rpc-api-key` every few hours.
+ * `ensure-there-is-at-least-one-rpc-api-key` every few hours, after
+ * making its log's folder when it's missing.
  * @param {object} values  What the line needs.
  * @param {string} values.nodeBin  The Node.js the tool runs with.
  * @param {string} values.toolCli  The tool's `src/cli.js`.
@@ -109,8 +131,8 @@ export function renderCronLine({ nodeBin, toolCli, lockPath, logPath }) {
 export function renderKeyCountCronLine({ nodeBin, toolCli, logPath, hours }) {
   refuseCronBreaks([nodeBin, toolCli, logPath]);
   return (
-    `0 */${hours} * * * ${shellQuote(nodeBin)} ${shellQuote(toolCli)} ` +
-    `ensure-there-is-at-least-one-rpc-api-key --quiet >> ` +
-    `${shellQuote(logPath)} 2>&1`
+    `0 */${hours} * * * ${makeFoldersOf([logPath])}${shellQuote(nodeBin)} ` +
+    `${shellQuote(toolCli)} ensure-there-is-at-least-one-rpc-api-key ` +
+    `--quiet >> ${shellQuote(logPath)} 2>&1`
   );
 }

@@ -2,13 +2,17 @@
  * @file x1-validator-private-rpc/src/lib/render-host-files.js
  * @description
  * Writes out, as text, the system files the tool installs besides
- * nginx's configuration: nginx.org's apt source and pin, the systemd
- * drop-in that starts nginx with the tool's configuration, and the
- * logrotate rule for nginx's logs. Every function is pure. The caller
- * writes the text where it belongs.
+ * nginx's configuration: nginx.org's apt source and pin, and the systemd
+ * drop-in that starts nginx with the tool's configuration. Every
+ * function is pure. The caller writes the text where it belongs.
  */
 
-import { NGINX_KEYRING_PATH, NGINX_REPOSITORY_URL } from "./nginx-org.js";
+import {
+  NGINX_KEYRING_PATH,
+  NGINX_LOG_DIR,
+  NGINX_LOG_DIR_MODE,
+  NGINX_REPOSITORY_URL,
+} from "./nginx-org.js";
 
 /**
  * Quotes a value for a POSIX shell, so the shell reads it as one word,
@@ -61,15 +65,23 @@ export function renderAptPin() {
  * nginx reopens its logs, its master hands each to the nginx account,
  * /dev/null among them, since the keyed location's error log goes there.
  * In nginx's own /dev that fails, and the machine's /dev/null stays
- * root's.
+ * root's. Before each start, it makes nginx's log folder when it's
+ * missing, as nginx.org's package makes it, since nginx can't start
+ * without it. A folder that's there keeps its own mode.
  * @param {object} values  What the drop-in needs.
  * @param {string} values.nginxConfigPath  nginx's main configuration.
  * @returns {string} The file's text.
  */
 export function renderDropIn({ nginxConfigPath }) {
+  const makeLogFolder =
+    `test -d ${NGINX_LOG_DIR} || ` +
+    `install -d -m ${NGINX_LOG_DIR_MODE} ${NGINX_LOG_DIR}`;
   return [
     "# x1-validator-private-rpc: systemd drop-in for nginx.service.",
     "[Service]",
+    "# Before each start, make nginx's log folder when it's missing, since",
+    "# nginx can't start without it.",
+    `ExecStartPre=/bin/sh -c '${makeLogFolder}'`,
     "# Start nginx with the tool's own configuration, not the package's.",
     "ExecStart=",
     `ExecStart=/usr/sbin/nginx -c ${nginxConfigPath}`,
@@ -78,37 +90,4 @@ export function renderDropIn({ nginxConfigPath }) {
     "PrivateDevices=yes",
     "",
   ].join("\n");
-}
-
-/**
- * Writes the logrotate rule for the private rpc's nginx logs: daily,
- * compressed, keeping the configured number of days. After each rotation
- * it sends nginx USR1, as the packaged rule does, so nginx reopens its
- * logs and writes to the new files.
- * @param {object} values  What the rule needs.
- * @param {string} values.nginxLogDir  Where nginx writes the logs.
- * @param {number} values.logRetentionDays  How many days to keep.
- * @param {string} values.logrotateRulePath  Where the rule goes.
- * @returns {string} The file's text.
- */
-export function renderLogrotateRule(values) {
-  const { nginxLogDir, logRetentionDays, logrotateRulePath } = values;
-  return `# x1-validator-private-rpc: rotate the private rpc's nginx logs daily and
-# keep ${logRetentionDays} days of them. Copy to ${logrotateRulePath}
-${nginxLogDir}/*.log {
-    daily
-    rotate ${logRetentionDays}
-    missingok
-    notifempty
-    compress
-    delaycompress
-    create 0640 nginx adm
-    sharedscripts
-    postrotate
-        if [ -f /run/nginx.pid ]; then
-            kill -USR1 "$(cat /run/nginx.pid)"
-        fi
-    endscript
-}
-`;
 }

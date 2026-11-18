@@ -37,11 +37,11 @@
     "oldValueDatatype": "boolean"
   },
   "savedPassword": {
-    "description": "The x1-validator-services password, saved encrypted by systemd-creds, so the tool can read the api keys' records unattended.",
+    "description": "The x1-validator-services password, saved encrypted by systemd-creds, so that features to come can read the api keys' records unattended.",
     "oldValueDatatype": "boolean"
   },
   "nginxFileFolder": {
-    "description": "A folder apply made to hold one of nginx's files, or to hold nginx's log folder.",
+    "description": "A folder apply made to hold one of nginx's files, or a folder above it.",
     "oldValueDatatype": "boolean"
   },
   "hashedApiKeysMapFile": {
@@ -58,14 +58,6 @@
   },
   "systemdDropInFile": {
     "description": "The drop-in, which has systemd's nginx.service start nginx with the tool's configuration.",
-    "oldValueDatatype": "boolean"
-  },
-  "logrotateRuleFile": {
-    "description": "logrotate's rule for nginx's logs.",
-    "oldValueDatatype": "boolean"
-  },
-  "nginxLogFolder": {
-    "description": "nginx's log folder, which only root and nginx can open.",
     "oldValueDatatype": "boolean"
   },
   "acmeStateFolder": {

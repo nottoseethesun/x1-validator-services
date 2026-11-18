@@ -26,6 +26,7 @@ import {
   NGINX_APT_PIN_PATH,
   NGINX_APT_SOURCE_PATH,
   NGINX_KEYRING_PATH,
+  NGINX_LOG_DIR,
 } from "../x1-validator-private-rpc/src/lib/nginx-org.js";
 import { runCaptured, runInherited } from "./_tools.js";
 
@@ -214,8 +215,8 @@ export function mustPass(status, what) {
 
 /**
  * Lists every path a run of the tool might create: each absolute path in
- * its settings, nginx.org's repository files, the paths given, and every
- * folder above them.
+ * its settings, nginx.org's repository files, nginx's log folder, the
+ * paths given, and every folder above them.
  * @param {object} settings  The settings the tool loads in the container.
  * @param {string[]} [more]  More paths, such as ones in the user's home.
  * @returns {string[]}
@@ -228,6 +229,7 @@ export function pathsTheToolMightCreate(settings, more = []) {
     NGINX_KEYRING_PATH,
     NGINX_APT_SOURCE_PATH,
     NGINX_APT_PIN_PATH,
+    NGINX_LOG_DIR,
     ...more,
   ];
   const paths = new Set();

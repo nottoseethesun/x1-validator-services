@@ -41,15 +41,15 @@ Other references:
 
 - **The flag**: `--private-rpc`, in the validator's command in `x1console`'s start script.
 - **Private rpc on or off**: the operator's choice, kept in the tool's state, of whether `ensure` keeps the flag in the start script. `apply`'s flag stage and `turn-on-private-rpc` turn it on, and `turn-off-private-rpc` turns it off. Until one of them runs, it's unset, and `ensure` treats it as off.
-- **apply's record**: `app-data/what-apply-changed.json`. It holds every setting `apply` changed, with its old value, and every setting `apply` found already as it needed it. `undo-apply` puts back the old values.
+- **apply's record**: `app-data/what-apply-changed.json`. It holds every setting of the machine `apply` changed, such as whether a file is there, with its old value, and every one it found already as it needed it. `undo-apply` puts back the old values.
 - **apply's dictionary**: `app-config/app-defaults-for-user-configurable/apply-settings-dictionary.json`, which names every setting `apply` can change, with the description and type that each entry in apply's record copies.
-- **The tool's state**: `app-data/state.json`, what `apply` set `nginx` up with, whether private rpc is on, and whether a saved password is stale.
+- **The tool's state**: `app-data/state.json`, what `apply` set `nginx` up with, whether private rpc is on, and whether a saved password is stale, left from an earlier api keys' file.
 - **A keyed request**: one whose path starts with an api key whose hash is in `nginx`'s list.
-- **The api keys' file**: `hashed-api-keys.json`, which the `hashedApiKeysPath` setting names. It holds each key's SHA-256 hash, readable, with the key's record, whose values the x1-validator-services password encrypts.
+- **The api keys' file**: `hashed-api-keys.json`, which the `hashedApiKeysPath` setting names. It holds each key's SHA-256 hash, unencrypted, with the key's record, whose values the x1-validator-services password encrypts.
 - **`nginx`'s list**: `hashed-api-keys.map`, which the `hashedApiKeysMapPath` setting names, with one `<hash> 1;` line per key. `nginx`'s map includes it.
 - **The key count check**: `ensure-there-is-at-least-one-rpc-api-key`, which a `cron` line of its own runs every `apiKeyCountCheckHours` hours.
 - **The gate page**: `nginx`'s local-only page, `/x1-rpc-gate`, which says `ok` to requests from the machine itself.
-- **The drop-in**: the `systemd` file that has `nginx`'s unit start `nginx` with the tool's configuration and its own read-only `/dev`.
+- **The drop-in**: the `systemd` file that has `nginx`'s unit start `nginx` with the tool's configuration and its own read-only `/dev`, after making `nginx`'s log folder when it's missing.
 - **The watchers**: the `cron` job that runs `ensure` every minute, and the tool's `git` hook in `x1console`'s checkout, which runs it after an update.
 
 ---
@@ -63,6 +63,8 @@ The tool's commands, and what each does for the operator, are in the README's [U
 ## Configuration
 
 Every setting, its meaning and its range is in the shipped schema, `app-config/app-defaults-for-user-configurable/private-rpc.schema.json`, beside the shipped values. How an operator overrides them is in [`app-config/user-configurable/README.md`](../app-config/user-configurable/README.md). Each command reads the settings once, when it starts, through `loadSettings` in `src/lib/settings.js`.
+
+Since json has no comments, a key that starts with `_` is a note, such as the warnings beside `hashedApiKeysPath` and `hashedApiKeysMapPath` in the shipped values. The schema allows notes, and `loadSettings` leaves them out.
 
 ---
 
@@ -106,12 +108,13 @@ The entry point, `src/cli.js`, hands the command line to the program that `src/c
 | `runRemoveApiKey` | `src/cli/remove-api-key.js` | Removes a pasted key's hash and record, and hands `nginx` the list. |
 | `runUrl` | `src/cli/key-commands.js` | Prints the url's two forms, and how many keys `nginx`'s list holds. |
 | `runEnsureApiKey` | `src/cli/ensure-there-is-at-least-one-rpc-api-key.js` | Counts `nginx`'s list, and alerts while it's empty. |
-| `newHashedApiKeys`, `openHashedApiKeys`, `addNewKey`, `handListToNginx`, `withApiKeysLock`, `askSudoFirst` | `src/cli/hashed-api-keys.js` | The api keys' file and its records' encryption. The writing of `nginx`'s list, and the reload that has `nginx` read it. The api keys' lock, and the `sudo` that the key commands and `undo-apply` get before their first change. |
+| `newHashedApiKeys`, `openHashedApiKeys`, `addNewKey`, `handListToNginx`, `withApiKeysLock`, `askSudoFirst` | `src/cli/hashed-api-keys.js` | The api keys' file and its records' encryption. The writing of `nginx`'s list, and the reload that has `nginx` read it, after making `nginx`'s log folder when it's missing. The api keys' lock, and the `sudo` that the key commands and `undo-apply` get before their first change. |
+| `withFolderLock` | `src/cli/folder-lock.js` | Runs a change while holding `flock`'s lock on a folder, and refuses when another command holds it. The start script's lock and the api keys' lock both use it. |
 | `hashApiKey`, `mapText`, `countMapLines` | `src/lib/key-hash-map.js` | A key's hash, and the form of `nginx`'s list, which the upgrade check shares. |
 | `waitForGate`, `requestPathProblems` | `src/cli/nginx-gate.js` | The checks of the request path from the server itself. |
 | `addPrivateRpc`, `removePrivateRpc` | `src/cli/start-script.js` | Edit the start script's text, refusing any layout they can't read. Pure. |
 | `renderNginxConfig` | `src/cli/render-nginx.js` | Writes `nginx`'s configuration. Pure. |
-| `renderDropIn`, `renderLogrotateRule`, `renderAptSource`, `renderAptPin` | `src/lib/render-host-files.js` | Write the other system files. Pure. |
+| `renderDropIn`, `renderAptSource`, `renderAptPin` | `src/lib/render-host-files.js` | Write the other system files. Pure. |
 | `renderGitHook`, `renderCronLine`, `renderKeyCountCronLine` | `src/cli/render-watchers.js` | Write the two watchers, and the key count check's `cron` line. Pure. |
 | `addNginxRepository`, `removeNginxRepository` | `src/lib/nginx-repo.js` | Add nginx.org's `apt` repository with only its two pinned keys trusted, and remove it again. |
 | `validateNginxUpgrade` | `util/validate-nginx-upgrade/steps.js` | The `nginx` upgrade check, the first install step. |
@@ -137,15 +140,21 @@ The entry point, `src/cli.js`, hands the command line to the program that `src/c
 1. **Preflight.** Reads the release, `systemd`'s version, the tools apply runs, `systemd`'s answer about a TPM2 chip, the rpc port from the start script, the public address and the dns resolver. Refuses, with every problem at once, when the machine isn't one the tool can set up. Changes nothing.
 2. **`nginx`.** Masks `nginx.service`, so the package's default site never runs. Adds nginx.org's repository, then installs `nginx` and its two modules.
 3. **Firewall.** Adds `ufw allow 443/tcp`, unless `ufw` holds a rule for that port already. That rule then stays as it is, whatever its comment, log setting or limit. A rule that closes `443/tcp` stops apply in its first stage. apply reads `ufw show added`, which lists `ufw`'s rules even while `ufw` is off.
-4. **The api keys and the password.** With no record in the api keys' file, it makes a key. First it asks for the password: the file's own, or a new one, typed twice, when there's no file yet. It adds the key's record, its values encrypted, and writes the file. Then it prints the key's two urls, the only time any command shows the key, so a run that stops later still showed it. Last it writes `nginx`'s list from the file's hashes, and reloads `nginx` when it runs. It records the list, and each folder the two writes make, before it writes. Then it explains `systemd`'s TPM2 answer, and asks whether to save the password. When it made a new file while a password is saved, it asks even so, since that one opens only the earlier file. A yes writes the new password over it, and a no removes it. With records there already, it writes `nginx`'s list only when the list differs from the file's hashes. It asks nothing, unless a saved password is marked stale, since a run stopped at the question that replaces it. Then it asks for the password, and the save question again.
-5. **`nginx`'s files and start.** Writes the key check, the configuration, the drop-in and the `logrotate` rule, refusing to write over a file apply didn't write. Makes `nginx`'s log folder. Starts `nginx` when it's stopped, reloads it when a file changed, and restarts it when the drop-in changed or it doesn't answer. Each comes after `nginx -t`, then `systemctl daemon-reload`, and after recording the unit's mask and enablement. When `nginx -t` refuses, the stage puts back every file it wrote as it was, removing any it made new, keeps what it wrote, and why `nginx` refused it, in `logs/error.log`, and stops. [Setting Up and Taking Down](architecture.md#setting-up-and-taking-down) says why. Waits for the gate page to say ok, which takes the certificate's arrival. Then it checks the whole request path from the server: the new key when stage 4 made one, a path without a key, and a random key. It runs the checks again until they pass, for up to `certificateWaitSeconds`, since a reload takes a moment. With nothing changed, `nginx` answering, and no new key, it leaves `nginx` as it is.
+4. **The api keys and the password.** What it does depends on whether the api keys' file holds a key yet. It records its writes the same way in both cases.
+   - **No key in the file.** It makes one. First it asks for the password: the file's own, or a new one, typed twice, when there's no file yet. It adds the key's record, its values encrypted, and writes the file. Then it prints the key's two urls, the only time any command shows the key, so a run that stops later still showed it. Next it writes `nginx`'s list from the file's hashes, and reloads `nginx` if it's running. Then it explains `systemd`'s TPM2 answer, and asks whether to save the password. It asks the save question even when a password is saved already, if that password is left from an earlier file, since the saved password can't open the new file. A yes writes the new password over it, and a no removes it.
+   - **Keys in the file already.** It writes `nginx`'s list, and reloads a running `nginx`, only when the list differs from the file's hashes, and asks nothing. The exception is a saved password marked stale in the tool's state, which means an earlier run stopped at the question that would replace it. Then it asks for the password, and the save question again.
+   - **What it records.** Before its writes, it records each folder they make, and the list.
+5. **`nginx`'s files and start.** Its work comes in three parts, in this order.
+   - **Files.** It writes the key check, the configuration and the drop-in, each only when it's missing or differs, refusing to write over a file apply didn't write. It makes `nginx`'s log folder again if it's gone, as nginx.org's package makes it, and doesn't record it, since purging the package removes it.
+   - **Test and start.** When it wrote a file, or `nginx` is stopped or doesn't answer, it has `nginx -t` test the configuration. When `nginx -t` refuses, the stage puts back every file it wrote as it was, removing any it made new. It keeps what it wrote, and why `nginx` refused it, in `logs/error.log`, and stops. [Setting Up and Taking Down](architecture.md#setting-up-and-taking-down) says why. Otherwise it runs `systemctl daemon-reload`, and unmasks and enables `nginx.service`, recording whether it was masked and enabled before. Then it starts `nginx` when it's stopped, restarts it when the drop-in changed or it doesn't answer, and otherwise reloads it.
+   - **Check.** Unless it left `nginx` as it was and stage 4 made no key, it waits for the gate page to say ok, which it can only once the certificate has arrived. Then it checks the whole request path from the server: the new key when stage 4 made one, a path without a key, and a random key. It runs the checks again until they pass, for up to `certificateWaitSeconds`, since a reload takes a moment.
 6. **The flag.** Adds `--private-rpc` to the start script, after a timestamped backup beside it, and turns private rpc on.
-7. **Watchers.** Writes the `git` hook, unless another program's hook is there. Asks, then adds the two `cron` lines, after making the two folders they need. When an earlier apply's hook or `cron` lines name an old path to Node.js or to the tool, or another number of hours, it replaces them without asking. Sends a test alert when `x1console`'s Telegram files are there.
+7. **Watchers.** Writes the `git` hook, unless another program's hook is there. Asks, then adds the two `cron` lines, after making the two folders they write in. Each line also makes its folders whenever they're missing. When the tool's `git` hook names an old path to Node.js or to the tool, it writes the hook again. It replaces any `cron` line an earlier `apply` installed that this version writes differently, without asking. Sends a test alert when `x1console`'s Telegram files are there.
 8. **Hand-over.** Says to restart the validator while the running one lacks the flag, which it reads from the validator's own command line, as `ensure` does. Then it prints the url, with the key masked when this run made it, or with `KEY` in its place.
 
 **A start of `nginx`**, by `systemd`: `nginx` starts with the tool's configuration, which includes its list of hashes. It needs nothing else.
 
-**`add-api-key`** checks its options and the room under `maxApiKeys`, then asks for the password and checks it against the file's `passwordCheck`. It asks for an email, again until the answer is an email address or empty. It makes the keys and adds their records. It gets `sudo`, then writes the file, prints each key's urls, and writes `nginx`'s list and reloads `nginx`.
+**`add-api-key`** checks its options and the room under `maxApiKeys`, then asks for the password and checks it against the file's `passwordCheck`. It asks for one email, for every key it makes, again until the answer is an email address or empty. It makes the keys and adds their records. It gets `sudo`, then writes the file, prints each key's urls, and writes `nginx`'s list and reloads `nginx`.
 
 **`remove-api-key`** asks for a key at a hidden prompt, checks its form, and hashes it. A hash that isn't in the file removes nothing, and the command exits 1. Removing the last key asks first. It gets `sudo`, then writes `nginx`'s list without the hash and reloads `nginx`, and last writes the file without the hash and its record. [The Keys' Path](architecture.md#the-keys-path) says why `sudo` comes first and the list before the file.
 
@@ -154,7 +163,7 @@ The entry point, `src/cli.js`, hands the command line to the program that `src/c
 **`ensure`**, one run:
 
 1. Reads the tool's state. Before apply has set `nginx` up, it stops there, with exit code 0.
-2. While private rpc is on, puts the flag back when it's missing. Every run but the `git` hook's, a run by hand included, first keeps clear of an `x1console` update. It leaves the script alone while `.git/index.lock` exists, or while the script changed less than `startScriptQuietSeconds` ago, and a later run puts the flag back. The `git` hook's run skips that check, since `git` has finished when it runs the hook. It holds the start script's lock from its read of the choice until it has put the flag back or left it. While another command holds that lock, the run changes nothing and exits 0.
+2. Takes the start script's lock, reads whether private rpc is on, and holds the lock until it has put the flag back or left it. While another command holds the lock, the run changes nothing and exits 0. While private rpc is on, it puts the flag back when it's missing. Every run but the `git` hook's, a run by hand included, first keeps clear of an `x1console` update. It leaves the script alone while `.git/index.lock` exists, or while the script changed less than `startScriptQuietSeconds` ago, and a later run puts the flag back. The `git` hook's run skips that check, since the merge is done when `git` runs the hook.
 3. Runs the checks. Unless private rpc is on, it drops the three that test the rpc is private.
 4. Decides the alerts, sends them with any still pending, and writes the new alert state.
 5. Checks in with Cronitor, when `.env` holds the check-in url.
@@ -162,13 +171,13 @@ The entry point, `src/cli.js`, hands the command line to the program that `src/c
 
 **`turn-off-private-rpc`** asks first, then takes the start script's lock, reads the state and the script again, turns private rpc off in the state, and takes the flag out of the script. When `ensure` or `undo-apply` holds the lock, it refuses and changes nothing. [Setting Up and Taking Down](architecture.md#setting-up-and-taking-down) says why. **`turn-on-private-rpc`** turns it on, and puts the flag back. It needs no lock, since it only adds the flag, as `ensure` does.
 
-**`undo-apply`** first asks one question, while the api keys' file is there: whether to delete every key, and the saved password with them when apply's record shows apply saved it. A yes gets `sudo` first, as the key commands do, then deletes the file. Then it walks apply's record newest first, and puts back the old value of each setting apply changed. A no keeps the saved password's entry, and the folders that hold it and the kept file, in the record. [apply's Record](#applys-record) says what else stays on record, and when the record goes.
+**`undo-apply`** first asks one question, while the api keys' file is there: whether to delete every key, and the saved password with them when apply's record shows apply saved it. A yes gets `sudo` first, as the key commands do, then deletes the file. Then it walks apply's record newest first, and puts back the old value of each setting apply changed. After a no, apply's record keeps its entries for the saved password, the folder that holds it, and the folder of the kept api keys' file, and `undo-apply` leaves all three in place. [apply's Record](#applys-record) says what else stays on record, and when the record goes.
 
 ---
 
 ## apply's Record
 
-`apply` records every setting it changes, the moment it changes it, in `app-data/what-apply-changed.json`. It also records every setting it finds already as it needs it. `undo-apply` puts back the old value of each setting `apply` changed, newest first, and leaves the rest as they are.
+`apply` records every setting it changes on the machine, the moment it changes it, in `app-data/what-apply-changed.json`. Such a setting is, for example, whether a file, folder, package, account, rule or line is there: a boolean. It also records every setting it finds already as it needs it. `undo-apply` puts back the old value of each setting `apply` changed, newest first, and leaves the rest as they are.
 
 ```json
 {
@@ -189,7 +198,7 @@ The entry point, `src/cli.js`, hands the command line to the program that `src/c
 }
 ```
 
-Each entry's name is a setting's name in apply's dictionary, `app-config/app-defaults-for-user-configurable/apply-settings-dictionary.json`. A setting that applies to one file, folder, package, rule or `crontab` line adds `:` and that target, since the settings may have moved it by the time `undo-apply` runs. Each entry holds:
+Each entry's name is a setting's name in apply's dictionary, `app-config/app-defaults-for-user-configurable/apply-settings-dictionary.json`. A setting that applies to one file, folder, package, rule or `crontab` line adds `:` and that target, since the operator may have moved that target in the tool's settings by the time `undo-apply` runs. Each entry holds:
 
 - `description`: what the setting is, copied from the dictionary.
 - `applyChangedThisFromItsPreviousValue`: whether `apply` changed it, or found it as it needed it and left it.
@@ -197,7 +206,7 @@ Each entry's name is a setting's name in apply's dictionary, `app-config/app-def
 - `oldValue`: its value before `apply`, as text.
 - `oldValueDatatype`: how to read the old value, `string`, `integer` or `boolean`, copied from the dictionary.
 
-Whether a file, folder, package, account, rule or line is there is a boolean setting. Today every old value is a boolean: each change `apply` makes adds or removes one thing, or switches one on or off.
+Today every old value is a boolean: each change `apply` makes adds or removes one thing, or switches one on or off.
 
 A setting is recorded the moment `apply` changes it, so a stage that fails part way still leaves an exact record. The `nginx` stage records each change just before `apt` makes it, since a run can die during `apt`'s long install. A later `apply` never writes over an entry that says changed, so the old value stays the one from before the first `apply`. An entry that says found is replaced only when `apply` later changes that setting. It then moves to the end, so the record lists changes in the order they were made.
 
@@ -206,17 +215,16 @@ A setting is recorded the moment `apply` changes it, so a stage that fails part 
 | `nginxServiceMasked` | — | stages 2 and 5 | Unmasks `nginx.service`, once `nginx` is gone. Masks it, when it was masked before `apply` |
 | `nginxAptKeyring`, `nginxAptSource`, `nginxAptPin` | the file | stage 2 | Removes the file. After the source, refreshes `apt`'s lists |
 | `nginxAccount` | — | stage 2 | Removes the `nginx` account, once `nginx` is gone. It's recorded before the packages, so it goes after them |
-| `nginxPackage` | the package | stage 2 | Purges the package, when it's installed |
+| `nginxPackage` | the package | stage 2 | Purges the package, when it's installed. When `nginx` isn't, as after `apt remove` by hand, says that `sudo apt purge nginx` would delete what it may have left |
 | `firewallRule` | `443/tcp` | stage 3 | Runs `ufw delete allow 443/tcp` |
 | `hashedApiKeysFolder` | the folder | stage 4 | Removes the folder once it's empty |
 | `savedPasswordFolder` | the folder | stage 4 | Removes the folder once it's empty |
 | `savedPassword` | the file | stage 4 | Deletes the saved password, unless the answer to the one question kept the keys |
 | `nginxFileFolder` | the folder | stages 4 and 5 | Removes the folder once it's empty |
 | `hashedApiKeysMapFile` | the file | stage 4 | Removes `nginx`'s list, whatever the answer to the one question, since `apply` writes it again from the api keys' file |
-| `njsModuleFile`, `nginxConfigFile`, `systemdDropInFile`, `logrotateRuleFile` | the file | stage 5 | Removes the file. After the drop-in, reloads `systemd` |
-| `nginxLogFolder` | the folder | stage 5 | Removes the folder whole, while `nginxLogDir` still names it |
+| `njsModuleFile`, `nginxConfigFile`, `systemdDropInFile` | the file | stage 5 | Removes the file. After the drop-in, reloads `systemd` |
 | `acmeStateFolder`, `acmeStagingStateFolder` | the folder | stage 5 | Nothing: `nginx -t` makes the folder before `apply` looks, so it's recorded as found. Purging `nginx` removes it at the shipped paths |
-| `nginxServiceEnabled` | — | stage 5 | Stops and disables `nginx`, and masks it until it's gone |
+| `nginxServiceEnabled` | — | stage 5 | When `nginx` is installed, stops and disables it, and masks it until it's gone |
 | `startScriptBackup` | the copy | stage 6 | Removes the copy |
 | `privateRpcFlag` | the start script | stage 6 | Takes the flag out, holding the start script's lock |
 | `gitHook` | the hook | stage 7 | Removes the hook while it's still the tool's |
@@ -225,7 +233,7 @@ A setting is recorded the moment `apply` changes it, so a stage that fails part 
 
 The api keys themselves aren't in the record, since `add-api-key` and `remove-api-key` change them between runs of `apply`. `undo-apply`'s one question decides them, as the [Sequence View](#sequence-view) says.
 
-A step that fails, or that the operator declines, stays in the record, and running `undo-apply` again retries it. A folder stays in the record too while such a change sits inside it, or while the api keys' file the operator kept does. Once nothing is left, `undo-apply` removes `app-data/`, with the record in it.
+A step that fails stays in the record, and so does the saved password's step after a no to the one question. Running `undo-apply` again retries them. A folder also stays in the record while something inside it stays: such a step's target, or the api keys' file the operator kept. Once nothing is left, `undo-apply` removes `app-data/`, with the record in it.
 
 A folder removed whole goes only while the current settings still put it there, so a damaged record can never aim a removal elsewhere. The mask comes off last, and only once `nginx` is gone, so the package's default site never runs. `apply` makes the saved password's folder only when it's missing, so a folder that was there keeps its own mode.
 
@@ -259,8 +267,7 @@ Paths that a setting names are given by the setting's name. Its value is in the 
 | The key check | `njsModulePath` | `apply`, from `src/njs/` | `nginx` |
 | `nginx`'s list of the keys' hashes | `hashedApiKeysMapPath` | `apply`, `add-api-key`, `remove-api-key` | `nginx`, at each start and reload, `apply`, to compare it with the api keys' file, `url` and the key count check |
 | The drop-in | `systemdDropInPath` | `apply` | `systemd` |
-| The `logrotate` rule | `logrotateRulePath` | `apply` | `logrotate` |
-| `nginx`'s logs, in a folder `apply` makes that only root and `nginx` can open | `nginxLogDir` | `nginx` | the operator, through `sudo` |
+| `nginx`'s logs, `access.log` and `error.log`, in nginx.org's folder for them, which `apply`, the drop-in and the key commands make again when it's missing | `/var/log/nginx` | `nginx` | the operator, through `sudo` or the `adm` group |
 | The certificates | `acmeStatePath`, and `acmeStagingStatePath` after `--acme-staging` | `nginx`'s ACME module | `nginx` |
 | The saved password | `passwordCredentialPath` | `apply`, when asked | nothing yet: it's there for reading the records unattended, for the rotation notices and billing to come |
 | The api keys' file | `hashedApiKeysPath` | `apply`, `add-api-key`, `remove-api-key` | `apply`, `add-api-key`, `remove-api-key` |
@@ -320,7 +327,7 @@ The tool works through the system programs and files below, on the validator. Th
 | --- | --- |
 | Node.js | `x1console`'s Node.js 20.0.0 runs `apply`. `apply` names that Node.js in the `cron` lines and the `git` hook, so it also runs their `ensure` and key count check. |
 | `nginx`, with its njs and ACME modules | Serves the keyed url. Its njs module hashes each request's key, under QuickJS, and its map looks the hash up in `nginx`'s list. Its ACME module gets and renews the certificate from Let's Encrypt. `apply` installs `nginx` from nginx.org, and has `nginx -t` test the configuration before stage five starts, restarts or reloads `nginx`. |
-| `systemd` | Runs `nginx` as `nginx.service`, with a drop-in that starts it with the tool's configuration and its own read-only `/dev`. `systemctl` masks and unmasks, enables, starts, reloads, restarts, stops and disables `nginx`, reloads `systemd` after the drop-in changes, and reads `nginx`'s state. |
+| `systemd` | Runs `nginx` as `nginx.service`, with a drop-in that starts it with the tool's configuration and its own read-only `/dev`, after making its log folder when it's missing. `systemctl` masks and unmasks, enables, starts, reloads, restarts, stops and disables `nginx`, reloads `systemd` after the drop-in changes, and reads `nginx`'s state. |
 | `systemd`'s encrypted credentials | `systemd-creds` saves the password, tied to the machine's TPM2 chip when there is one, and `systemd-analyze` or `systemd-creds` says whether there is. |
 | `/etc/resolv.conf` | Names the system's dns resolver, which on Ubuntu is `systemd-resolved`, at 127.0.0.53. `nginx` asks it for Let's Encrypt's address. |
 | `apt` and `dpkg` | `apt` refreshes its package lists, installs `nginx` and its two modules from nginx.org's repository, and purges them for `undo-apply`. The upgrade check installs nginx.org's previous release of them, then upgrades it. `dpkg` unpacks each package, and `dpkg-query` says which version is installed. |
@@ -328,7 +335,7 @@ The tool works through the system programs and files below, on the validator. Th
 | `ufw` | Opens tcp port 443, lists its rules, even while `ufw` is off, and deletes the rule for `undo-apply`. |
 | `gpg` | Checks that nginx.org's key file holds the two keys the tool pins, and puts only those into the keyring `apt` trusts. `gpgconf` stops `gpg`'s helpers afterwards. |
 | `cron` and `flock` | `cron` runs `ensure` every minute, and the key count check every `apiKeyCountCheckHours` hours, from the lines `apply` adds with `crontab`. `flock` skips a run of `ensure` while the last one is still going. It also takes the api keys' lock, on the folder of their file, and the command holds it while it changes the keys. And it takes the start script's lock, on the folder of the tool's state, for `ensure`, `turn-off-private-rpc` and `undo-apply`'s step that takes the flag out. |
-| `logrotate` | Rotates `nginx`'s logs every day, then has `nginx` reopen them. |
+| `logrotate` | nginx.org's rule for it rotates `nginx`'s logs every day, keeps 52 days of them, and has `nginx` reopen them. The tool adds no rule of its own. |
 | `ss` | Finds what listens on a port, and so finds the validator by its rpc port. |
 | `/proc` | Holds the running validator's command line. [Files the Tool Reads and Writes](#files-the-tool-reads-and-writes) says who reads it. |
 | `git` | Runs the tool's hook in `x1console`'s checkout, after Update X1 Console pulls new commits. |
@@ -346,6 +353,8 @@ The tool meets `x1console` in three places, all in `x1console`'s checkout, which
 ### The Start Script
 
 `x1console` starts the validator, and restarts it, through `start_validator.sh`, which the `startScriptFile` setting names. It holds one long `tachyon-validator` command, one flag per line.
+
+`x1console` also ships `exstart_validator.sh`, an older start script aimed at X1's testnet. Nothing in `x1console` runs it: every start and restart, Autopilot's included, goes through `start_validator.sh`. So the tool leaves it alone. A validator started from it by hand would have a public rpc, and `ensure` would send its alert that the rpc is public within a minute.
 
 - `apply` adds one word, `--private-rpc`, to the line that sets the rpc port, such as `--rpc-port 8899 \`. It first makes a timestamped backup beside the script. The validator takes the flag at its next start.
 - The tool refuses three layouts rather than guess at them: no line that runs `tachyon-validator`, an rpc bound to an address other than 127.0.0.1, or a port line that isn't there exactly once.
@@ -408,7 +417,7 @@ The process on the rpc port is found by that port, never by a name pattern, whic
 - A `map` looks `keyHash`'s answer up in `nginx`'s list, which it includes. `map_hash_bucket_size` and `map_hash_max_size` are set as `src/lib/key-hash-map.js` says, so the table builds at once for every key the tool allows, as [Technology Choices](architecture.md#technology-choices) measures. A request whose hash isn't in the list gets 403.
 - `limit_req` gives every keyed request one shared budget: `rateLimitRequestsPerSecond` a second, plus a burst of as many more at once. A request without a listed key never reaches it, since it gets its 403 first, in `nginx`'s rewrite phase.
 - Keyed requests go to the rpc port on 127.0.0.1, or to the next port, the websocket's, when they ask for an upgrade.
-- The access log's format writes the url as `loggedUri` gives it: `<key>` in place of every run of hex digits at least half a key long, in either case, anywhere in the url. So a key in the query string, as some providers' urls carry it, after a prefix, sent twice, or mistyped never reaches the log. A `map` could replace only one run per url. The keyed location writes no error log, as [The Request Path](architecture.md#the-request-path) explains.
+- The access log's format writes the url as `loggedUri` gives it: `<key>` in place of every run of hex digits at least half a key long, in either case, anywhere in the url. So no key reaches the log: not one in the query string, as some providers' urls carry it, nor one after a prefix, sent twice, or mistyped. A `map` could replace only one run per url. The keyed location writes no error log, as [The Request Path](architecture.md#the-request-path) explains.
 - Request bodies of at most 10 KB, held in memory, and no response ever written to a temporary file.
 
 The key check, `src/njs/x1-validator-private-rpc.js`, hashes the key at the start of the request's path with njs's own `crypto` module. It does so when that's a key of the right form, followed by a slash or nothing, and gives '' otherwise. Because `nginx` loads that file on its own, it keeps its own copy of the key's pattern. Its test holds the copy to `src/lib/api-key.js`, and its hash to `src/lib/key-hash-map.js`'s.
@@ -417,9 +426,9 @@ The key check, `src/njs/x1-validator-private-rpc.js`, hashes the key at the star
 
 ## The `nginx` Upgrade Check
 
-`util/validate-nginx-upgrade/index.js` is the first install step. It proves, on the validator itself, that an `apt` upgrade of `nginx` keeps the gated rpc working. The package's binary upgrade must hand over from the old `nginx` process to the new one, with `systemd` following. The new process must still check keys against the list.
+`util/validate-nginx-upgrade/index.js` is the first install step. It proves, on the validator itself, that an `apt` upgrade of `nginx` keeps the keyed url working. The package's binary upgrade must hand over from the old `nginx` process to the new one, with `systemd` following. The new process must still check keys against the list.
 
-It installs nginx.org's previous release. It starts it the way `apply` will, through the same drop-in. First `nginx -t` tests the check's own short-lived configuration, so a mistake there shows `nginx`'s own reason. That configuration listens on 127.0.0.1 alone, and checks keys as the real one does. It runs the key check under QuickJS, with a map sized as the real one is. The map includes a list holding a throwaway key's hash. It answers a listed key with ok, in place of the rpc. Then it upgrades with `apt`. Before the upgrade and after it, the gate page must say ok, a request with the throwaway key must get 200, and one with a random key 403. It also checks that `systemd` followed the new main process without restarting it, and that the old process exited. The throwaway key exists only in the check's memory.
+It installs nginx.org's previous release, and a short-lived configuration of its own. That configuration listens on 127.0.0.1 alone, and checks keys as the real one does: the key check runs under QuickJS, with a map sized as the real one is, whose list holds a throwaway key's hash. In place of the rpc, it answers a listed key with ok. The check has `nginx -t` test it, so a mistake there shows `nginx`'s own reason. Then it starts `nginx` the way `apply` will, through the same drop-in, and upgrades it with `apt`. Before the upgrade and after it, the gate page must say ok, a request with the throwaway key must get 200, and one with a random key 403. It also checks that `systemd` followed the new main process without restarting it, and that the old process exited. The throwaway key exists only in the check's memory.
 
 Every change it makes is pushed onto an undo list, with the command that undoes it by hand. The undo list runs newest first, even after a failure or a Ctrl-C, and prints the by-hand command of any undo step that fails. `judge.js` holds its decisions, as pure functions, and `terminal.js` its output and its spinner.
 

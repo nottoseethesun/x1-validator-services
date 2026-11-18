@@ -20,18 +20,18 @@
  *
  * It checks the outcome after each step: the first key apply shows, its
  * working request path, the saved password, the firewall rule, logs that
- * hold no key and that the validator's account can't read, and nginx's
- * own read-only /dev, with the key still working once nginx reopens its
- * logs. Then
- * ensure: its failure while the rpc is public, every one of its verdicts
- * after the validator's restart, the flag put back after `git stash`,
- * and its silence about a public rpc while private rpc is off. Then
- * every key working after a restart of nginx, two keys added with an
- * email and one of them removed, the flag back once private rpc is on,
- * and a later apply that asks nothing. undo-apply answered no keeps the
- * keys and the saved password, and the next apply hands nginx the same
- * keys. After the last undo-apply, answered yes, the container must be
- * as apply found it.
+ * hold no key and keep the mode nginx.org's package gives them, and
+ * nginx's own read-only /dev, with the key still working once nginx
+ * reopens its logs. Then ensure: its failure while the rpc is public, every one of
+ * its verdicts after the validator's restart, the flag put back by the
+ * tool's git hook when `git stash` and a `git pull` that brings a commit
+ * play an Update X1 Console, and its silence about a public rpc while
+ * private rpc is off. Then every key working after a restart of nginx,
+ * two keys added with an email and one of them removed, the flag back
+ * once private rpc is on, and a later apply that asks nothing. undo-apply
+ * answered no keeps the keys and the saved password, and the next apply
+ * hands nginx the same keys. After the last undo-apply, answered yes, the
+ * container must be as apply found it.
  *
  * Last, a firewall rule for port 443 with a comment, added before apply
  * while ufw is off, as in a fresh container. An apply stopped after its
@@ -66,7 +66,11 @@ import {
   checkSavedPassword,
   keysIn,
 } from "./_lxd-api-key-checks.js";
-import { checkLogs, checkOwnDev } from "./_lxd-nginx-checks.js";
+import {
+  checkLogFolderComesBack,
+  checkLogs,
+  checkOwnDev,
+} from "./_lxd-nginx-checks.js";
 import {
   AFFIRM_DISCLAIMER,
   answerInTerminal,
@@ -96,6 +100,10 @@ const STANDIN = `${GUEST_PROJECT}/x1-validator-private-rpc/test/helpers/rpc-stan
 /** One of Autopilot's jobs, from the project's root, which must stay. */
 const CRONTAB_FIXTURE = "x1-validator-private-rpc/test/fixtures/crontab";
 const FLAG_LINE = "--rpc-port 8899 --private-rpc \\";
+/** The stand-in for x1console's repository on GitHub. */
+const X1CONSOLE_ORIGIN = `${GUEST_HOME}/x1console-origin`;
+const COMMIT =
+  "git -c user.name=test -c user.email=test@example.invalid commit -q";
 
 /** Installs Pebble, trusts its certificate authorities, and starts it. */
 const PEBBLE_SETUP = `set -e
@@ -146,11 +154,13 @@ function guestCli() {
 
 /**
  * Writes the script that makes the stand-in x1console checkout, as the
- * container's user, where the settings say x1console and its start
- * script are. The script is committed executable, as x1console's is, so
- * the last check's `git status` sees a command that drops the mode after
- * the test's `git stash`, which puts the committed mode back. apply's own
- * edit comes before that, so its unit test covers it.
+ * container's user: a stand-in for x1console's repository, cloned where
+ * the settings say x1console and its start script are, so the checkout
+ * pulls from it as x1console's pulls from GitHub. The script is committed
+ * executable, as x1console's is, so the last check's `git status` sees a
+ * command that drops the mode after the test's `git stash`, which puts
+ * the committed mode back. apply's own edit comes before that, so its
+ * unit test covers it.
  * The user's crontab gets one of Autopilot's jobs, which the last check
  * looks for. In the container it only fails, since the stand-in has no
  * `autopilot.sh`.
@@ -161,14 +171,37 @@ function x1consoleSetup(settings) {
   const folder = homePath(settings.x1consoleDir, GUEST_HOME);
   const script = settings.startScriptFile;
   return `set -e
-mkdir -p ${folder}
-cp ${GUEST_PROJECT}/x1-validator-private-rpc/test/fixtures/start_validator.sh ${folder}/${script}
-chmod 755 ${folder}/${script}
+mkdir -p ${X1CONSOLE_ORIGIN}
+cp ${GUEST_PROJECT}/x1-validator-private-rpc/test/fixtures/start_validator.sh ${X1CONSOLE_ORIGIN}/${script}
+chmod 755 ${X1CONSOLE_ORIGIN}/${script}
 crontab ${GUEST_PROJECT}/${CRONTAB_FIXTURE}
-cd ${folder}
+cd ${X1CONSOLE_ORIGIN}
 git init -q
 git add ${script}
-git diff --cached --quiet || git -c user.name=test -c user.email=test@example.invalid commit -qm "the x1console stand-in"
+git diff --cached --quiet || ${COMMIT} -m "the x1console stand-in"
+[ -d ${folder}/.git ] || git clone -q ${X1CONSOLE_ORIGIN} ${folder}
+`;
+}
+
+/**
+ * Writes the script that plays an Update X1 Console that brings a new
+ * commit, as the container's user: the stand-in repository gains one,
+ * then the checkout runs `git stash`, then `git pull`, as x1console
+ * does. git runs the tool's hook only after a pull that brings new
+ * commits.
+ * @param {object} settings  The settings the tool loads in the container.
+ * @returns {string}
+ */
+function x1consoleUpdate(settings) {
+  const folder = homePath(settings.x1consoleDir, GUEST_HOME);
+  return `set -e
+cd ${X1CONSOLE_ORIGIN}
+echo "an update" > update.txt
+git add update.txt
+${COMMIT} -m "an update"
+cd ${folder}
+git stash -q
+git pull -q
 `;
 }
 
@@ -567,7 +600,7 @@ export async function runApplyPhase(name, settingsOf) {
     `nginx forwards a burst of ${limit} keyed requests, and answers more with 429 (${burst.forwarded} and ${burst.limited})`,
     burst.forwarded >= limit && burst.limited > 0,
   );
-  checkLogs(guest, key, settings);
+  checkLogs(guest, key);
   checkOwnDev(guest, key);
   const beforeRestart = tool(name, ["ensure"]);
   expect(
@@ -578,14 +611,15 @@ export async function runApplyPhase(name, settingsOf) {
   startRpc(name, address, true);
   const allOk = everyCheckOk(name);
   expect(failures, "ensure finds every check ok after the restart", allOk);
-  const x1consoleDir = homePath(settings.x1consoleDir, GUEST_HOME);
-  const stashed = asUser(name, ["git", "-C", x1consoleDir, "stash", "-q"]);
-  mustPass(stashed, "Stashing the start script, as an x1console update does");
-  tool(name, ["ensure", "--quiet", "--from-git-hook"]);
+  // The hook's ensure gets the pull's environment, and so trusts Pebble.
+  const updated = asUser(name, ["sh", "-c", x1consoleUpdate(settings)], {
+    NODE_EXTRA_CA_CERTS: NODE_CA,
+  });
+  mustPass(updated, "Updating x1console's checkout, as Update X1 Console does");
   const restored = readScript(name, settings);
   expect(
     failures,
-    "ensure put --private-rpc back after the stash",
+    "the tool's git hook put --private-rpc back before an update's git pull returned",
     restored.includes(FLAG_LINE),
   );
   const restarted = asRoot(name, ["systemctl", "restart", NGINX_UNIT]);
@@ -597,6 +631,7 @@ export async function runApplyPhase(name, settingsOf) {
     "after a restart of nginx, the key works, with no password",
     stillWorks,
   );
+  checkLogFolderComesBack(guest, key);
   const third = await checkAddAndRemove(guest, key);
   const turnedOff = await withAnswers(
     name,

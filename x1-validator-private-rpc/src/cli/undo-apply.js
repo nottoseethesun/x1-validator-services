@@ -9,8 +9,8 @@
  * - the cron lines and the tool's folders
  * - the git hook
  * - the start script's flag and backups
- * - nginx's service, files, logs and certificates, the list of the api
- *   keys' hashes among the files
+ * - nginx's service, files and certificates, the list of the api keys'
+ *   hashes among the files
  * - the saved password, and the folders apply made for it and for the
  *   api keys' file
  * - the firewall rule
@@ -25,16 +25,16 @@
  * The api keys aren't in the record, since keys come and go through
  * add-api-key and remove-api-key. Before any step, undo-apply asks one
  * question about them: delete every key, or keep them all. When apply
- * saved the password, the question names it too, since the two go
- * together: a yes deletes both, and a no keeps both. A yes gets sudo
- * first, so a refused one changes nothing. Kept keys stay in
- * hashed-api-keys.json, and a later apply hands their hashes to nginx
- * again, so every client's url still works. After a yes, a later apply
- * makes a new first key, under a new password. nginx's list of hashes
- * goes either way, with nginx's other files. With --dry-run it prints
- * the question and each step, and changes nothing. While the api keys'
- * file is there, undo-apply holds the api keys' lock from its question to
- * its end, so no key command changes them meanwhile.
+ * saved the password, the question names it too, since the password
+ * opens nothing but the keys' records: a yes deletes both, and a no keeps
+ * both. A yes gets sudo first, so a refused one changes nothing. Kept
+ * keys stay in hashed-api-keys.json, and a later apply hands their hashes
+ * to nginx again, so every client's url still works. After a yes, a later
+ * apply makes a new first key, under a new password. nginx's list of
+ * hashes goes either way, with nginx's other files. With --dry-run it
+ * prints the question and each step, and changes nothing. While the api
+ * keys' file is there, undo-apply holds the api keys' lock from its
+ * question to its end, so no key command changes them meanwhile.
  *
  * It takes back only what apply did. The start script loses just the
  * word apply added, and never gets an old backup copied over a newer
@@ -60,7 +60,7 @@ import {
 } from "../lib/apt.js";
 import { mustSucceed } from "../lib/command-result.js";
 import { rootLooks } from "../lib/folders-to-make.js";
-import { NGINX_UNIT } from "../lib/nginx-org.js";
+import { NGINX_LOG_DIR, NGINX_UNIT } from "../lib/nginx-org.js";
 import { systemctl } from "../lib/systemd.js";
 import { hashedApiKeysPathOf } from "./feature-paths.js";
 import { askSudoFirst, withApiKeysLock } from "./hashed-api-keys.js";
@@ -195,6 +195,20 @@ async function removeRootFile(host, name, filePath) {
 }
 
 /**
+ * What undo-apply says when nginx is gone already at its purge step. A
+ * removal by hand with apt remove keeps nginx's configuration, its
+ * certificates and its logs, which only a purge deletes. undo-apply
+ * leaves that purge to the operator, since it deletes those folders
+ * whole, with anything else in them.
+ */
+export const NGINX_GONE_ALREADY =
+  "nginx isn't installed, so there's nothing to remove. If it was " +
+  "removed with apt remove, its configuration in /etc/nginx, its " +
+  `certificates in /var/cache/nginx and its logs in ${NGINX_LOG_DIR} may ` +
+  "still be there. sudo apt purge nginx deletes those folders, with " +
+  "anything else in them, if you want them gone.";
+
+/**
  * Purges one of nginx.org's packages, when it's installed. apply records
  * each package just before apt installs them, so a run that died part way
  * can leave one on record that apt never installed.
@@ -205,9 +219,28 @@ async function removeRootFile(host, name, filePath) {
 async function removePackage(host, name) {
   const version = installedVersion(host, name);
   if (version === undefined || version === null) {
-    return `${name} isn't installed, so there's nothing to remove.`;
+    return name === "nginx"
+      ? NGINX_GONE_ALREADY
+      : `${name} isn't installed, so there's nothing to remove.`;
   }
   await purgePackages(host, [name]);
+  return null;
+}
+
+/**
+ * Stops, disables and masks nginx.service, when nginx is installed. Once
+ * its package is gone, so is the unit, and systemctl refuses to disable
+ * a unit that isn't there.
+ * @param {object} host  The host.
+ * @returns {string|null} A note when nginx isn't installed.
+ */
+function stopNginx(host) {
+  const version = installedVersion(host, "nginx");
+  if (version === undefined || version === null) {
+    return "nginx isn't installed, so there's nothing to stop, disable or mask.";
+  }
+  systemctl(host, ["disable", "--now", NGINX_UNIT]);
+  systemctl(host, ["mask", NGINX_UNIT]);
   return null;
 }
 
@@ -316,20 +349,13 @@ function resetStep(context, key, entry) {
     }),
     nginxServiceEnabled: () => ({
       what: `stop, disable and mask ${NGINX_UNIT}`,
-      run: () => {
-        systemctl(host, ["disable", "--now", NGINX_UNIT]);
-        systemctl(host, ["mask", NGINX_UNIT]);
-      },
+      run: () => stopNginx(host),
     }),
     acmeStateFolder: certificates,
     acmeStagingStateFolder: certificates,
-    nginxLogFolder: rootTree(`remove nginx's log folder ${target}`, [
-      settings.nginxLogDir,
-    ]),
     njsModuleFile: rootFile,
     nginxConfigFile: rootFile,
     systemdDropInFile: rootFile,
-    logrotateRuleFile: rootFile,
     hashedApiKeysMapFile: rootFile,
     nginxFileFolder: rootFolder,
     // The question about the api keys, asked first, covers it.
@@ -415,7 +441,7 @@ async function runStep(run, step) {
     return "kept";
   }
   if (step.declined === true) {
-    log.info("undo-apply", `Kept, as asked: the change behind "${step.what}".`);
+    log.info("undo-apply", `Skipped, as asked: ${step.what}.`);
     return "kept";
   }
   try {
@@ -447,6 +473,11 @@ async function askAboutKeys(run, filePath, paired) {
   const question = paired === true ? KEYS_AND_PASSWORD_QUESTION : KEYS_QUESTION;
   if (options.dryRun === true) {
     log.info("undo-apply", `Would ask: ${question}`);
+    log.info(
+      "undo-apply",
+      `After a yes, it would first delete every api key, with ${filePath}. ` +
+        "The steps below assume that yes.",
+    );
     return false;
   }
   if (!(await prompts.ask(question))) {
@@ -485,7 +516,7 @@ async function runSteps(context, newestFirst, stays) {
     if (held === true) {
       context.log.info(
         "undo-apply",
-        `Kept, since ${holder} stays: the change behind "${step.what}".`,
+        `Skipped, since ${holder} stays: ${step.what}.`,
       );
     }
     const outcome = held === true ? "kept" : await runStep(context, step);
@@ -551,6 +582,11 @@ async function undoAll(run, filePath, fileThere) {
     state.setup = null;
     writeState(host, paths.statePath, state);
   }
+  log.info(
+    "undo-apply",
+    `The steps above that failed or were skipped stay in ${recordPath}. ` +
+      "Running undo-apply again retries them.",
+  );
   return failed === true ? 1 : 0;
 }
 

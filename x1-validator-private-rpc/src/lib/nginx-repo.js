@@ -2,11 +2,13 @@
  * @file x1-validator-private-rpc/src/lib/nginx-repo.js
  * @description
  * Adds nginx.org's apt repository the way nginx.org's instructions say,
- * with one difference: apt trusts only the two keys the tool pins, not
- * every key in nginx.org's key file. The tool downloads the key file,
- * requires both pinned fingerprints in it, and exports only those two
- * keys into the keyring apt reads. A change at nginx.org therefore stops
- * the tool with a message instead of being trusted.
+ * with two differences. Its files go where apt's manual prefers, in the
+ * format it prefers, as nginx-org.js says. And apt trusts only the two keys
+ * the tool pins, not every key in nginx.org's key file. The tool
+ * downloads the key file, requires both pinned fingerprints in it, and
+ * exports only those two keys into the keyring apt reads. A change at
+ * nginx.org therefore stops the tool with a message instead of being
+ * trusted.
  *
  * Files that already exist are left as they are. So is an entry for
  * nginx.org's repository that the machine already has in another file,

@@ -2,9 +2,10 @@
  * @file x1-validator-private-rpc/src/cli/apply-nginx.js
  * @description
  * apply's fifth stage: nginx's own files, then nginx itself. It writes
- * the key check, the configuration, the systemd drop-in and the
- * logrotate rule, each only when it's missing or differs, and refuses to
- * write over a file apply didn't write. Then it has nginx test the
+ * the key check, the configuration and the systemd drop-in, each only
+ * when it's missing or differs, and refuses to write over a file apply
+ * didn't write. It makes nginx's log folder again if it's gone, since
+ * nginx can open no log without it. Then it has nginx test the
  * configuration, which also fails when the public address isn't on the
  * machine, or when the fourth stage's list of the api keys' hashes is
  * missing. Only then does it reload systemd.
@@ -36,9 +37,14 @@
 
 import path from "node:path";
 import { foldersToMake, rootLooks } from "../lib/folders-to-make.js";
-import { NGINX_UNIT } from "../lib/nginx-org.js";
+import { GATE_PAGE_NAME } from "../lib/gate-page.js";
+import {
+  NGINX_LOG_DIR,
+  NGINX_LOG_DIR_MODE,
+  NGINX_UNIT,
+} from "../lib/nginx-org.js";
 import { pollUntil } from "../lib/poll.js";
-import { renderDropIn, renderLogrotateRule } from "../lib/render-host-files.js";
+import { renderDropIn } from "../lib/render-host-files.js";
 import { systemctl, unitActiveState, unitFileState } from "../lib/systemd.js";
 import { checkedKey } from "./apply-key.js";
 import {
@@ -90,12 +96,6 @@ function nginxFiles(context) {
       text: renderDropIn({ nginxConfigPath: settings.nginxConfigPath }),
       mode: "0644",
     },
-    {
-      name: "logrotateRuleFile",
-      path: settings.logrotateRulePath,
-      text: renderLogrotateRule(settings),
-      mode: "0644",
-    },
   ];
 }
 
@@ -134,29 +134,21 @@ async function writeFile(context, file) {
 }
 
 /**
- * Makes nginx's log folder when it's missing, open to root and nginx's
- * group alone. So no other account can read a log, whatever the log
- * file's own mode, while nginx's workers can still reopen their logs
- * there after each rotation. It records the folder, and each parent
- * folder its making creates. undo-apply removes the folder whole, logs
- * and all, and each parent once it's empty.
+ * Makes nginx's log folder again when it's gone, as nginx.org's package
+ * makes it, since `nginx -t` can't open the logs without it. The folder
+ * is the package's, which purging the package removes, so apply doesn't
+ * record it.
  * @param {object} context  The run.
  * @returns {Promise<void>}
  */
 async function makeLogFolder(context) {
-  const { host, record, change, settings } = context;
-  const folder = settings.nginxLogDir;
-  const key = `nginxLogFolder:${folder}`;
-  if (host.exists(folder)) {
-    record(found(key));
+  const { host, change } = context;
+  if (host.exists(NGINX_LOG_DIR)) {
     return;
   }
-  await change("nginx", `make ${folder}`, () => {
-    const parents = foldersToMake(host, path.dirname(folder));
-    recordFoldersMade(record, "nginxFileFolder", parents);
-    host.makeRootDir(folder, "0750", "nginx");
-    record(made(key));
-  });
+  await change("nginx", `make ${NGINX_LOG_DIR}`, () =>
+    host.makeRootDir(NGINX_LOG_DIR, NGINX_LOG_DIR_MODE),
+  );
 }
 
 /**
@@ -380,7 +372,7 @@ export async function configureNginx(context) {
   }
   const what =
     how === ""
-      ? "check the request path with the new api key"
+      ? "check, with the new api key, that nginx lets it through and refuses requests without a key or with a random one"
       : `test the configuration, then ${how} nginx`;
   await change("nginx", what, async () => {
     if (how !== "") {
@@ -390,7 +382,9 @@ export async function configureNginx(context) {
     const waitMs = settings.certificateWaitSeconds * 1000;
     const gate = await waitForGate(host, target, waitMs, settings.gatePollMs);
     if (gate !== "ok") {
-      throw new Error(`No certificate in time: the gate page says ${gate}.`);
+      throw new Error(
+        `No certificate in time: ${GATE_PAGE_NAME} says ${gate}.`,
+      );
     }
     /*-
      * A reload takes a moment, longer with many keys, while nginx still
@@ -410,6 +404,10 @@ export async function configureNginx(context) {
     if (problems.length > 0) {
       throw new Error(problems.join("\n"));
     }
-    log.info("nginx", "The request path checks out from the server.");
+    const keyed = key === "" ? "" : "the new api key got through, and ";
+    log.info(
+      "nginx",
+      `Test requests from this machine through nginx: ${keyed}requests without a key or with a random one got 403.`,
+    );
   });
 }

@@ -20,7 +20,6 @@ import {
   renderAptPin,
   renderAptSource,
   renderDropIn,
-  renderLogrotateRule,
 } from "../src/lib/render-host-files.js";
 import { listFilesUnder } from "../../scripts/_tools.js";
 import { copyShippedConfig } from "./helpers/config-copies.js";
@@ -67,7 +66,6 @@ function rendered() {
     }),
     "nginx/hashed-api-keys.map.example": mapText(["HASH"]),
     "systemd/x1-validator-private-rpc.conf.example": renderDropIn(settings),
-    "logrotate/x1-validator-private-rpc.example": renderLogrotateRule(settings),
     "apt/nginx.sources.example": renderAptSource("noble"),
     "apt/99nginx.example": renderAptPin(),
   };
@@ -81,12 +79,20 @@ test("each rendered example is what the tool writes for the placeholders", () =>
 
 test("the cron and hook examples run the real command", () => {
   const paths = featurePaths();
+  const tmp = shownPath("$HOME", paths.tmpDir);
+  const logs = shownPath("$HOME", paths.logsDir);
   const lock = shownPath("$HOME", paths.lockPath);
   const cli = shownPath("$HOME", paths.toolCli);
   const log = shownPath("$HOME", paths.ensureLogPath);
+  const mkdir = "mkdir -m 755";
   const cron = example("cron/x1-validator-private-rpc-ensure.cron.example");
   const line = cron.trimEnd().split("\n").at(-1);
-  assert.ok(line.startsWith(`* * * * * flock -n ${lock} $HOME/`), line);
+  assert.ok(
+    line.startsWith(
+      `* * * * * ${mkdir} ${tmp} ${logs} 2>/dev/null; flock -n ${lock} $HOME/`,
+    ),
+    line,
+  );
   assert.ok(
     line.endsWith(`/bin/node ${cli} ensure --quiet >> ${log} 2>&1`),
     line,
@@ -98,7 +104,12 @@ test("the cron and hook examples run the real command", () => {
     "cron/x1-validator-private-rpc-api-key-count.cron.example",
   );
   const countLine = count.trimEnd().split("\n").at(-1);
-  assert.ok(countLine.startsWith(`0 */${hours} * * * $HOME/`), countLine);
+  assert.ok(
+    countLine.startsWith(
+      `0 */${hours} * * * ${mkdir} ${logs} 2>/dev/null; $HOME/`,
+    ),
+    countLine,
+  );
   assert.ok(
     countLine.endsWith(
       `/bin/node ${cli} ensure-there-is-at-least-one-rpc-api-key --quiet >> ${log} 2>&1`,
@@ -120,7 +131,7 @@ test("the examples' README names every example", () => {
   const names = listFilesUnder(EXAMPLES, ".").filter(
     (name) => name !== "README.md",
   );
-  assert.equal(names.length, 9);
+  assert.equal(names.length, 8);
   for (const name of names) {
     assert.ok(readme.includes(`\`${name}\``), name);
   }

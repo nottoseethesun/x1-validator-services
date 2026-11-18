@@ -3,7 +3,8 @@
  * @description
  * Tests the shipped settings, before any other test runs: every shipped
  * value passes its schema, every setting has a type or range rule, and
- * the shipped file holds exactly the settings the schema requires. A
+ * the shipped file holds exactly the settings the schema requires,
+ * besides its notes, the keys that start with `_`. A
  * wrong shipped value would break whatever reads it. Run first, these
  * tests name the cause.
  */
@@ -63,10 +64,10 @@ test("every setting the schema accepts has a type or range rule", () => {
   }
 });
 
-test("the shipped file holds exactly the settings the schema requires", () => {
+test("the shipped file holds exactly the settings the schema requires, besides its notes", () => {
   const schema = shipped("private-rpc.schema.json");
   const names = Object.keys(shipped("private-rpc.json")).filter(
-    (name) => name !== "$schema",
+    (name) => name !== "$schema" && !name.startsWith("_"),
   );
   assert.deepEqual(names.sort(), [...schema.required].sort());
 });

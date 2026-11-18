@@ -4,8 +4,8 @@
  * The `remove-api-key` command: it asks for an api key at a prompt that
  * shows nothing of what's typed or pasted, hashes it, and removes that
  * hash and its record from hashed-api-keys.json. It asks no
- * x1-validator-services password, since the hashes are readable without
- * one. It holds the api keys' lock from its read of the file to its last
+ * x1-validator-services password, since the hashes are unencrypted. It
+ * holds the api keys' lock from its read of the file to its last
  * write, and gets sudo, which writing nginx's list needs, after its
  * questions and before its first write. It hands nginx the new list
  * first, so nginx refuses the key from then on, and writes the file last.
@@ -14,10 +14,11 @@
  * writes it from the file, and would hand the key back, so a failed
  * write of the file says to run remove-api-key again before any of them.
  *
- * A key that isn't there removes nothing, and the command exits 1, as it
- * does for a text without a key's form, which it never repeats, since it
- * may be a key typed wrong. Removing the last key asks first, since
- * nginx then refuses every request until add-api-key makes another.
+ * A key that isn't in the file removes nothing, and the command exits 1.
+ * So does a text without a key's form. The command never repeats such a
+ * text, since it may be a real key typed wrong. Removing the last key
+ * asks first, since nginx then refuses every request until add-api-key
+ * makes another.
  */
 
 import path from "node:path";

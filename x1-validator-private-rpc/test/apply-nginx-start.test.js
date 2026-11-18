@@ -6,9 +6,10 @@
  *
  * - a stopped nginx starts
  * - a running nginx reloads when a file of nginx's changed, so it keeps
- *   answering
+ *   answering, after apply makes nginx's log folder again if it's gone
  * - it restarts instead when the drop-in changed, since systemd reads a
- *   start's command only at a start, or when it doesn't answer
+ *   start's command only at a start, or when it doesn't answer. With
+ *   every setting changed, the drop-in it writes is the one they call for.
  * - an nginx that lets a path without a key, or a random key, through
  *   stops apply
  * - an `nginx -t` that refuses the configuration stops apply before
@@ -22,8 +23,15 @@ import { test } from "node:test";
 import { runApply } from "../src/cli/apply.js";
 import { featurePaths } from "../src/cli/feature-paths.js";
 import { GATE_PAGE_PATH } from "../src/lib/gate-page.js";
-import { NGINX_UNIT } from "../src/lib/nginx-org.js";
+import {
+  NGINX_LOG_DIR,
+  NGINX_LOG_DIR_MODE,
+  NGINX_UNIT,
+} from "../src/lib/nginx-org.js";
+import { renderDropIn } from "../src/lib/render-host-files.js";
 import { appliedValidator, commandRun } from "./helpers/applied-validator.js";
+import { shippedAndChangedSettings } from "./helpers/config-copies.js";
+import { HOSTNAME } from "./helpers/fake-x1-validator.js";
 import { scriptedPrompts } from "./helpers/scripted-prompts.js";
 
 /**
@@ -75,10 +83,35 @@ test("a running nginx reloads when a file of nginx's changed", async () => {
   assert.deepEqual(await applyAgain(host, settings), ["reload"]);
 });
 
-test("a running nginx restarts when the drop-in changed", async () => {
+test("with nginx's log folder gone, apply makes it again, as nginx.org's package makes it, before nginx -t opens the logs", async () => {
   const { host, settings } = await appliedValidator();
+  host.files.delete(NGINX_LOG_DIR);
+  const { njsModuleSource } = featurePaths();
+  host.files.set(njsModuleSource, "export default { changed: true };\n");
+  const before = host.calls.length;
+  assert.deepEqual(await applyAgain(host, settings), ["reload"]);
+  const calls = host.calls.slice(before);
+  const made = calls.findIndex(
+    (call) => call.kind === "makeRootDir" && call.path === NGINX_LOG_DIR,
+  );
+  const tested = calls.findIndex(
+    (call) => call.command === "nginx" && call.args[0] === "-t",
+  );
+  assert.ok(made >= 0 && made < tested, `made at ${made}, tested at ${tested}`);
+  assert.equal(calls[made].mode, NGINX_LOG_DIR_MODE);
+});
+
+test("a running nginx restarts when the drop-in changed, and with every setting changed gets the drop-in they call for", async () => {
+  const { changed } = shippedAndChangedSettings();
+  const { host, settings } = await appliedValidator({
+    settings: { ...changed, hostname: HOSTNAME },
+  });
   host.files.set(settings.systemdDropInPath, "[Service]\n# an older one\n");
   assert.deepEqual(await applyAgain(host, settings), ["restart"]);
+  assert.equal(
+    host.files.get(settings.systemdDropInPath),
+    renderDropIn(settings),
+  );
 });
 
 test("an nginx that lets a path without a key, or a random key, through stops apply", async () => {
@@ -115,7 +148,6 @@ test("an nginx -t that refuses the configuration stops apply before systemd read
     [settings.njsModulePath, "// an older key check\n"],
     [settings.nginxConfigPath, "# an older nginx.conf\n"],
     [settings.systemdDropInPath, "[Service]\n# an older drop-in\n"],
-    [settings.logrotateRulePath, "# an older logrotate rule\n"],
   ]);
   for (const [filePath, text] of older) {
     host.files.set(filePath, text);

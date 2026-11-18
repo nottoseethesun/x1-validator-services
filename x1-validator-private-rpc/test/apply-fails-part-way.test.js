@@ -17,7 +17,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { runApply } from "../src/cli/apply.js";
 import { featurePaths } from "../src/cli/feature-paths.js";
-import { runUndoApply } from "../src/cli/undo-apply.js";
+import { NGINX_GONE_ALREADY, runUndoApply } from "../src/cli/undo-apply.js";
 import { partsOf, readRecord } from "../src/cli/what-apply-changed.js";
 import { GATE_PAGE_PATH } from "../src/lib/gate-page.js";
 import { NGINX_APT_PIN_PATH } from "../src/lib/nginx-org.js";
@@ -120,7 +120,6 @@ test("on a first install, a configuration nginx -t refuses leaves none of the fi
         settings.njsModulePath,
         settings.nginxConfigPath,
         settings.systemdDropInPath,
-        settings.logrotateRulePath,
       ];
       for (const filePath of written) {
         assert.equal(host.files.has(filePath), false, filePath);
@@ -202,9 +201,7 @@ test("packages on record that apt never installed are skipped by undo-apply", as
   });
   const { lines } = await failThenUndo(validator, "Installing nginx");
   assert.ok(
-    lines.includes(
-      "[undo-apply] nginx isn't installed, so there's nothing to remove.",
-    ),
+    lines.includes(`[undo-apply] ${NGINX_GONE_ALREADY}`),
     lines.join("\n"),
   );
 });

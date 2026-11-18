@@ -2,9 +2,15 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "private-rpc.schema.json",
   "title": "x1-validator-private-rpc settings",
-  "description": "Every setting the tool reads. An override file may set any of them, and nothing else. hostname, publicIp and acmeEmail have no shipped value: the operator sets hostname before apply, and the other two only when wanted.",
+  "description": "Every setting the tool reads. An override file may set any of them, and nothing else but notes, keys that start with _. hostname, publicIp and acmeEmail have no shipped value: the operator sets hostname before apply, and the other two only when wanted.",
   "type": "object",
   "additionalProperties": false,
+  "patternProperties": {
+    "^_": {
+      "description": "A note, such as the warning beside a setting in the shipped file. The tool skips it.",
+      "type": "string"
+    }
+  },
   "required": [
     "x1consoleDir",
     "startScriptFile",
@@ -13,14 +19,11 @@
     "njsModulePath",
     "hashedApiKeysMapPath",
     "systemdDropInPath",
-    "logrotateRulePath",
     "passwordCredentialPath",
     "acmeDirectoryUrl",
     "acmeStatePath",
     "acmeStagingDirectoryUrl",
     "acmeStagingStatePath",
-    "nginxLogDir",
-    "logRetentionDays",
     "nginxWorkerPriority",
     "websocketIdleTimeoutSeconds",
     "certificateWaitSeconds",
@@ -88,10 +91,6 @@
       "description": "Where the tool writes the systemd drop-in that starts nginx with the tool's configuration.",
       "$ref": "#/$defs/systemPath"
     },
-    "logrotateRulePath": {
-      "description": "Where the tool writes the logrotate rule for nginx's logs.",
-      "$ref": "#/$defs/systemPath"
-    },
     "passwordCredentialPath": {
       "description": "Where systemd keeps the saved, encrypted password.",
       "$ref": "#/$defs/systemPath"
@@ -112,18 +111,8 @@
       "description": "Where nginx keeps its staging account and certificate.",
       "$ref": "#/$defs/systemPath"
     },
-    "nginxLogDir": {
-      "description": "Where nginx writes the private rpc's logs.",
-      "$ref": "#/$defs/systemPath"
-    },
-    "logRetentionDays": {
-      "description": "How many days of nginx's logs logrotate keeps.",
-      "type": "integer",
-      "minimum": 1,
-      "maximum": 365
-    },
     "nginxWorkerPriority": {
-      "description": "nginx's worker_priority: higher runs at a lower priority than the validator.",
+      "description": "nginx's worker_priority, a nice value: the higher it is, the lower the priority of nginx's workers beside the validator.",
       "type": "integer",
       "minimum": -20,
       "maximum": 20
@@ -135,7 +124,7 @@
       "maximum": 86400
     },
     "certificateWaitSeconds": {
-      "description": "How long apply waits for the first certificate, and then for the request path's checks to pass after a reload.",
+      "description": "How long apply waits for nginx's certificate, and then, after a reload, for its test requests through nginx to pass.",
       "type": "integer",
       "minimum": 10,
       "maximum": 3600
@@ -153,19 +142,19 @@
       "maximum": 168
     },
     "exposedReminderMinutes": {
-      "description": "How often ensure repeats the alert while the rpc is public.",
+      "description": "How often ensure repeats its alerts that the rpc is public, and that --private-rpc is missing from the start script and couldn't go back.",
       "type": "integer",
       "minimum": 1,
       "maximum": 1440
     },
     "rateLimitRequestsPerSecond": {
-      "description": "How many keyed requests a second nginx forwards to the rpc. It also lets a burst of as many more through at once, and answers the rest 429 Too Many Requests. The shipped value is half of the 40 requests a second that Moralis's entry plan, Starter, allows an api key.",
+      "description": "How many keyed requests a second nginx forwards to the rpc, all keys' together. It also lets a burst of as many more through at once, and answers the rest 429 Too Many Requests. The shipped value is half of the 40 requests a second that Moralis's entry plan, Starter, allows an api key.",
       "type": "integer",
       "minimum": 1,
       "maximum": 10000
     },
     "requestTimeoutSeconds": {
-      "description": "The time limit of each request the tool makes, and how long it waits for nginx to answer.",
+      "description": "The time limit of each request the tool makes. The nginx upgrade check also waits this long for nginx or systemd to change.",
       "type": "integer",
       "minimum": 1,
       "maximum": 120
@@ -177,7 +166,7 @@
       "maximum": 5
     },
     "gatePollMs": {
-      "description": "How long apply waits between two looks at nginx's gate page, while it waits for nginx to answer with its certificate, and between two rounds of the request path's checks after a reload.",
+      "description": "How long apply waits between two looks at /x1-rpc-gate, nginx's page for the tool's own checks, while it waits for nginx's certificate, and between two rounds of its test requests through nginx after a reload.",
       "type": "integer",
       "minimum": 100,
       "maximum": 10000

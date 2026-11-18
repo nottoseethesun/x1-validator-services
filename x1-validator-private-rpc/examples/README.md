@@ -1,6 +1,6 @@
 # Examples
 
-`apply` writes each of these files for you, with your own values. They're here to read. Each but the list of hashes opens with a short header that says what it is. The list has none, since `apply` writes it as hash lines alone. The commands below show where each one goes.
+`apply` writes each of these files for you, with your own values. They're here to read. Each but the list of hashes opens with a short header that says what it is. The list has none, since `apply` writes it as hash lines alone. The commands below show where each one goes, for a set-up by hand. Don't leave such a copy on a machine where you'll run `apply`. It won't write over an `nginx` configuration, key check or drop-in it didn't write: it stops, and says to move the file away.
 
 Replace the placeholders with your own values:
 
@@ -8,14 +8,13 @@ Replace the placeholders with your own values:
 - `203.0.113.10`: the validator's public ipv4 address
 - `HASH`: an api key's SHA-256 hash, in hex
 
-Run the copy commands from this feature's folder, `~/x1-validator-services/x1-validator-private-rpc`.
+For a set-up by hand, run the copy commands from this feature's folder, `~/x1-validator-services/x1-validator-private-rpc`.
 
 | Example | What it is |
 | --- | --- |
 | `nginx/nginx.conf.example` | `nginx`'s configuration for the private rpc |
 | `nginx/hashed-api-keys.map.example` | `nginx`'s list of the api keys' hashes, one line per key |
-| `systemd/x1-validator-private-rpc.conf.example` | The `systemd` drop-in that starts `nginx` with the tool's configuration and its own read-only `/dev` |
-| `logrotate/x1-validator-private-rpc.example` | The rotation of the private rpc's `nginx` logs |
+| `systemd/x1-validator-private-rpc.conf.example` | The `systemd` drop-in that starts `nginx` with the tool's configuration and its own read-only `/dev`, after making its log folder when it's missing |
 | `apt/nginx.sources.example` | nginx.org's `apt` repository |
 | `apt/99nginx.example` | The `apt` pin that prefers nginx.org's packages |
 | `cron/x1-validator-private-rpc-ensure.cron.example` | The `crontab` line that runs `ensure` every minute |
@@ -24,19 +23,17 @@ Run the copy commands from this feature's folder, `~/x1-validator-services/x1-va
 
 ## `nginx`
 
-The configuration needs three things beside it:
+The configuration needs two things beside it:
 
 - the key check, which the tool ships as is
 - the list of the api keys' hashes, which it includes
-- a log folder that only root and `nginx` can open
 
-Without the list, `nginx` refuses to start.
+Without the list, `nginx` refuses to start. The logs go in `/var/log/nginx`, which nginx.org's package makes and rotates.
 
 ```bash
 sudo install -D -m 0644 examples/nginx/nginx.conf.example /etc/nginx/x1-validator-private-rpc/nginx.conf
 sudo install -D -m 0644 src/njs/x1-validator-private-rpc.js /etc/nginx/x1-validator-private-rpc/x1-validator-private-rpc.js
 sudo install -D -m 0644 examples/nginx/hashed-api-keys.map.example /etc/nginx/x1-validator-private-rpc/hashed-api-keys.map
-sudo install -d -m 0750 -g nginx /var/log/x1-validator-private-rpc
 ```
 
 The list's `HASH` is a placeholder, which no key matches. Each line holds one key's SHA-256 hash. This makes a key, shows it, and prints its line:
@@ -52,15 +49,16 @@ sudo install -D -m 0644 examples/systemd/x1-validator-private-rpc.conf.example /
 sudo systemctl daemon-reload
 ```
 
-## `logrotate`
-
-```bash
-sudo install -m 0644 examples/logrotate/x1-validator-private-rpc.example /etc/logrotate.d/x1-validator-private-rpc
-```
-
 ## `apt`
 
-The source names nginx.org's signing key at `/etc/apt/keyrings/nginx-archive-keyring.gpg`, which must hold the two keys the tool pins. `apply` checks both fingerprints before it writes that keyring. On a release other than Ubuntu 24.04, change `noble` to the release's code name.
+The source names nginx.org's signing key at `/etc/apt/keyrings/nginx-archive-keyring.gpg`. `apply` makes that keyring from nginx.org's key file: it checks that the file holds the two fingerprints the tool pins, listed in `src/lib/nginx-org.js`, then exports only those two keys into the keyring. For a set-up by hand, do the same with `gpg`:
+
+1. Download `https://nginx.org/keys/nginx_signing.key`.
+2. Check with `gpg --show-keys` that it holds both fingerprints.
+3. Import it into a `gpg` folder of its own.
+4. `gpg --export` only those two keys into the keyring.
+
+On a release other than Ubuntu 24.04, change `noble` to the release's code name.
 
 ```bash
 sudo install -m 0644 examples/apt/nginx.sources.example /etc/apt/sources.list.d/nginx.sources
@@ -69,7 +67,7 @@ sudo install -m 0644 examples/apt/99nginx.example /etc/apt/preferences.d/99nginx
 
 ## `cron`
 
-Run `crontab -e` as the validator's account, and paste each example's last line. First make the two folders the `ensure` example's header names.
+Run `crontab -e` as the validator's account, and paste each example's last line. Each line makes the folders it writes in, when they're missing.
 
 ## `git` hook
 

@@ -8,23 +8,32 @@
  *   gone, all of which undo-apply leaves as they are
  * - a mask on nginx.service that was there before apply, which
  *   undo-apply puts back
+ * - --private-rpc in the start script and the nginx account, both there
+ *   before apply, which undo-apply leaves
  * - a hook or an api keys' file someone removed, which is no matter
  * - a crontab that refuses the new table, which keeps the cron lines on
  *   record
+ * - a later apply that moved nginx's list, which undo-apply removes, with
+ *   each folder made for it
+ * - nginx removed by hand, which leaves undo-apply no service to stop
+ *   and no package to purge, so it says how to purge what may be left
  */
 
 import assert from "node:assert/strict";
 import path from "node:path";
 import { test } from "node:test";
+import { runApply } from "../src/cli/apply.js";
 import {
   featurePaths,
   gitHookPathOf,
   hashedApiKeysPathOf,
 } from "../src/cli/feature-paths.js";
-import { runUndoApply } from "../src/cli/undo-apply.js";
+import { addPrivateRpc } from "../src/cli/start-script.js";
+import { NGINX_GONE_ALREADY, runUndoApply } from "../src/cli/undo-apply.js";
 import { partsOf, readRecord } from "../src/cli/what-apply-changed.js";
 import { appliedValidator, commandRun } from "./helpers/applied-validator.js";
-import { HOME } from "./helpers/fake-x1-validator.js";
+import { shippedAndChangedSettings } from "./helpers/config-copies.js";
+import { fakeX1Validator, HOME } from "./helpers/fake-x1-validator.js";
 import { scriptedPrompts } from "./helpers/scripted-prompts.js";
 
 /**
@@ -68,6 +77,20 @@ test("leaves what others changed since apply, and puts back a mask that was ther
   assert.equal(lines.at(-1), "[undo-apply] Everything apply did is undone.");
 });
 
+test("leaves --private-rpc in the start script and the nginx account, both there before apply", async () => {
+  const bare = fakeX1Validator();
+  const script = bare.host.files.get(bare.scriptPath);
+  const withFlag = addPrivateRpc(script, bare.scriptPath).text;
+  const { host, state, settings, scriptPath } = await appliedValidator({
+    state: { nginxUser: true },
+    files: new Map([[bare.scriptPath, withFlag]]),
+  });
+  const { code, lines } = await undoApply(host, settings);
+  assert.equal(code, 0, lines.join("\n"));
+  assert.equal(host.files.get(scriptPath), withFlag);
+  assert.equal(state.nginxUser, true);
+});
+
 test("a hook or an api keys' file someone removed is no matter; a crontab that refuses the table keeps the lines on record", async () => {
   let crontabWorks = true;
   const { host, settings } = await appliedValidator({
@@ -91,4 +114,43 @@ test("a hook or an api keys' file someone removed is no matter; a crontab that r
   const record = readRecord(host, featurePaths().whatApplyChangedPath);
   const left = [...record.keys()].map((key) => partsOf(key).name);
   assert.deepEqual(left, ["cronLine", "cronLine"]);
+});
+
+test("after a later apply moves nginx's list, undo-apply removes the new list and each folder made for it", async () => {
+  const { host, settings } = await appliedValidator();
+  const { changed } = shippedAndChangedSettings();
+  settings.hashedApiKeysMapPath = changed.hashedApiKeysMapPath;
+  const applying = commandRun(host, settings, {
+    prompts: scriptedPrompts(),
+    options: { yes: false, dryRun: false, acmeStaging: false },
+  });
+  assert.equal(await runApply(applying), 0, applying.lines.join("\n"));
+  const mapPath = settings.hashedApiKeysMapPath;
+  const top = path.dirname(path.dirname(mapPath));
+  assert.equal(host.exists(mapPath), true);
+  const { code, lines } = await undoApply(host, settings);
+  assert.equal(code, 0, lines.join("\n"));
+  assert.deepEqual(
+    [mapPath, top].map((filePath) => host.exists(filePath)),
+    [false, false],
+  );
+});
+
+test("after nginx is removed by hand, undo-apply has no service to stop, says how to purge what may be left, and still finishes", async () => {
+  const { host, state, settings } = await appliedValidator();
+  Object.assign(state, {
+    nginxInstalled: false,
+    enabled: false,
+    active: false,
+  });
+  const { code, lines } = await undoApply(host, settings);
+  assert.equal(code, 0, lines.join("\n"));
+  for (const note of [
+    "nginx isn't installed, so there's nothing to stop, disable or mask.",
+    NGINX_GONE_ALREADY,
+  ]) {
+    assert.ok(lines.includes(`[undo-apply] ${note}`), note);
+  }
+  assert.equal(host.exists(featurePaths().whatApplyChangedPath), false);
+  assert.equal(lines.at(-1), "[undo-apply] Everything apply did is undone.");
 });

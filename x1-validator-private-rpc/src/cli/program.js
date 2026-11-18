@@ -37,8 +37,8 @@ import { runUndoApply } from "./undo-apply.js";
 const PROGRAM_NAME = "x1-validator-private-rpc";
 
 const PURPOSE =
-  "Puts an X1 validator's rpc behind an https url that carries an api " +
-  "key, and keeps it that way.";
+  "Makes an X1 validator's rpc private, puts it behind an https url that " +
+  "carries an api key, and keeps it that way.";
 
 /** The exit codes, as the help shows them, after the options. */
 export const EXIT_CODES = [
@@ -174,7 +174,7 @@ function addCommands(program, makers) {
     )
     .option(
       "-y, --yes",
-      "skip the confirmations, never a password or a choice",
+      "answer yes to each stage's question and to the cron jobs' question, but still ask for the password and whether to save it",
       false,
     )
     .option(
@@ -237,7 +237,7 @@ function addCommands(program, makers) {
   program
     .command("add-api-key")
     .description(
-      "ask for the password and an optional email, make api keys, and print each one's urls, once",
+      "ask for the x1-validator-services password and an optional email, make api keys, and print each one's urls, once",
     )
     .option("--count <n>", "how many api keys to make", parseCount, 1)
     .action(

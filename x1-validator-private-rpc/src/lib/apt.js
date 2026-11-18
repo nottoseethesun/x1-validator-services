@@ -34,13 +34,17 @@ function withoutQuestions(args) {
 }
 
 /**
- * Reads the `Status Version` text `dpkg-query` prints for a package.
+ * Reads the `Status Version` text `dpkg-query` prints for a package. The
+ * status's first word is what the operator wants done with the package,
+ * such as `hold` for one they hold back from upgrades, and its last word
+ * whether it's there. So any first word counts, as long as the package
+ * is installed.
  * @param {string} text  Such as `install ok installed 1.30.6-1~noble`.
  * @returns {string|null} The installed version, or null when the package
  *   isn't installed.
  */
 export function parseDpkgQuery(text) {
-  const match = /^install ok installed (\S+)$/.exec(text.trim());
+  const match = /^\S+ ok installed (\S+)$/.exec(text.trim());
   return match === undefined || match === null ? null : match[1];
 }
 

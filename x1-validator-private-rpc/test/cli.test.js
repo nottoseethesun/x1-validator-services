@@ -71,7 +71,7 @@ test("help opens with what the tool is for and ends with the exit codes", () => 
     code: "commander.helpDisplayed",
   });
   const help = out();
-  assert.ok(help.startsWith("Puts an X1 validator's rpc behind an https url"));
+  assert.ok(help.startsWith("Makes an X1 validator's rpc private, puts it"));
   assert.match(help, /-h, --help +print this help and exit/);
   assert.match(help, /-v, --version +print the version and exit/);
   assert.ok(help.endsWith(`${EXIT_CODES}\n`), help);
@@ -127,7 +127,7 @@ test("an argument the program doesn't take is refused", () => {
 test("the real entry point prints its help to stdout with exit code 0", () => {
   const result = runCli(["--help"]);
   assert.equal(result.status, 0);
-  assert.ok(result.stdout.startsWith("Puts an X1 validator's rpc"));
+  assert.ok(result.stdout.startsWith("Makes an X1 validator's rpc private"));
   assert.equal(result.stderr, "");
 });
 

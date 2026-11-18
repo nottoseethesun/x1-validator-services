@@ -2,7 +2,7 @@
  * @file x1-validator-private-rpc/util/validate-nginx-upgrade/steps.js
  * @description
  * The upgrade check, step by step. It proves on this machine that a
- * regular apt upgrade of nginx keeps the gated rpc working, before the
+ * regular apt upgrade of nginx keeps the keyed url working, before the
  * tool is installed. It installs nginx.org's previous release, and
  * starts it under systemd the way the tool will: through the tool's
  * drop-in, with a list holding the hash of a throwaway api key. It
@@ -243,7 +243,11 @@ async function installPreviousRelease(context, codename) {
  */
 function installTestFiles(context, port, key) {
   const { host, settings, report, undo } = context;
-  report("Installing the key check, the list of hashes and the drop-in.");
+  report(
+    "Installing four files: a test configuration for nginx, the tool's " +
+      "api key check, a list that holds the throwaway key's hash, and a " +
+      "systemd drop-in that starts nginx with the test configuration.",
+  );
   const njsSource = host.readText(
     shippedFile("src/njs/x1-validator-private-rpc.js"),
   );
@@ -276,7 +280,7 @@ function startNginx(context) {
   const { host, settings, report, undo } = context;
   const tested = host.sudo("nginx", ["-t", "-c", settings.nginxConfigPath]);
   mustSucceed(tested, "Testing the test configuration");
-  report("Starting nginx under systemd, through the tool's drop-in.");
+  report("Starting nginx under systemd, through that drop-in.");
   systemctl(host, ["daemon-reload"]);
   systemctl(host, ["unmask", NGINX_UNIT]);
   undo.push({

@@ -12,7 +12,7 @@
 
 import fs from "node:fs";
 import { makeApiKey } from "../lib/api-key.js";
-import { GATE_PAGE_PATH } from "../lib/gate-page.js";
+import { GATE_PAGE_NAME, GATE_PAGE_PATH } from "../lib/gate-page.js";
 import { pollUntil } from "../lib/poll.js";
 
 /**
@@ -137,7 +137,7 @@ export async function requestPathProblems(host, target, key) {
   const problems = [];
   const gate = await readGate(host, target);
   if (gate !== "ok") {
-    problems.push(`The gate page says ${gate}, not ok.`);
+    problems.push(`${GATE_PAGE_NAME} says ${gate}, not ok.`);
   }
   const answer = (urlPath) =>
     askNginx(host, target, urlPath).catch((error) => ({

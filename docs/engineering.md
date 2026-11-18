@@ -41,7 +41,9 @@ Every command in `package.json`, with its flags and an example, is in [`docs/npm
 
 ### What It Runs
 
-On Node.js 22.13 or newer, in this order:
+First of all, the gate removes any test folder left behind by a test run that died. [Tests](#tests) says how it tells those folders apart.
+
+Then, on Node.js 22.13 or newer, it runs these, in this order:
 
 | Stage | Tool | What fails it |
 | --- | --- | --- |
@@ -59,9 +61,7 @@ On Node.js 22.13 or newer, in this order:
 | Tests | Node.js's test runner, with coverage | Any failing test |
 | Coverage | `scripts/_coverage.js` | See [Coverage](#coverage) |
 
-Every stage but the tests and the coverage verdict is written down once, as data, in `scripts/_gate-stages.js`. `scripts/_run-stages.js` runs them, except the audit of every dependency, which `scripts/check.js` runs itself to save its report. `npm run lint` runs the stages from the JavaScript lint through the secret scan, and `scripts/format.js` and `scripts/audit.js` run one stage each. Two `npm` scripts spell out a stage's command again: `knip:files`, and `audit:deps`, which the Security Audit workflow runs.
-
-First of all, the gate removes any test folder left behind by a test run that died. [Tests](#tests) says how it tells those folders apart.
+Every stage but the tests and the coverage verdict is written down once, as data, in `scripts/_gate-stages.js`. `scripts/_run-stages.js` runs them, except the audit of every dependency, which `scripts/check.js` runs itself to save its report. `npm run lint` runs the stages from the JavaScript lint through the secret scan, and `scripts/format.js` and `scripts/audit.js` run one stage each. Two `npm` scripts spell out a stage's command again: `knip:files`, and `audit:deps`, which the Security Audit workflow runs. So a change to either stage's command in `scripts/_gate-stages.js` needs the same change in `package.json`.
 
 ### On Older Node.js Versions
 
@@ -139,11 +139,12 @@ A command that asks anything runs in a real terminal, which `script` makes, and 
 Then it runs two phases:
 
 - **The `nginx` upgrade check.** It runs `util/validate-nginx-upgrade/index.js`, which must pass, and must leave the container as it found it.
-- **apply and the commands after it**, in `scripts/_lxd-apply-phase.js`. Pebble, Let's Encrypt's test server, stands in for Let's Encrypt, and a stand-in rpc plays the validator's. A `git` checkout plays `x1console`, where the settings put it. It checks:
-  - the first key `apply` shows, the saved password `systemd-creds` holds, the request path, a random key's 403, the firewall rule, the rate limit and `nginx`'s logs
+- **apply and the commands after it**, in `scripts/_lxd-apply-phase.js`. Pebble, Let's Encrypt's test server, stands in for Let's Encrypt, and a stand-in rpc plays the validator's. A `git` checkout plays `x1console`, where the settings put it, cloned from a local repository that plays `x1console`'s on GitHub. It checks:
+  - the first key `apply` shows, the saved password `systemd-creds` holds, the request path, a random key's 403, the firewall rule, the rate limit, and that `nginx`'s logs hold no key, show `<key>` in its place, and keep the mode nginx.org's package gives them: 640, owner `nginx`, group `adm`
   - that `nginx`'s main process has its own read-only `/dev`, and still serves after a log reopen
   - `ensure`'s failure while the rpc is still public, and every one of its verdicts after the validator's restart
-  - the flag's return after `git stash`, and the key still working after a restart of `nginx`
+  - the flag put back by the tool's `git` hook, when `git stash` and a `git pull` that brings a new commit play an Update X1 Console, and the key still working after a restart of `nginx`
+  - `nginx`'s log folder deleted, then made again by the drop-in before a restart of `nginx`, then deleted again, and made again by `add-api-key` before its reload
   - two keys from `add-api-key`, then `remove-api-key` on one of them: it gets 403 and the rest still work
   - the connections the removed key held open through its removal, which `x1-validator-private-rpc/test/helpers/reload-probe.js` opens. An http/1.1 one kept alive and an http/2 one no longer answer for it, and a websocket closes within the old worker's time limit.
   - both commands that switch private rpc, and a later `apply` that asks nothing
@@ -151,7 +152,7 @@ Then it runs two phases:
   - that the last `undo-apply`, answered yes, leaves the container as `apply` found it, with Autopilot's job still in the `crontab` and the start script still executable
   - last, that a firewall rule for port 443 with a comment, added while `ufw` is off, survives an `apply` stopped after its firewall stage, then `undo-apply`
 
-Both phases decide what counts as left behind the same way, through `scripts/_lxd.js`. The paths come from the app: every absolute path in the settings the tool loads in the container, nginx.org's repository files, the folders above them all, and the `nginx` package and its user. The second phase adds the tool's own paths in the user's home and in the feature's folder. Whatever of those exists after a phase, and didn't before it, is a leftover. The second phase also checks that the firewall rule, both `cron` lines and `nginx`'s mask are gone, and that `x1console`'s checkout is as committed. It reads the firewall rule from the rules the `ufw` command added, which `ufw` lists even while it's off, as it is in the container.
+Both phases decide what counts as left behind the same way, through `scripts/_lxd.js`. A leftover is anything watched that exists after a phase and didn't before it. What's watched comes from the app: every absolute path in the settings the tool loads in the container, nginx.org's repository files, `nginx`'s log folder, the folders above them all, and the `nginx` package and its user. The second phase adds the tool's own paths in the user's home and in the feature's folder. It also checks that the firewall rule, both `cron` lines and `nginx`'s mask are gone, and that `x1console`'s checkout is as committed. It reads the firewall rule from the rules the `ufw` command added, which `ufw` lists even while it's off, as it is in the container.
 
 The test deletes the container at the end. With `--keep`, it stays, for a look inside.
 

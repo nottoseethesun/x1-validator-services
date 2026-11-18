@@ -23,6 +23,7 @@ import {
   NGINX_UNIT,
 } from "../src/lib/nginx-org.js";
 import { API_KEY_PATTERN } from "../src/lib/api-key.js";
+import { GATE_PAGE_NAME } from "../src/lib/gate-page.js";
 import {
   hashApiKey,
   MAP_HASH_BUCKET_SIZE,
@@ -422,8 +423,8 @@ test("fails when the new nginx never answers after the upgrade", async () => {
   });
   const { result } = await runCheck(validator.host);
   assert.deepEqual(result.problems, [
-    "After the upgrade the gate page never said ok. Its last answer was " +
-      "no answer (socket hang up).",
+    `After the upgrade ${GATE_PAGE_NAME} never said ok. Its last answer ` +
+      "was no answer (socket hang up).",
     "After the upgrade a request with the listed key got 0, not 200: " +
       "nginx didn't find the key's hash in its list.",
     "After the upgrade a request with a random key got 0, not 403.",

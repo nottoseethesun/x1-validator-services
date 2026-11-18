@@ -9,12 +9,13 @@
  * path, and nginx's map looks the hash up in nginx's list of hashes,
  * which it includes. A request whose hash isn't there gets a 403. Keyed
  * requests go to the rpc, or to its websocket port when they ask for an
- * upgrade. The logs show `<key>` in place of anything in the url that
- * looks like a key, wherever the client put it, so a key in the query
- * string or after a prefix, or a mistyped one, never writes the key
- * there. The njs module does the masking. The keyed location writes no
- * error log at all, since each of nginx's error lines carries the request
- * line, and with it the key.
+ * upgrade. The logs are nginx's usual access.log and error.log, in the
+ * folder that nginx.org's package makes and rotates. They show `<key>`
+ * in place of anything in the url that looks like a key, wherever the
+ * client put it, so a key in the query string or after a prefix, or a
+ * mistyped one, never writes the key there. The njs module does the
+ * masking. The keyed location writes no error log at all, since each of
+ * nginx's error lines carries the request line, and with it the key.
  *
  * The text grew from the hand-off's tested configuration. It adds the
  * hash lookup and its table sizes, and a rate limit on keyed requests:
@@ -38,6 +39,7 @@ import {
   MAP_HASH_BUCKET_SIZE,
   MAP_HASH_MAX_SIZE,
 } from "../lib/key-hash-map.js";
+import { NGINX_LOG_DIR } from "../lib/nginx-org.js";
 
 /**
  * How long the old worker may keep what's still open after a reload,
@@ -92,7 +94,6 @@ ${contact}        accept_terms_of_service;
  */
 export function renderNginxConfig(values) {
   const { hostname, publicIp, rpcPort, resolver, staging, settings } = values;
-  const logDir = settings.nginxLogDir;
   const rate = settings.rateLimitRequestsPerSecond;
   const issuers =
     issuer(
@@ -122,7 +123,7 @@ user nginx;
 worker_processes 1;
 worker_priority ${settings.nginxWorkerPriority};
 pid /run/nginx.pid;
-error_log ${logDir}/nginx-error.log notice;
+error_log ${NGINX_LOG_DIR}/error.log notice;
 
 # After a reload, the old worker closes what it still holds open within
 # ${WORKER_SHUTDOWN_TIMEOUT_SECONDS} seconds. A websocket's key is checked only when it opens, so this
@@ -143,8 +144,9 @@ http {
 
     # A connection has ${REQUEST_HEADER_TIMEOUT_SECONDS} seconds from its opening to finish its tls
     # handshake and send its request's header, and each later request on
-    # it has ${REQUEST_HEADER_TIMEOUT_SECONDS} seconds of its own. That stops only the crudest way to fill
-    # nginx's connections, as the tool's docs/architecture.md explains.
+    # it has ${REQUEST_HEADER_TIMEOUT_SECONDS} seconds of its own. That only raises the cost of the crudest
+    # way to fill nginx's connections, as the tool's docs/architecture.md
+    # explains.
     client_header_timeout ${REQUEST_HEADER_TIMEOUT_SECONDS}s;
 
     # The system's dns resolver, used to find the certificate authority.
@@ -197,7 +199,7 @@ ${issuers}
         ssl_certificate_key $acme_certificate_key;
         ssl_certificate_cache max=2;
 
-        access_log ${logDir}/nginx-access.log x1_rpc;
+        access_log ${NGINX_LOG_DIR}/access.log x1_rpc;
 
         # Local-only page: says ok, so the tool knows nginx answers.
         location = ${GATE_PAGE_PATH} {

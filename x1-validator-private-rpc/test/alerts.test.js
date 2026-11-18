@@ -4,8 +4,8 @@
  * Tests which alerts ensure sends:
  *
  * - a check that turns bad alerts once
- * - the public rpc and the certificate repeat after their reminder
- *   intervals, and nginx's outages not at all
+ * - the public rpc, a flag ensure couldn't put back, and the certificate
+ *   repeat after their reminder intervals, and nginx's outages not at all
  * - a check that turns good sends a recovery notice
  * - an unknown verdict keeps the last state
  * - the flag's restoring sends a notice of its own
@@ -64,6 +64,21 @@ test("a public rpc alerts at once, then every reminder interval", () => {
   ]);
   const early = decide(exposed, first.next, (minutes - 1) * MINUTE_MS);
   const due = decide(exposed, first.next, minutes * MINUTE_MS);
+  assert.deepEqual([early.messages.length, due.messages.length], [0, 1]);
+});
+
+test("a flag ensure couldn't put back alerts at once, then every reminder interval", () => {
+  const { changed } = shippedAndChangedSettings();
+  const minutes = changed.exposedReminderMinutes;
+  const missing = {
+    name: "flag-in-script",
+    status: "problem",
+    detail: "The start script's layout is one the tool can't read.",
+  };
+  const first = decide(missing, emptyAlertState(), 0);
+  assert.equal(first.messages.length, 1);
+  const early = decide(missing, first.next, (minutes - 1) * MINUTE_MS);
+  const due = decide(missing, first.next, minutes * MINUTE_MS);
   assert.deepEqual([early.messages.length, due.messages.length], [0, 1]);
 });
 

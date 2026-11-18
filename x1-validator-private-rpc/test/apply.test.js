@@ -27,11 +27,16 @@ import {
   hashedApiKeysPathOf,
 } from "../src/cli/feature-paths.js";
 import { createLog } from "../src/cli/log.js";
+import {
+  renderCronLine,
+  renderGitHook,
+  renderKeyCountCronLine,
+} from "../src/cli/render-watchers.js";
 import { RESTART_HOW } from "../src/cli/start-script.js";
 import { readState } from "../src/cli/state.js";
 import { readRecord } from "../src/cli/what-apply-changed.js";
 import { makeApiKey } from "../src/lib/api-key.js";
-import { GATE_PAGE_PATH } from "../src/lib/gate-page.js";
+import { GATE_PAGE_NAME, GATE_PAGE_PATH } from "../src/lib/gate-page.js";
 import { hashApiKey } from "../src/lib/key-hash-map.js";
 import { NGINX_PACKAGES, NGINX_UNIT } from "../src/lib/nginx-org.js";
 import { loadSettings } from "../src/lib/settings.js";
@@ -125,12 +130,12 @@ test("a fresh validator goes through every stage, and a second apply changes not
   const { host, state, scriptPath } = fakeX1Validator();
   const { code, lines, printed } = await apply(host, { settings });
   assert.equal(code, 0, lines.join("\n"));
-  const logFolder = host.calls.find(
-    (call) => call.kind === "makeRootDir" && call.path === settings.nginxLogDir,
-  );
-  // Only root and nginx may open the folder, and so read the logs.
-  assert.deepEqual([logFolder.mode, logFolder.group], ["0750", "nginx"]);
   assert.equal(state.nginxInstalled, true);
+  // The mask comes before the install, so the package's default site
+  // never runs.
+  const changes = changingCalls(host.calls).join("\n");
+  const mask = `systemctl mask ${NGINX_UNIT}`;
+  assert.match(changes, new RegExp(`${mask}\n[^]* apt .* install `));
   assert.deepEqual(
     [state.masked, state.enabled, state.active],
     [false, true, true],
@@ -144,22 +149,26 @@ test("a fresh validator goes through every stage, and a second apply changes not
   assert.deepEqual(state.loadedHashes, [hashApiKey(key)]);
   assert.equal(lines.join("\n").includes(key), false);
   assert.ok(state.ufwRules.includes(HTTPS_RULE));
-  assert.match(state.crontab, /^\* \* \* \* \* flock .* ensure --quiet >> /m);
+  // The cron lines and the git hook run the tool's own command.
+  const paths = featurePaths();
+  const tool = { nodeBin: host.nodePath(), toolCli: paths.toolCli };
+  const logPath = paths.ensureLogPath;
   const hours = settings.apiKeyCountCheckHours;
-  assert.match(
-    state.crontab,
-    new RegExp(
-      `^0 \\*/${hours} \\* \\* \\* .* ensure-there-is-at-least-one-rpc-api-key --quiet >> `,
-      "m",
-    ),
-  );
+  const table = state.crontab.split("\n");
+  for (const line of [
+    renderCronLine({ ...tool, lockPath: paths.lockPath, logPath }),
+    renderKeyCountCronLine({ ...tool, logPath, hours }),
+  ]) {
+    assert.ok(table.includes(line), state.crontab);
+  }
+  const hookPath = gitHookPathOf(settings, HOME);
+  assert.equal(host.files.get(hookPath), renderGitHook(tool));
   // Autopilot's jobs stay in the table.
   assert.ok(state.crontab.includes(autopilotCrontab()), state.crontab);
-  // The cron line can't start without its lock's folder and its log's.
-  const { tmpDir, logsDir } = featurePaths();
-  assert.ok(host.exists(tmpDir) && host.exists(logsDir));
+  // apply makes and records both folders, so undo-apply removes them.
+  assert.ok(host.exists(paths.tmpDir) && host.exists(paths.logsDir));
   // git skips a hook it can't run, so the hook must be executable.
-  assert.equal(host.fileMode(gitHookPathOf(settings, HOME)), 0o755);
+  assert.equal(host.fileMode(hookPath), 0o755);
   assert.match(
     host.files.get(scriptPath),
     /^ {4}--rpc-port 8899 --private-rpc \\$/m,
@@ -169,7 +178,7 @@ test("a fresh validator goes through every stage, and a second apply changes not
    * executable.
    */
   assert.equal(host.fileMode(scriptPath), 0o755);
-  const recorded = readState(host, featurePaths().statePath);
+  const recorded = readState(host, paths.statePath);
   assert.deepEqual(recorded.setup, {
     hostname: HOSTNAME,
     publicIp: PUBLIC_IP,
@@ -246,24 +255,29 @@ test("the preflight lists every problem at once, and changes nothing", async () 
     }
     return true;
   });
-  // A keyed url, which the refusal must not quote.
+  // The validator's own address, and a keyed url the refusal must not quote.
   const key = makeApiKey();
-  const withHostname = fakeX1Validator({
-    files: new Map([
-      [
-        "/home/validator/.config/solana/cli/config.yml",
-        `json_rpc_url: "https://${HOSTNAME}/${key}"\n`,
-      ],
-    ]),
-  });
-  await assert.rejects(apply(withHostname.host), (error) => {
-    assert.match(
-      error.message,
-      /The solana cli's url names this validator's address or hostname/,
-    );
-    assert.equal(error.message.includes(key), false);
-    return true;
-  });
+  for (const url of [
+    `http://${PUBLIC_IP}:8899`,
+    `https://${HOSTNAME}/${key}`,
+  ]) {
+    const named = fakeX1Validator({
+      files: new Map([
+        [
+          "/home/validator/.config/solana/cli/config.yml",
+          `json_rpc_url: "${url}"\n`,
+        ],
+      ]),
+    });
+    await assert.rejects(apply(named.host), (error) => {
+      assert.match(
+        error.message,
+        /The solana cli's url names this validator's address or hostname/,
+      );
+      assert.equal(error.message.includes(key), false);
+      return true;
+    });
+  }
   assert.deepEqual(changingCalls(host.calls), []);
 });
 
@@ -477,7 +491,7 @@ test("apply waits for the certificate as long, and asks as often, as the setting
     return { status: 503, body: "", certificate: {} };
   };
   await assert.rejects(apply(host, { settings }), {
-    message: "No certificate in time: the gate page says http 503.",
+    message: `No certificate in time: ${GATE_PAGE_NAME} says http 503.`,
   });
   const waited = asked.at(-1) - asked[0];
   const gaps = new Set(asked.slice(1).map((at, index) => at - asked[index]));

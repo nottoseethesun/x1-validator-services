@@ -102,7 +102,8 @@ export async function runTurnOffPrivateRpc(run) {
   log.info(
     name,
     `Private rpc is off: ${scriptPath} lacks --private-rpc, and ensure ` +
-      "leaves it out until turn-on-private-rpc.",
+      "leaves it out until turn-on-private-rpc, or a later apply, puts it " +
+      "back.",
   );
   log.info(
     name,
