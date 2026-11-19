@@ -28,8 +28,13 @@ import { readState } from "../src/cli/state.js";
 import { runUndoApply } from "../src/cli/undo-apply.js";
 import { partsOf, readRecord } from "../src/cli/what-apply-changed.js";
 import { hashApiKey } from "../src/lib/key-hash-map.js";
+import { NGINX_PACKAGES } from "../src/lib/nginx-org.js";
 import { loadSettings } from "../src/lib/settings.js";
-import { appliedValidator, commandRun } from "./helpers/applied-validator.js";
+import {
+  appliedValidator,
+  commandRun,
+  purgeNginxByHand,
+} from "./helpers/applied-validator.js";
 import { copyShippedConfig } from "./helpers/config-copies.js";
 import { fakeX1Validator, HOME } from "./helpers/fake-x1-validator.js";
 import { scriptedPrompts } from "./helpers/scripted-prompts.js";
@@ -91,7 +96,14 @@ test("keeps the api keys and the saved password when told no, with their folders
       lines.join("\n"),
     );
   }
+  // What belongs with nginx stays on record too, while it's installed.
   assert.deepEqual(recordedNames(host), [
+    "nginxServiceMasked",
+    "nginxAptKeyring",
+    "nginxAptSource",
+    "nginxAptPin",
+    "nginxAccount",
+    ...NGINX_PACKAGES.map(() => "nginxPackage"),
     "hashedApiKeysFolder",
     "hashedApiKeysFolder",
     "savedPasswordFolder",
@@ -112,6 +124,9 @@ test("keeps the api keys and the saved password when told no, with their folders
   assert.deepEqual(state.loadedHashes, [hashApiKey(apiKey)]);
   const later = await undoApply(host, settings);
   assert.equal(later.code, 0, later.lines.join("\n"));
+  await purgeNginxByHand(host);
+  const last = await undoApply(host, settings);
+  assert.equal(last.code, 0, last.lines.join("\n"));
   for (const filePath of [
     keysFile,
     path.dirname(keysFile),
@@ -175,6 +190,8 @@ test("a saved password that couldn't be deleted stays recorded, and a later run 
     }
     return removeRootFile(filePath);
   };
+  // Purged first, so nothing of nginx's stays on record.
+  await purgeNginxByHand(host);
   const { code } = await undoApply(host, settings);
   assert.equal(code, 1);
   assert.ok(host.files.has(settings.passwordCredentialPath));

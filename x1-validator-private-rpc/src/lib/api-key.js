@@ -6,7 +6,8 @@
  * clients use, and util/validate-nginx-upgrade makes a throwaway one for
  * its test nginx. remove-api-key and util/check-my-private-rpc check
  * that a key typed in has the form. nginx's log mask, which puts `<key>`
- * in place of anything that looks like a key, depends on it.
+ * in place of anything that looks like a key, depends on it, and so does
+ * the same mask on a refused setting's value.
  *
  * The key check that nginx runs, src/njs/x1-validator-private-rpc.js,
  * keeps a copy of the pattern, since nginx loads that file on its own.
@@ -40,4 +41,21 @@ export function makeApiKey() {
  */
 export function isApiKey(text) {
   return KEY_ALONE.test(text);
+}
+
+/**
+ * A run of hex digits half a key long or more, in either case, as
+ * nginx's access log masks: a key typed a character short or long is one
+ * too.
+ */
+const KEY_LIKE_RUN = new RegExp(`[0-9A-Fa-f]{${API_KEY_HEX_DIGITS / 2},}`, "g");
+
+/**
+ * Puts `<key>` in place of anything in a text that looks like a key, as
+ * nginx's access log does.
+ * @param {string} text  The text.
+ * @returns {string} The text, masked.
+ */
+export function maskKeyLikeRuns(text) {
+  return text.replace(KEY_LIKE_RUN, "<key>");
 }

@@ -19,15 +19,20 @@
  * nginx can't open its logs once their folder is gone, so the drop-in
  * makes it before each start, and the key commands before their reload.
  * The check deletes it and restarts nginx, then deletes it again for the
- * add-api-key check that follows. Never on a validator.
+ * add-api-key check that follows.
+ *
+ * undo-apply removes no package, so it must leave nginx installed,
+ * stopped and masked, and say how to purge it. The test then purges it,
+ * as the operator may, and runs undo-apply again. Never on a validator.
  */
 
 import {
   NGINX_LOG_DIR,
+  NGINX_PACKAGES,
   NGINX_UNIT,
 } from "../x1-validator-private-rpc/src/lib/nginx-org.js";
 import { answersWith } from "./_lxd-api-key-checks.js";
-import { asRoot, asRootCaptured, mustPass } from "./_lxd.js";
+import { AFFIRM_DISCLAIMER, asRoot, asRootCaptured, mustPass } from "./_lxd.js";
 
 /**
  * Sends requests with the key where the logs' mask must still find it:
@@ -167,4 +172,53 @@ export function checkLogFolderComesBack(guest, key) {
   );
   const again = asRoot(name, ["rm", "-rf", "--", folder]);
   mustPass(again, "Deleting nginx's logs again, for add-api-key's reload");
+}
+
+/**
+ * Checks that undo-apply left nginx installed, stopped and masked, since
+ * it removes no package, and said how to purge it.
+ * @param {import("./_lxd-api-key-checks.js").Guest} guest  The container.
+ * @param {string} output  What undo-apply printed.
+ */
+export function checkNginxStays(guest, output) {
+  const { name } = guest;
+  const status = asRootCaptured(name, [
+    "dpkg-query",
+    "--show",
+    "--showformat=${Status}",
+    "nginx",
+  ]).stdout.trim();
+  const unit = (verb) =>
+    asRootCaptured(name, ["systemctl", verb, NGINX_UNIT]).stdout.trim();
+  guest.expect(
+    "undo-apply leaves nginx installed, stopped and masked, and says how to purge it",
+    status === "install ok installed" &&
+      unit("is-active") !== "active" &&
+      unit("is-enabled") === "masked" &&
+      output.includes(`sudo apt purge ${NGINX_PACKAGES.join(" ")}`),
+  );
+}
+
+/**
+ * Plays the operator's own purge of nginx and its modules, which
+ * undo-apply leaves to them, then runs undo-apply again, which takes back
+ * what stayed with nginx.
+ * @param {import("./_lxd-api-key-checks.js").Guest} guest  The container.
+ * @returns {Promise<boolean>} Whether both went through.
+ */
+export async function purgeThenUndo(guest) {
+  const purged = asRoot(guest.name, [
+    "env",
+    "DEBIAN_FRONTEND=noninteractive",
+    "apt",
+    "-o",
+    "Apt::Cmd::Disable-Script-Warning=true",
+    "purge",
+    "--yes",
+    ...NGINX_PACKAGES,
+  ]);
+  const undone = await guest.answer(`node ${guest.cli} undo-apply`, [
+    AFFIRM_DISCLAIMER,
+  ]);
+  return purged === 0 && undone.code === 0;
 }

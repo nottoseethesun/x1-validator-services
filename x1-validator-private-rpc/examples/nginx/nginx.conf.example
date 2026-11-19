@@ -15,7 +15,7 @@ error_log /var/log/nginx/error.log notice;
 
 # After a reload, the old worker closes what it still holds open within
 # 10 seconds. A websocket's key is checked only when it opens, so this
-# is what ends a removed key's websocket. Its client reconnects, and
+# is what ends a removed key's websocket. Its client must reconnect, and
 # meets the new list.
 worker_shutdown_timeout 10s;
 
@@ -32,8 +32,9 @@ http {
 
     # A connection has 5 seconds from its opening to finish its tls
     # handshake and send its request's header, and each later request on
-    # it has 5 seconds of its own. That only raises the cost of the crudest
-    # way to fill nginx's connections, as the tool's docs/architecture.md
+    # it has 5 seconds of its own. That raises the cost of filling nginx's
+    # connections with handshakes and headers sent a few bytes at a time,
+    # but one machine can still do it, as the tool's docs/architecture.md
     # explains.
     client_header_timeout 5s;
 

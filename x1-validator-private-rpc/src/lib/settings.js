@@ -24,6 +24,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import Ajv2020 from "ajv/dist/2020.js";
+import { maskKeyLikeRuns } from "./api-key.js";
 
 const SETTINGS_FILE = "private-rpc.json";
 const SCHEMA_FILE = "private-rpc.schema.json";
@@ -165,6 +166,9 @@ export function isEmail(email, configDir = defaultConfigDir()) {
  * Describes one schema problem in the operator's words. A problem with a
  * setting also gives the schema's description of it, which says what
  * the setting must be, since Ajv's own words may only quote a pattern.
+ * The setting's value is quoted with `<key>` in place of anything that
+ * looks like a key, since a keyed url pasted into a setting would
+ * otherwise reach the cron job's log of ensure every minute.
  * @param {object} error  One of Ajv's errors.
  * @param {object} settings  The merged settings.
  * @param {string} overridePath  The operator's override file.
@@ -185,8 +189,9 @@ function describeProblem(error, settings, overridePath, descriptions) {
     return `The settings: ${error.message}. Check ${overridePath}.`;
   }
   const value = new Map(Object.entries(settings)).get(name) ?? null;
+  const shown = maskKeyLikeRuns(JSON.stringify(value));
   return [
-    `${name}: ${error.message} (it is ${JSON.stringify(value)}).`,
+    `${name}: ${error.message} (it is ${shown}).`,
     descriptions.get(name) ?? "",
     `Change it in ${overridePath}.`,
   ]
@@ -208,11 +213,19 @@ export function settingsProblems(schema, settings, overridePath) {
   if (validate(settings)) {
     return [];
   }
+  // A path's or a url's form is in the definition its $ref names.
+  const definitions = new Map(Object.entries(schema.$defs ?? {}));
   const descriptions = new Map(
-    Object.entries(schema.properties).map(([name, rule]) => [
-      name,
-      rule.description ?? "",
-    ]),
+    Object.entries(schema.properties).map(([name, rule]) => {
+      const shared =
+        typeof rule.$ref === "string"
+          ? definitions.get(rule.$ref.split("/").at(-1))
+          : undefined;
+      const parts = [rule.description, shared?.description].filter(
+        (text) => typeof text === "string" && text !== "",
+      );
+      return [name, parts.join(" ")];
+    }),
   );
   return validate.errors.map((error) =>
     describeProblem(error, settings, overridePath, descriptions),

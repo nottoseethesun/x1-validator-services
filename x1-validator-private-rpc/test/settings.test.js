@@ -13,6 +13,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
+import { makeApiKey } from "../src/lib/api-key.js";
 import { loadSettings, readSchema } from "../src/lib/settings.js";
 import { copyShippedConfig } from "./helpers/config-copies.js";
 
@@ -81,6 +82,30 @@ test("a value in the wrong form is refused with what the setting must be, from t
   assert.throws(
     () => loadSettings(configDir),
     (error) => error.message.includes(`(it is "${url}"). ${description}`),
+  );
+});
+
+test("a path in the wrong form is refused with the form its shared definition gives", () => {
+  const override = JSON.stringify({ hashedApiKeysPath: "$HOME/keys.json" });
+  const { configDir } = copyShippedConfig(override);
+  const schema = readSchema(configDir);
+  const ref = schema.properties.hashedApiKeysPath.$ref.split("/").at(-1);
+  const form = new Map(Object.entries(schema.$defs)).get(ref).description;
+  assert.throws(
+    () => loadSettings(configDir),
+    (error) => error.message.includes(form),
+  );
+});
+
+test("a refused value shows <key> in place of a key pasted into it", () => {
+  const key = makeApiKey();
+  const url = `https://x1-rpc.example.com/${key}`;
+  const { configDir } = copyShippedConfig(JSON.stringify({ hostname: url }));
+  assert.throws(
+    () => loadSettings(configDir),
+    (error) =>
+      !error.message.includes(key) &&
+      error.message.includes('(it is "https://x1-rpc.example.com/<key>")'),
   );
 });
 

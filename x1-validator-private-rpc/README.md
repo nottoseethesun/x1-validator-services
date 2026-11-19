@@ -13,7 +13,7 @@ x1-validator-private-rpc makes the rpc private, and puts it behind an https url 
 - `nginx` keeps only each key's SHA-256 hash, and checks a request by hashing the key it carries. A hash can't be worked back into its key, so `nginx`'s list of hashes is kept unencrypted, and `nginx` reads it with no password. So a restart of `nginx`, or a reboot, needs nobody to type one. Each key is shown once, when it's made: save it then. `apply` makes the first, `add-api-key` makes more, one per client if you like, and `remove-api-key` takes one away. Each key has a record, with when it was made and an optional email, encrypted with an x1-validator-services password you choose during `apply`.
 - `ensure` keeps the rpc private. `x1console`'s Update X1 Console takes `--private-rpc`, the flag, out of the start script. When the update's `git pull` brings new commits, `git` runs the tool's `git` hook in `x1console`'s checkout, and the hook has `ensure` put the flag back at once. A `cron` job also runs `ensure` every minute, which puts the flag back after an update the hook misses. `ensure` alerts you on Telegram when the rpc turns public, the flag can't go back, `nginx` is down, or the certificate needs attention. Every few hours, a second `cron` job runs the key count check, `ensure-there-is-at-least-one-rpc-api-key`, which alerts you when `nginx`'s list holds no key.
 - `turn-off-private-rpc` makes the rpc public again, from the validator's next start, and leaves everything else in place. `turn-on-private-rpc` makes it private again.
-- `undo-apply` takes it all back, `nginx` included, until the machine is as `apply` found it.
+- `undo-apply` takes back what `apply` changed, but leaves `nginx` installed, since something else may need it, and says how to remove it.
 
 The engineering reference's [Integration with `x1console`](docs/engineering.md#integration-with-x1console) details where the tool and `x1console` meet: the start script, the `git` hook and the Telegram set-up.
 
@@ -130,14 +130,16 @@ tmux
 node x1-validator-private-rpc/src/cli.js apply --acme-staging
 ```
 
-`apply` first checks the machine, and changes nothing. If it finds problems, it lists them all and stops. Otherwise it goes through its stages, asking before each one:
+`apply` first checks the machine, its stage 1, and changes nothing. If it finds problems, it lists them all and stops. Otherwise it goes through stages 2 to 7, asking "Go on?" before each one:
 
-- `nginx` from nginx.org
-- the firewall rule for port 443
-- the first api key and your password
-- `nginx`'s configuration and start
-- the start-script flag
-- the `git` hook, and the `cron` jobs that run `ensure` and the key count check
+- stage 2: `nginx` from nginx.org
+- stage 3: the firewall rule for port 443
+- stage 4: the first api key and your password
+- stage 5: `nginx`'s configuration and start
+- stage 6: the start-script flag
+- stage 7: the `git` hook, and the `cron` jobs that run `ensure` and the key count check
+
+Stage 8 changes nothing: it says whether to restart the validator, and prints the url.
 
 At its stage for the first api key, `apply` asks for a new x1-validator-services password, typed twice, with at least as many characters as the `passwordMinLength` setting says. The password encrypts the api keys' records, never the keys, which the tool doesn't keep. Then it makes the first api key, and prints its two urls, https and wss, in full. **Save them now**: the tool keeps only the key's hash, and can't show the key again.
 
@@ -188,7 +190,7 @@ The heartbeat is optional. Without a url, `ensure` doesn't check in. To set it u
 
 ## Update
 
-From the project root, get the new code and its packages, then run `apply`. It rewrites every file it gave `nginx`, and the tool's `cron` lines, wherever the new version writes them differently. It rewrites the tool's `git` hook when the hook names an old path to Node.js or to the tool. nginx.org's `apt` files stay as the first `apply` left them. It also turns private rpc back on, if you turned it off:
+From the project root, get the new code and its packages, then run `apply`. It rewrites every file it gave `nginx`, and the tool's `cron` lines, wherever the new version writes them differently. It rewrites the tool's `git` hook when the hook names an old path to Node.js or to the tool. nginx.org's `apt` files stay as the first `apply` left them:
 
 ```bash
 cd ~/x1-validator-services
@@ -205,9 +207,9 @@ If you had turned private rpc off, run `turn-off-private-rpc` again once `apply`
 
 ## Uninstall
 
-`undo-apply` undoes everything `apply` changed, newest first, until the machine is as `apply` found it. `apply` records each change it makes on the machine, such as a file or a firewall rule it adds, with what was there before, in `x1-validator-private-rpc/app-data/what-apply-changed.json`. `undo-apply` takes back only those changes. What was there before `apply`, such as a firewall rule you added, stays.
+`undo-apply` takes back what `apply` changed, newest first. `apply` records each change it makes on the machine, such as a file or a firewall rule it adds, with what was there before, in `x1-validator-private-rpc/app-data/what-apply-changed.json`. `undo-apply` takes back only those changes. What was there before `apply`, such as a firewall rule you added, stays. It never removes a package, since something else may need it, so `nginx` stays installed, as below.
 
-To make the rpc public for a while and keep everything else, use `turn-off-private-rpc` instead, as [Turn the Private Rpc Off and On](#turn-the-private-rpc-off-and-on) shows. `turn-off-private-rpc` keeps the certificate. `undo-apply` deletes it with `nginx`, so each later `apply` needs a new one, and Let's Encrypt issues at most five for one hostname in seven days.
+To make the rpc public for a while and keep everything else, use `turn-off-private-rpc` instead, as [Turn the Private Rpc Off and On](#turn-the-private-rpc-off-and-on) shows. `nginx` then keeps serving the keyed url, which `undo-apply` stops.
 
 If you set up the [Cronitor heartbeat](#cronitor-heartbeat), pause or delete its monitor first. Once the `cron` line goes, the check-ins stop, and Cronitor alerts you.
 
@@ -219,21 +221,27 @@ node x1-validator-private-rpc/src/cli.js undo-apply --dry-run
 node x1-validator-private-rpc/src/cli.js undo-apply
 ```
 
-First it asks one question: whether to delete every api key, and the saved password with them when `apply` saved it. The keys and the saved password go together, since the password opens nothing but the keys' records. So a no keeps both. A later `apply` then hands `nginx` the same keys, and your clients' urls keep working. After a yes, a later `apply` makes a new first key under a new password, and every client needs a new url. Then it removes each of these that `apply` made:
+First it asks one question: whether to delete every api key, and the saved password with them when `apply` saved it. The keys and the saved password go together, since the password opens nothing but the keys' records. So a no keeps both. A later `apply` then hands `nginx` the same keys, and your clients' urls keep working. After a yes, a later `apply` makes a new first key under a new password, and every client needs a new url. Then `undo-apply` removes each of these that `apply` made:
 
 - the `cron` lines and their folders
 - the `git` hook
 - the start-script flag and its backups
-- `nginx`'s service, files and certificates, with its list of the api keys' hashes, whatever the answer
+- the files the tool gave `nginx`, with its list of the api keys' hashes, whatever the answer
 - the saved password, unless you kept it, and the folders made for it and for the api keys' file, once nothing else is in them
 - the firewall rule
-- `nginx` and its modules, with `nginx`'s logs and the account their package made
-- nginx.org's `apt` repository
-- the mask on `nginx.service`, which keeps the package's default site from running until `nginx` is gone
 
-If you removed `nginx` yourself with `apt remove`, its configuration, certificates and logs may still be there, in `/etc/nginx`, `/var/cache/nginx` and `/var/log/nginx`. `undo-apply` leaves them, and says that `sudo apt purge nginx` would delete those folders, with anything else in them, if you want them gone.
+`nginx` stays installed, with its two modules, since `undo-apply` removes no package. It stops, disables and masks `nginx`, so the package's default site can't start. `nginx`'s configuration in `/etc/nginx`, its certificates in `/var/cache/nginx`, its logs in `/var/log/nginx`, its account and nginx.org's `apt` repository stay too. Their entries stay in `x1-validator-private-rpc/app-data/what-apply-changed.json`, so a later `apply` takes this `nginx` as its own, and reuses its certificate. `undo-apply` says all this as it runs. If you want `nginx` gone, purge it, then run `undo-apply` again, which removes its account, nginx.org's repository and the mask:
 
-If a step fails, it says so, and the step stays listed in `x1-validator-private-rpc/app-data/what-apply-changed.json`. After a no to the question, the saved password stays listed too, when `apply` saved it, with its folder and the folders that hold the api keys' file. Running `undo-apply` again retries every step still listed, and asks the question again while the api keys' file is there. Once nothing is left, it removes `app-data/`, with that file in it.
+```bash
+cd ~/x1-validator-services
+sudo apt-mark unhold nginx   # only if you hold it
+sudo apt purge nginx nginx-module-njs nginx-module-acme
+node x1-validator-private-rpc/src/cli.js undo-apply
+```
+
+If you removed `nginx` yourself with `apt remove` before running `undo-apply`, its configuration, certificates and logs may still be there. `undo-apply` leaves them. If you want them gone, `sudo apt purge nginx` deletes those folders, as `undo-apply` says.
+
+If a step fails, `undo-apply` says so, and the step stays listed in `x1-validator-private-rpc/app-data/what-apply-changed.json`. After a no to the question, the folders `apply` made for the api keys' file stay listed too, since the file stays in them. So do the saved password, if `apply` saved it, and its folder. Running `undo-apply` again retries every step still listed, and asks the question again while the api keys' file is there. Once nothing is left, it removes `app-data/`, with that file in it.
 
 The running validator keeps a private rpc until its next start. Restart it from `x1console`, as in [Restart the Validator](#restart-the-validator), to open the rpc again.
 
@@ -267,7 +275,7 @@ Nothing needs keeping running by hand: `nginx` runs under `systemd`, and `cron` 
 | `ensure-there-is-at-least-one-rpc-api-key` | Checks that `nginx`'s list holds a key, and sends an alert when it doesn't. A `cron` job runs it every `apiKeyCountCheckHours` hours. `--quiet` prints only the alert. |
 | `turn-off-private-rpc` | Takes `--private-rpc` out of the start script, after asking, and keeps `ensure` from putting it back. `--yes` skips the question. |
 | `turn-on-private-rpc` | Puts `--private-rpc` back, for `ensure` to keep there again. |
-| `undo-apply` | Undoes everything `apply` changed, newest first, and leaves what was there before. `--dry-run` only shows the steps. |
+| `undo-apply` | Undoes what `apply` changed, newest first, and leaves what was there before. It leaves `nginx` installed, and says how to remove it. `--dry-run` only shows the steps. |
 
 Each command answers `--help`, which ends with what each exit code means.
 
@@ -279,13 +287,13 @@ Each client can have a key of its own. `add-api-key` first asks for your x1-vali
 node x1-validator-private-rpc/src/cli.js add-api-key --count 2
 ```
 
-`remove-api-key` asks for a key, which you paste at a prompt that shows nothing, and removes it. It asks no x1-validator-services password. `nginx` refuses that key from then on, once it has reloaded. Removing the last key asks first, since `nginx` then refuses every request, and the key count check alerts you every few hours until `add-api-key` makes another:
+`remove-api-key` asks for a key, which you paste at a prompt that shows nothing, and removes it. It asks no x1-validator-services password. Since it needs the key itself, a key you no longer have stays valid until `undo-apply` deletes every key. Removing the last key asks first, since `nginx` then refuses every request, and the key count check alerts you every few hours until `add-api-key` makes another:
 
 ```bash
 node x1-validator-private-rpc/src/cli.js remove-api-key
 ```
 
-Since `remove-api-key` needs the key itself, a key you no longer have stays valid until `undo-apply` deletes every key. A new or removed key takes effect once `nginx` has read its list again, which takes a moment, up to a second or two with very many keys. Each time it does, every open websocket closes within 10 seconds, and its client reconnects. A restart of `nginx`, or a reboot, changes nothing: `nginx` reads the list at its start, with no password.
+Both commands then have a running `nginx` read its list again. A new key works, and a removed one stops working, once that's done. It takes a moment, up to a second or two with very many keys. Each time, every open websocket closes within 10 seconds, and its client must reconnect. A restart of `nginx`, or a reboot, changes nothing: `nginx` reads the list at its start, with no password.
 
 Only one command changes the keys at a time. While `apply`, `undo-apply` or another key command is changing them, `add-api-key` and `remove-api-key` refuse, change nothing, and say to run them again.
 
@@ -293,7 +301,7 @@ Both commands may ask for your account's `sudo` password, after their own questi
 
 ### Check
 
-`check-my-private-rpc` tries your keyed url once, the way a client would. It asks for the rpc's hostname and the api key, and doesn't show the key as you type it. Then it sends the rpc a run of queries through `nginx`, one right after another, and prints a table of the answers. It ends with a green ✔ when every query worked, or a red ✘ and what went wrong.
+`check-my-private-rpc` is a one-off check of your keyed url, made the way a client would. It asks for the rpc's hostname and the api key, and doesn't show the key as you type it. Then it sends the rpc a run of queries through `nginx`, one right after another, and prints a table of the answers. It ends with a green ✔ when every query worked, or a red ✘ and what went wrong.
 
 Run it from the project root, on the validator or on any machine where the project is installed:
 
@@ -339,7 +347,7 @@ Neither restarts the validator. Restart it as in [Restart the Validator](#restar
 
 The first two stay quiet while private rpc is off, as [Turn the Private Rpc Off and On](#turn-the-private-rpc-off-and-on) explains, and before `apply` has added the flag. An alert from `ensure` that Telegram doesn't take goes out at the next run. Without `x1console`'s Telegram files, both commands only log.
 
-Two checks send no alert: the running validator's flag, and what listens on ports 80 and 443. Their problems show only in the output and the exit code of an `ensure` you run yourself, without `--quiet`. The `cron` job runs it with `--quiet`, which leaves them out of its log.
+Two checks send no alert: whether the running validator carries `--private-rpc`, and what listens on ports 80 and 443. Their problems show only in the output and the exit code of an `ensure` you run yourself, without `--quiet`. The `cron` job runs it with `--quiet`, which leaves them out of its log.
 
 ---
 
@@ -351,7 +359,7 @@ After changing `hashedApiKeysMapPath`, run `apply` straight away, with no other 
 
 To move the api keys' file, move the file itself first, then change `hashedApiKeysPath`, then run `apply`. With no file at the new path, `apply` takes the machine for a first install: it makes a new first key under a new password, and hands `nginx` a list that holds only that key. Every key your clients hold then stops working.
 
-Non-standard settings for the programs the tool uses, such as `nginx`, aren't fully supported. A non-default `acmeStatePath`, this tool's setting for the folder where `nginx` keeps its certificates, is one example. There, the only gap is that when you uninstall or start over, `undo-apply` leaves that folder's files behind.
+Non-standard settings for the programs the tool uses, such as `nginx`, aren't fully supported. A non-default `acmeStatePath`, this tool's setting for the folder where `nginx` keeps its certificates, is one example. There, the only gap is that when you purge `nginx` after `undo-apply`, that folder's files stay behind.
 
 The Cronitor url is a credential, so it goes in the project root's `.env` instead, as [Cronitor Heartbeat](#cronitor-heartbeat) shows.
 
@@ -379,6 +387,8 @@ Then run the test. It takes about ten minutes, and the container needs internet 
 npm run test:system
 ```
 
+GitHub can run the same test on its own runner, with no LXD on your machine: start the System Test workflow by hand, in the repository's Actions tab.
+
 ---
 
 ## Api Key Security
@@ -386,7 +396,7 @@ npm run test:system
 - **Hashes for `nginx`.** `nginx` keeps only each key's SHA-256 hash, in `/etc/nginx/x1-validator-private-rpc/hashed-api-keys.map`, and checks a request by hashing the key it carries. A random 256-bit key can't be worked back from its hash. Even with the list at its 500,000 limit, an even chance of finding any one key would take about 5×10⁴² years at the whole Bitcoin network's rate. So nothing on the validator holds a usable key, and `nginx` needs no password, at a start or ever.
 - **Shown once.** The tool shows each key when it makes it, and never again. A key is never a command's argument, so no other user sees it in a process list.
 - **Encrypted records.** `~/.config/x1-validator-services/hashed-api-keys.json` holds each key's hash, unencrypted, with its record. Only your account can read it, and its folder is one that future validator services can share. Every value of a record is encrypted with your x1-validator-services password, the way [LP Ranger](https://github.com/nottoseethesun/lp-ranger)'s command-line version stores private keys: AES-256-GCM, with its key from PBKDF2-SHA-512 at 600,000 iterations.
-- **No key in the logs.** `nginx`'s logs show `<key>` in place of anything that looks like a key, anywhere in the url, a mistyped one included. They're `nginx`'s usual `access.log` and `error.log`, in `/var/log/nginx`, and they hold each client's address. Root, `nginx` and the `adm` group can read them, as with any `nginx` from nginx.org's package. The package's `logrotate` rule keeps 52 days of them. The part of `nginx`'s configuration that forwards keyed requests writes no error log, since each error line would carry the key: it sends them to `/dev/null`. A side effect is one expected `[emerg] chown("/dev/null", …) failed` line in `nginx`'s error log each night, as [The Request Path](docs/architecture.md#the-request-path) explains.
+- **No key in the logs.** `nginx` writes its usual `access.log` and `error.log` in `/var/log/nginx`. The access log shows `<key>` in place of anything that looks like a key, anywhere in the url, a mistyped one included. The error log can't hide a key: a line about a request carries the request line as the client sent it. So the part of `nginx`'s configuration that forwards keyed requests writes no error log. It sends those lines to `/dev/null`. A side effect is one expected `[emerg] chown("/dev/null", …) failed` line in `nginx`'s error log each night, as [The Request Path](docs/architecture.md#the-request-path) explains. Both logs hold each client's address. Root, `nginx` and the `adm` group can read them, as with any `nginx` from nginx.org's package, and the package's `logrotate` rule keeps 52 days of them.
 - **A saved password.** `systemd` encrypts it, with the machine's TPM2 chip when it has a usable one. Without a chip, the key that decrypts it sits on the same disk, so a copy of the disk gives it up. `apply` says which case applies before it asks.
 - **A lost password.** If you saved it, root can read it back: `sudo systemd-creds decrypt --name=x1-validator-services-password /etc/credstore.encrypted/x1-validator-services-password -`. If you didn't, it can't be recovered, and nothing can read the records without it. The keys keep working, since `nginx` needs only their hashes, but `add-api-key` needs the password. To start over, run `undo-apply`, and let it delete every key. Then run `apply`, which makes a new first key under a new password, and make each client a key of its own with `add-api-key`.
 

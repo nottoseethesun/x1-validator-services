@@ -31,21 +31,34 @@ import {
 import { addPrivateRpc } from "../src/cli/start-script.js";
 import { NGINX_GONE_ALREADY, runUndoApply } from "../src/cli/undo-apply.js";
 import { partsOf, readRecord } from "../src/cli/what-apply-changed.js";
-import { appliedValidator, commandRun } from "./helpers/applied-validator.js";
+import {
+  appliedValidator,
+  commandRun,
+  purgeNginxByHand,
+} from "./helpers/applied-validator.js";
 import { shippedAndChangedSettings } from "./helpers/config-copies.js";
 import { fakeX1Validator, HOME } from "./helpers/fake-x1-validator.js";
 import { scriptedPrompts } from "./helpers/scripted-prompts.js";
 
 /**
- * Runs undo-apply, answering yes to its questions.
+ * Runs undo-apply, answering yes to its questions, and with `purge`,
+ * plays the operator's purge of the nginx it leaves, then runs it again.
  * @param {object} host  The fake host.
  * @param {object} settings  The settings.
- * @returns {Promise<{code: number, lines: string[]}>}
+ * @param {boolean} [purge]  Whether to purge nginx and run again.
+ * @returns {Promise<{code: number, lines: string[]}>} The last run's exit
+ *   code, and every run's lines.
  */
-async function undoApply(host, settings) {
+async function undoApply(host, settings, purge = false) {
   const prompts = scriptedPrompts({ ask: () => true });
   const run = commandRun(host, settings, { prompts, options: {} });
-  const code = await runUndoApply(run);
+  let code = await runUndoApply(run);
+  if (purge === true) {
+    await purgeNginxByHand(host);
+    const again = commandRun(host, settings, { prompts, options: {} });
+    code = await runUndoApply(again);
+    run.lines.push(...again.lines);
+  }
   return { code, lines: run.lines };
 }
 
@@ -63,7 +76,7 @@ test("leaves what others changed since apply, and puts back a mask that was ther
   const dropInFolder = path.dirname(settings.systemdDropInPath);
   host.files.delete(settings.systemdDropInPath);
   host.files.delete(dropInFolder);
-  const { code, lines } = await undoApply(host, settings);
+  const { code, lines } = await undoApply(host, settings, true);
   assert.equal(code, 0, lines.join("\n"));
   assert.equal(host.files.get(hookPath), theirs);
   assert.equal(host.files.get(another), "{}");
@@ -85,7 +98,8 @@ test("leaves --private-rpc in the start script and the nginx account, both there
     state: { nginxUser: true },
     files: new Map([[bare.scriptPath, withFlag]]),
   });
-  const { code, lines } = await undoApply(host, settings);
+  // The account stays even after nginx is purged and undo-apply runs again.
+  const { code, lines } = await undoApply(host, settings, true);
   assert.equal(code, 0, lines.join("\n"));
   assert.equal(host.files.get(scriptPath), withFlag);
   assert.equal(state.nginxUser, true);
@@ -104,6 +118,8 @@ test("a hook or an api keys' file someone removed is no matter; a crontab that r
   crontabWorks = false;
   host.files.delete(gitHookPathOf(settings, HOME));
   host.files.delete(hashedApiKeysPathOf(settings, HOME));
+  // Purged first, so nothing of nginx's stays on record.
+  await purgeNginxByHand(host);
   const { code, lines } = await undoApply(host, settings);
   assert.equal(code, 1);
   assert.ok(
@@ -137,7 +153,15 @@ test("after a later apply moves nginx's list, undo-apply removes the new list an
 });
 
 test("after nginx is removed by hand, undo-apply has no service to stop, says how to purge what may be left, and still finishes", async () => {
-  const { host, state, settings } = await appliedValidator();
+  // After apt remove, dpkg still lists each package, with its config files.
+  let removed = false;
+  const { host, state, settings } = await appliedValidator({
+    respond: (call) =>
+      removed === true && call.command === "dpkg-query"
+        ? { stdout: "deinstall ok config-files 1.30.6-1~noble" }
+        : undefined,
+  });
+  removed = true;
   Object.assign(state, {
     nginxInstalled: false,
     enabled: false,

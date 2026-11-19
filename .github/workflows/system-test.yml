@@ -1,0 +1,50 @@
+# .github/workflows/system-test.yml
+#
+# Runs the system test, `npm run test:system`, on GitHub's Ubuntu runner
+# in place of the development machine: x1-validator-private-rpc end to
+# end, in a throwaway LXD container. The test takes about ten minutes, so
+# this workflow runs only when someone starts it, from the Actions tab or
+# with `gh workflow run system-test.yml`, and no pull request waits for
+# it. GitHub can start a workflow by hand only once the workflow is on
+# main. From then on, it can run on any branch that has it.
+
+name: System Test
+run-name: System Test on ${{ github.ref_name }}
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  system-test:
+    name: System Test
+    runs-on: ubuntu-latest
+    # GitHub's own limit is 6 hours, so a hung launch fails sooner.
+    timeout-minutes: 45
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js 24
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Canonical's action installs LXD, lets the runner's account use it,
+      # and opens Docker's firewall to LXD's bridge, so the container can
+      # reach the internet. It's pinned to a commit, as its README asks
+      # while it's in alpha. 6/stable is the LXD the development machine
+      # runs.
+      - name: Set up LXD
+        uses: canonical/setup-lxd@25c036d6aa7fd68c4d980887ad2c0fb122234cd0 # main, 2026-11-10
+        with:
+          channel: 6/stable
+
+      - name: Run the system test
+        run: npm run test:system

@@ -178,7 +178,7 @@
       "maximum": 5000
     },
     "startScriptQuietSeconds": {
-      "description": "How long ensure keeps off the start script after it changes, so it never edits the script in the middle of an x1console update. A run from the tool's git hook doesn't wait.",
+      "description": "How long ensure leaves the start script alone after the script last changed, so it never edits the script in the middle of an x1console update. A run from the tool's git hook doesn't wait.",
       "type": "integer",
       "minimum": 5,
       "maximum": 600
@@ -221,7 +221,7 @@
       "pattern": "^/[A-Za-z0-9._/-]+$"
     },
     "homePath": {
-      "description": "A path like systemPath, or one in the account's home folder, starting with ~/.",
+      "description": "An absolute path of letters, digits, dots, dashes, underscores and slashes, or one that starts with ~/, in the account's home folder.",
       "type": "string",
       "pattern": "^(/|~/)[A-Za-z0-9._/-]+$"
     },

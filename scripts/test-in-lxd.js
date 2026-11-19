@@ -4,8 +4,9 @@
  * @description
  * Backs `npm run test:system`: the end-to-end test of
  * x1-validator-private-rpc on a real Ubuntu 24.04 system with systemd, in
- * a throwaway LXD container on the development machine. It never runs on
- * a validator. Its first phase, the nginx upgrade check, is described
+ * a throwaway LXD container on the development machine, or on GitHub's
+ * runner through .github/workflows/system-test.yml. It never runs on a
+ * validator. Its first phase, the nginx upgrade check, is described
  * here. Its second, apply and the commands after it, is described in
  * scripts/_lxd-apply-phase.js. It launches the container, copies in
  * the feature and Node.js 20.0.0 (the validator's version), and installs
@@ -213,7 +214,8 @@ async function main() {
       "the container clean. Then come apply, ensure, url, add-api-key, " +
       "remove-api-key, the key count check, turn-off-private-rpc, " +
       "turn-on-private-rpc and undo-apply, with Pebble in place of Let's " +
-      "Encrypt. They end with the container as apply found it. " +
+      "Encrypt. Once the test purges the nginx undo-apply leaves, they end " +
+      "with the container as apply found it. " +
       "Then it deletes the container.",
     [
       "0  both phases passed",

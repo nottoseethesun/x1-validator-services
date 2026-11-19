@@ -202,7 +202,9 @@ function addCommands(program, makers) {
     .action(action(makers, "ensure", runEnsure, SHOWS_DISCLAIMER.never));
   program
     .command("undo-apply")
-    .description("undo what apply did, newest step first")
+    .description(
+      "undo what apply did, newest step first, but leave nginx installed",
+    )
     .option("--dry-run", "print every step, and change nothing", false)
     .action(
       action(makers, "undo-apply", runUndoApply, SHOWS_DISCLAIMER.unlessDryRun),

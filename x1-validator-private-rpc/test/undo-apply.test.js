@@ -3,14 +3,15 @@
  * @description
  * Tests undo-apply on a fake validator that apply set up:
  *
- * - every setting apply changed is reset, newest first, until the
- *   machine is as apply found it, the api keys and the saved password
- *   going after one question asked before any step. Their other cases
- *   are in undo-apply-api-keys.test.js. Only the flag comes out of the
- *   start script, so a change an x1console update made since stays.
+ * - every setting apply changed is reset, newest first, the api keys and
+ *   the saved password going after one question asked before any step.
+ *   Their other cases are in undo-apply-api-keys.test.js. Only the flag
+ *   comes out of the start script, so a change an x1console update made
+ *   since stays. nginx stays installed, and its packages, account,
+ *   repository and mask stay on record, until the operator purges nginx
+ *   and runs undo-apply again, which leaves the machine as apply found it.
  * - a folder that was there keeps its mode and stays
  * - nginx.org's keyring that was there stays
- * - nginx and its account stay while nginx is still installed
  * - a folder stays when the settings moved it, or when it holds files
  *   apply didn't make
  * - after apply --acme-staging with every setting changed and the
@@ -40,7 +41,7 @@ import {
   hashedApiKeysPathOf,
 } from "../src/cli/feature-paths.js";
 import { lockStartScript, START_SCRIPT_LOCKED } from "../src/cli/state.js";
-import { runUndoApply } from "../src/cli/undo-apply.js";
+import { NGINX_STAYS, runUndoApply } from "../src/cli/undo-apply.js";
 import {
   partsOf,
   readRecord,
@@ -50,6 +51,7 @@ import {
   NGINX_APT_PIN_PATH,
   NGINX_APT_SOURCE_PATH,
   NGINX_KEYRING_PATH,
+  NGINX_PACKAGES,
   NGINX_UNIT,
 } from "../src/lib/nginx-org.js";
 import { loadSettings } from "../src/lib/settings.js";
@@ -57,6 +59,7 @@ import {
   appliedValidator,
   commandRun,
   PASSWORD,
+  purgeNginxByHand,
 } from "./helpers/applied-validator.js";
 import {
   copyShippedConfig,
@@ -71,19 +74,35 @@ import {
 } from "./helpers/fake-x1-validator.js";
 import { scriptedPrompts } from "./helpers/scripted-prompts.js";
 
+/** apply's record's names for nginx.org's repository files. */
+const REPOSITORY_NAMES = ["nginxAptKeyring", "nginxAptSource", "nginxAptPin"];
+
 /**
- * Runs undo-apply.
+ * Runs undo-apply, and with `purge`, plays the operator's purge of the
+ * nginx it leaves, then runs it again, to take back the rest.
  * @param {object} host  The fake host.
  * @param {object} settings  The settings.
  * @param {object} [more]  The answers and options.
  * @param {boolean} [more.yes]  The answer to its questions.
  * @param {boolean} [more.dryRun]  Whether it's a dry run.
+ * @param {boolean} [more.purge]  Whether to purge nginx and run again.
  * @returns {Promise<{code: number, lines: string[], asked: string[]}>}
+ *   The last run's exit code, and every run's lines and questions.
  */
-async function undoApply(host, settings, { yes = true, dryRun = false } = {}) {
+async function undoApply(
+  host,
+  settings,
+  { yes = true, dryRun = false, purge = false } = {},
+) {
   const prompts = scriptedPrompts({ ask: () => yes });
   const run = commandRun(host, settings, { prompts, options: { dryRun } });
-  const code = await runUndoApply(run);
+  let code = await runUndoApply(run);
+  if (purge === true) {
+    await purgeNginxByHand(host);
+    const again = commandRun(host, settings, { prompts, options: { dryRun } });
+    code = await runUndoApply(again);
+    run.lines.push(...again.lines);
+  }
   return { code, lines: run.lines, asked: prompts.asked };
 }
 
@@ -120,7 +139,7 @@ function fixtureScript() {
   );
 }
 
-test("undoes everything apply did, newest first, until nothing is left", async () => {
+test("undoes everything apply did, newest first, but leaves nginx installed, with what belongs with it on record, until a run after the operator purges nginx", async () => {
   const { host, state, settings, scriptPath } = await appliedValidator(
     {},
     { savePassword: true },
@@ -128,9 +147,9 @@ test("undoes everything apply did, newest first, until nothing is left", async (
   const paths = featurePaths();
   const keysFile = hashedApiKeysPathOf(settings, HOME);
   const [backup] = targetsNamed(host, "startScriptBackup");
-  const repository = ["nginxAptKeyring", "nginxAptSource", "nginxAptPin"]
-    .map((name) => targetsNamed(host, name))
-    .flat();
+  const repository = REPOSITORY_NAMES.map((name) =>
+    targetsNamed(host, name),
+  ).flat();
   assert.equal(repository.length, 3);
   // An x1console update changes another line, after apply added the flag.
   const before = "--maximum-full-snapshots-to-retain 50";
@@ -148,12 +167,28 @@ test("undoes everything apply did, newest first, until nothing is left", async (
   assert.equal(host.fileMode(scriptPath), 0o755);
   // Only the tool's lines go: Autopilot's stay.
   assert.equal(state.crontab, autopilotCrontab());
-  assert.deepEqual(
-    [state.active, state.enabled, state.masked],
-    [false, false, false],
-  );
-  assert.deepEqual([state.nginxInstalled, state.nginxUser], [false, false]);
   assert.equal(state.ufwRules.includes(HTTPS_RULE), false);
+  // nginx stays, stopped, disabled and masked, and so does what belongs
+  // with it, on record, for a later apply.
+  assert.deepEqual(
+    [state.active, state.enabled, state.masked, state.nginxInstalled],
+    [false, false, true, true],
+  );
+  assert.ok(lines.includes(`[undo-apply] ${NGINX_STAYS}`), lines.join("\n"));
+  assert.deepEqual(
+    recorded(host).map((parts) => parts.name),
+    ["nginxServiceMasked", ...REPOSITORY_NAMES, "nginxAccount"].concat(
+      NGINX_PACKAGES.map(() => "nginxPackage"),
+    ),
+  );
+  for (const filePath of repository) {
+    assert.ok(host.files.has(filePath), filePath);
+  }
+  await purgeNginxByHand(host);
+  const from = host.calls.length;
+  const second = await undoApply(host, settings);
+  assert.equal(second.code, 0, second.lines.join("\n"));
+  assert.deepEqual([state.masked, state.nginxUser], [false, false]);
   for (const filePath of [
     gitHookPathOf(settings, HOME),
     backup,
@@ -190,19 +225,19 @@ test("undoes everything apply did, newest first, until nothing is left", async (
         call.kind === "removeRootTree" && call.path === settings.acmeStatePath,
     ),
   );
-  const sourceGone = host.calls.findIndex(
+  const later = host.calls.slice(from);
+  const sourceGone = later.findIndex(
     (call) =>
       call.kind === "removeRootFile" && call.path === NGINX_APT_SOURCE_PATH,
   );
-  const refreshed = host.calls.findLastIndex(
+  const refreshed = later.findLastIndex(
     (call) => call.command === "apt" && call.args.at(-1) === "update",
   );
   assert.ok(sourceGone >= 0 && refreshed > sourceGone);
   const order = [
     "Done: remove the line that runs ensure",
     "Done: take --private-rpc out of",
-    "Done: remove the nginx package.",
-    `Done: unmask ${NGINX_UNIT}.`,
+    NGINX_STAYS,
   ].map((start) => lines.findIndex((line) => line.includes(start)));
   assert.deepEqual(
     [...order].sort((a, b) => a - b),
@@ -212,7 +247,11 @@ test("undoes everything apply did, newest first, until nothing is left", async (
     order.every((index) => index >= 0),
     lines.join("\n"),
   );
-  assert.equal(lines.at(-1), "[undo-apply] Everything apply did is undone.");
+  assert.ok(second.lines.includes(`[undo-apply] Done: unmask ${NGINX_UNIT}.`));
+  assert.equal(
+    second.lines.at(-1),
+    "[undo-apply] Everything apply did is undone.",
+  );
 });
 
 test("a folder that was there keeps its mode and stays", async () => {
@@ -252,7 +291,7 @@ test("nginx.org's keyring that was there before apply stays, while the files app
   const record = readRecord(host, featurePaths().whatApplyChangedPath);
   const keyring = record.get(`nginxAptKeyring:${NGINX_KEYRING_PATH}`);
   assert.equal(keyring.applyChangedThisFromItsPreviousValue, false);
-  const { code, lines } = await undoApply(host, settings);
+  const { code, lines } = await undoApply(host, settings, { purge: true });
   assert.equal(code, 0, lines.join("\n"));
   assert.equal(host.files.get(NGINX_KEYRING_PATH), theirs);
   for (const filePath of [NGINX_APT_SOURCE_PATH, NGINX_APT_PIN_PATH]) {
@@ -285,48 +324,13 @@ test("the dry run says each step, and changes nothing", async () => {
   assert.ok(
     lines.some((line) => line.includes("Would take --private-rpc out of")),
   );
+  // nginx is installed, so what belongs with it would stay.
   assert.ok(
-    lines.includes(`[undo-apply] Would remove ${NGINX_APT_SOURCE_PATH}.`),
+    lines.includes(`[undo-apply] Would keep ${NGINX_APT_SOURCE_PATH}.`),
   );
-  assert.equal(lines.at(-1), `[undo-apply] Would unmask ${NGINX_UNIT}.`);
-});
-
-test("nginx stays masked, and its account stays, while it's still installed, until a later run", async () => {
-  let purgeWorks = false;
-  const { host, state, settings } = await appliedValidator({
-    respond: (call) =>
-      call.args?.includes("purge") && purgeWorks === false
-        ? { status: 100, stderr: "E: Could not get lock" }
-        : undefined,
-  });
-  const first = await undoApply(host, settings);
-  assert.equal(first.code, 1);
-  assert.deepEqual([state.masked, state.nginxUser], [true, true]);
-  for (const stays of [
-    "is still installed, so the mask stays until it's gone.",
-    "is still installed, so its account stays until it's gone.",
-  ]) {
-    assert.ok(
-      first.lines.some((line) => line.includes(stays)),
-      stays,
-    );
-  }
-  assert.deepEqual(
-    recorded(host).map((parts) => parts.name),
-    [
-      "nginxServiceMasked",
-      "nginxAccount",
-      "nginxPackage",
-      "nginxPackage",
-      "nginxPackage",
-    ],
-  );
-  purgeWorks = true;
-  const second = await undoApply(host, settings);
-  assert.equal(second.code, 0, second.lines.join("\n"));
-  assert.deepEqual(
-    [state.nginxInstalled, state.masked, state.nginxUser],
-    [false, false, false],
+  assert.equal(
+    lines.at(-1),
+    `[undo-apply] Would keep the mask on ${NGINX_UNIT}.`,
   );
 });
 
@@ -367,7 +371,7 @@ test("after apply --acme-staging with every setting changed and the password sav
     savePassword: true,
   });
   const from = host.calls.length;
-  const { code, lines } = await undoApply(host, settings);
+  const { code, lines } = await undoApply(host, settings, { purge: true });
   assert.equal(code, 0, lines.join("\n"));
   assert.equal(lines.at(-1), "[undo-apply] Everything apply did is undone.");
   assert.deepEqual(host.files, found);
@@ -389,7 +393,7 @@ test("undo-apply removes every folder apply made for the saved password, however
   const scenario = { settings };
   const found = fakeX1Validator(scenario).host.files;
   const { host } = await appliedValidator(scenario, { savePassword: true });
-  const { code, lines } = await undoApply(host, settings);
+  const { code, lines } = await undoApply(host, settings, { purge: true });
   assert.equal(code, 0, lines.join("\n"));
   assert.deepEqual(host.files, found);
 });
@@ -413,7 +417,7 @@ test("inside a folder only root can look into, undo-apply removes the folder app
     };
     const found = fakeX1Validator(scenario).host.files;
     const { host } = await appliedValidator(scenario, { savePassword: true });
-    const { code, lines } = await undoApply(host, settings);
+    const { code, lines } = await undoApply(host, settings, { purge: true });
     assert.equal(code, 0, lines.join("\n"));
     assert.deepEqual(host.files, found, there.join(" "));
   }
@@ -448,7 +452,7 @@ test("a later apply keeps the first one's old values, replaces its own hook and 
     toolLines[1],
   );
   assert.ok(host.files.get(hookPath).includes("/opt/node-v22/bin/node"));
-  const { code, lines } = await undoApply(host, settings);
+  const { code, lines } = await undoApply(host, settings, { purge: true });
   assert.equal(code, 0, lines.join("\n"));
   assert.equal(state.crontab, autopilotCrontab());
   assert.equal(host.files.has(hookPath), false);
@@ -479,7 +483,7 @@ test("a setting this version can't reset stays recorded, and so does one whose o
   ];
   const record = readRecord(host, recordPath);
   writeRecord(host, recordPath, new Map([...odd, ...record]));
-  const { code, lines } = await undoApply(host, settings);
+  const { code, lines } = await undoApply(host, settings, { purge: true });
   assert.equal(code, 0, lines.join("\n"));
   for (const [key] of odd) {
     assert.ok(
@@ -516,7 +520,7 @@ test("a step that fails stays recorded, and a second undo-apply retries it", asy
   assert.ok(state.ufwRules.includes(HTTPS_RULE));
   assert.equal(
     first.lines.at(-1),
-    `[undo-apply] The steps above that failed or were skipped stay in ${featurePaths().whatApplyChangedPath}. Running undo-apply again retries them.`,
+    `[undo-apply] The steps above that failed, were skipped or were kept stay in ${featurePaths().whatApplyChangedPath}. Running undo-apply again retries them.`,
   );
   ufwWorks = true;
   const second = await undoApply(host, settings);

@@ -7,10 +7,11 @@
  * fails while writing nginx.org's repository files, leaves every change
  * on record. After a run that failed at either point, or while waiting
  * for the certificate, undo-apply leaves the machine as apply found it,
- * and skips a package on record that apt never installed. On a first
- * install, a configuration nginx -t refuses leaves none of the files the
- * run wrote for nginx, is kept in the tool's error log, and undo-apply
- * takes all back.
+ * once the operator has purged the nginx it leaves, and skips a package
+ * on record that apt never installed. On a first install, a
+ * configuration nginx -t refuses leaves none of the files the run wrote
+ * for nginx, is kept in the tool's error log, and undo-apply takes all
+ * back.
  */
 
 import assert from "node:assert/strict";
@@ -22,7 +23,11 @@ import { partsOf, readRecord } from "../src/cli/what-apply-changed.js";
 import { GATE_PAGE_PATH } from "../src/lib/gate-page.js";
 import { NGINX_APT_PIN_PATH } from "../src/lib/nginx-org.js";
 import { loadSettings } from "../src/lib/settings.js";
-import { commandRun, PASSWORD } from "./helpers/applied-validator.js";
+import {
+  commandRun,
+  PASSWORD,
+  purgeNginxByHand,
+} from "./helpers/applied-validator.js";
 import { copyShippedConfig } from "./helpers/config-copies.js";
 import { fakeX1Validator, HOSTNAME } from "./helpers/fake-x1-validator.js";
 import { scriptedPrompts } from "./helpers/scripted-prompts.js";
@@ -63,7 +68,9 @@ function machineOf(host, state) {
 
 /**
  * Runs apply, which must fail, then undo-apply, which must leave the
- * machine as apply found it.
+ * machine as apply found it. When apply got as far as installing nginx,
+ * undo-apply leaves it, so the operator's purge of nginx, and a second
+ * undo-apply, come first.
  * @param {{host: object, state: object, settings: object}} validator
  *   The fake validator.
  * @param {string} failure  Part of the message apply must fail with.
@@ -89,12 +96,20 @@ async function failThenUndo(
   const record = readRecord(host, featurePaths().whatApplyChangedPath);
   const names = [...record.keys()].map((key) => partsOf(key).name);
   between();
-  const undoing = commandRun(host, settings, {
-    prompts: scriptedPrompts({ ask: () => true }),
-  });
-  assert.equal(await runUndoApply(undoing), 0, undoing.lines.join("\n"));
+  const undo = async () => {
+    const undoing = commandRun(host, settings, {
+      prompts: scriptedPrompts({ ask: () => true }),
+    });
+    assert.equal(await runUndoApply(undoing), 0, undoing.lines.join("\n"));
+    return undoing.lines;
+  };
+  const lines = await undo();
+  if (state.nginxInstalled === true) {
+    await purgeNginxByHand(host);
+    lines.push(...(await undo()));
+  }
   assert.deepEqual(machineOf(host, state), before);
-  return { names, lines: undoing.lines };
+  return { names, lines };
 }
 
 test("on a first install, a configuration nginx -t refuses leaves none of the files the run wrote for nginx, is kept in the tool's error log, and undo-apply leaves the machine as apply found it", async () => {
@@ -134,7 +149,7 @@ test("on a first install, a configuration nginx -t refuses leaves none of the fi
   assert.ok(names.includes("toolLogsFolder"), names.join(", "));
 });
 
-test("a run that dies during apt's install of nginx leaves it on record, and undo-apply removes it", async () => {
+test("a run that dies during apt's install of nginx leaves it on record, and undo-apply keeps it there until the operator purges nginx", async () => {
   const validator = freshValidator({
     respond: (call, state) => {
       if (call.command !== "env" || !call.args.includes("install")) {

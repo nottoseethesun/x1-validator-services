@@ -14,13 +14,20 @@
  * - the saved password, and the folders apply made for it and for the
  *   api keys' file
  * - the firewall rule
- * - nginx's packages, and the account their package made
- * - nginx.org's repository
- * - the mask apply put on nginx.service before installing it
+ * - once nginx is gone, the account its package made, nginx.org's
+ *   repository and the mask apply put on nginx.service before installing
+ *   it
  *
  * A setting apply found already as it needed it stays as it is. Once
  * every change is undone, the record goes too, with the rest of
  * app-data/.
+ *
+ * It never removes a package, since something else may need it. So while
+ * nginx is installed, its packages stay on record, with its account,
+ * nginx.org's repository and the mask, which keeps nginx's default site
+ * from starting. A later apply then takes that nginx as its own. undo-apply
+ * says what stays, and how the operator can purge nginx if they choose.
+ * Once they have, a later undo-apply takes back the rest.
  *
  * The api keys aren't in the record, since keys come and go through
  * add-api-key and remove-api-key. Before any step, undo-apply asks one
@@ -45,22 +52,16 @@
  * cron job wrote in it, goes only while the settings still put that
  * folder there, so a damaged record can never aim a removal elsewhere.
  *
- * nginx stays masked until it's gone, so its package's default site
- * never runs, and its account stays until then too. A step that fails,
- * or that the operator declines, stays in the record. So does a folder,
- * while such a step's target, or the kept api keys' file, is in it.
- * Running undo-apply again retries them.
+ * A step that fails, or that the operator declines, stays in the record.
+ * So does a folder, while such a step's target, or the kept api keys'
+ * file, is in it. Running undo-apply again retries them.
  */
 
 import path from "node:path";
-import {
-  installedVersion,
-  purgePackages,
-  updatePackageLists,
-} from "../lib/apt.js";
+import { installedVersion, updatePackageLists } from "../lib/apt.js";
 import { mustSucceed } from "../lib/command-result.js";
 import { rootLooks } from "../lib/folders-to-make.js";
-import { NGINX_LOG_DIR, NGINX_UNIT } from "../lib/nginx-org.js";
+import { NGINX_LOG_DIR, NGINX_PACKAGES, NGINX_UNIT } from "../lib/nginx-org.js";
 import { systemctl } from "../lib/systemd.js";
 import { hashedApiKeysPathOf } from "./feature-paths.js";
 import { askSudoFirst, withApiKeysLock } from "./hashed-api-keys.js";
@@ -195,36 +196,58 @@ async function removeRootFile(host, name, filePath) {
 }
 
 /**
- * What undo-apply says when nginx is gone already at its purge step. A
+ * What undo-apply says when it leaves nginx installed. It never removes a
+ * package, since something else may need it. While nginx is installed it
+ * keeps nginx's packages, account, repository and mask on record, so a
+ * later apply takes this nginx as its own. The purge it names is the
+ * operator's to choose, and once they've made it, a later undo-apply
+ * removes the rest.
+ */
+export const NGINX_STAYS =
+  "nginx stays installed, with its two modules: undo-apply removes no " +
+  "package, since something else may need it. Its configuration in " +
+  "/etc/nginx, its certificates in /var/cache/nginx, its logs in " +
+  `${NGINX_LOG_DIR}, its account and nginx.org's repository stay too, and ` +
+  "a later apply takes this nginx as its own. If you want nginx gone, " +
+  `run sudo apt purge ${NGINX_PACKAGES.join(" ")}, after sudo apt-mark ` +
+  "unhold nginx if you hold it. Then run undo-apply again, which removes " +
+  "its account and nginx.org's repository.";
+
+/**
+ * What undo-apply says when nginx is gone already at its package step. A
  * removal by hand with apt remove keeps nginx's configuration, its
- * certificates and its logs, which only a purge deletes. undo-apply
- * leaves that purge to the operator, since it deletes those folders
- * whole, with anything else in them.
+ * certificates and its logs, which only a purge deletes.
  */
 export const NGINX_GONE_ALREADY =
   "nginx isn't installed, so there's nothing to remove. If it was " +
   "removed with apt remove, its configuration in /etc/nginx, its " +
   `certificates in /var/cache/nginx and its logs in ${NGINX_LOG_DIR} may ` +
-  "still be there. sudo apt purge nginx deletes those folders, with " +
-  "anything else in them, if you want them gone.";
+  "still be there. If you want them gone, sudo apt purge nginx deletes " +
+  "them.";
 
 /**
- * Purges one of nginx.org's packages, when it's installed. apply records
- * each package just before apt installs them, so a run that died part way
- * can leave one on record that apt never installed.
+ * Tells whether a package is installed.
  * @param {object} host  The host.
  * @param {string} name  The package.
- * @returns {Promise<string|null>} A note when the package isn't there.
+ * @returns {boolean}
  */
-async function removePackage(host, name) {
+function isInstalled(host, name) {
   const version = installedVersion(host, name);
-  if (version === undefined || version === null) {
-    return name === "nginx"
-      ? NGINX_GONE_ALREADY
-      : `${name} isn't installed, so there's nothing to remove.`;
-  }
-  await purgePackages(host, [name]);
-  return null;
+  return version !== undefined && version !== null;
+}
+
+/**
+ * Says that a package on record isn't installed. apply records each
+ * package just before apt installs them, so a run that died part way can
+ * leave one on record that apt never installed. The operator may also
+ * have removed one by hand.
+ * @param {string} name  The package.
+ * @returns {string} The note.
+ */
+function packageGone(name) {
+  return name === "nginx"
+    ? NGINX_GONE_ALREADY
+    : `${name} isn't installed, so there's nothing to remove.`;
 }
 
 /**
@@ -235,8 +258,7 @@ async function removePackage(host, name) {
  * @returns {string|null} A note when nginx isn't installed.
  */
 function stopNginx(host) {
-  const version = installedVersion(host, "nginx");
-  if (version === undefined || version === null) {
+  if (!isInstalled(host, "nginx")) {
     return "nginx isn't installed, so there's nothing to stop, disable or mask.";
   }
   systemctl(host, ["disable", "--now", NGINX_UNIT]);
@@ -245,40 +267,17 @@ function stopNginx(host) {
 }
 
 /**
- * Removes the nginx account its package made, once nginx is gone, since
- * the package leaves its account behind.
+ * Removes the nginx account its package made, since the package leaves
+ * its account behind. undo-apply removes it only once nginx is gone,
+ * since nginx's files belong to it.
  * @param {object} host  The host.
- * @throws {Error} While nginx is still installed, since its files belong
- *   to that account. The account stays in the record, for the next run.
  */
 function removeAccount(host) {
-  const version = installedVersion(host, "nginx");
-  if (version !== undefined && version !== null) {
-    throw new Error(
-      `nginx ${version} is still installed, so its account stays until it's gone.`,
-    );
-  }
   const account = host.run("getent", ["passwd", "nginx"]);
   if (account.status === 0) {
     const removed = host.sudo("userdel", ["nginx"]);
     mustSucceed(removed, "Removing nginx's account");
   }
-}
-
-/**
- * Unmasks nginx.service once nginx is gone.
- * @param {object} host  The host.
- * @throws {Error} While nginx is still installed, since its default site
- *   could then run. The mask stays in the record, for the next run.
- */
-function unmaskNginx(host) {
-  const version = installedVersion(host, "nginx");
-  if (version !== undefined && version !== null) {
-    throw new Error(
-      `nginx ${version} is still installed, so the mask stays until it's gone.`,
-    );
-  }
-  systemctl(host, ["unmask", NGINX_UNIT]);
 }
 
 /**
@@ -288,9 +287,10 @@ function unmaskNginx(host) {
  * @param {string} key  The setting.
  * @param {import("./what-apply-changed.js").Entry} entry  Its entry.
  * @returns {{what: string, declined?: boolean, keep?: boolean,
- *   run?: () => (unknown|Promise<unknown>)}} The step, with `declined`
- *   for one the operator's answer keeps, and `keep` for a setting this
- *   version of the tool can't reset.
+ *   note?: string, run?: () => (unknown|Promise<unknown>)}} The step,
+ *   with `declined` for one the operator's answer keeps, and `keep` for
+ *   a setting that stays: one this version of the tool can't reset, or
+ *   one that stays with nginx while it's installed, which `note` says.
  */
 function resetStep(context, key, entry) {
   const { host, settings, paths, keysKept } = context;
@@ -323,6 +323,18 @@ function resetStep(context, key, entry) {
     settings.acmeStatePath,
     settings.acmeStagingStatePath,
   ]);
+  /*-
+   * While nginx is installed, what belongs with it stays on record, so a
+   * later apply takes it as its own, and a later undo-apply, once the
+   * operator has purged nginx, takes it back.
+   */
+  const whileNginx = (what, note, make) => () =>
+    isInstalled(host, "nginx") ? { what, keep: true, note } : make();
+  const repositoryFile = whileNginx(
+    target,
+    `${target} stays while nginx is installed, for nginx's updates.`,
+    rootFile,
+  );
   const cronCommand =
     / (ensure\S*) --quiet /.exec(target)?.at(1) ?? "a command";
   const steps = {
@@ -377,24 +389,46 @@ function resetStep(context, key, entry) {
         mustSucceed(deleted, `Removing ${target}`);
       },
     }),
-    nginxPackage: () => ({
-      what: `remove the ${target} package`,
-      run: () => removePackage(host, target),
-    }),
-    nginxAccount: () => ({
-      what: "remove the nginx account its package made",
-      run: () => removeAccount(host),
-    }),
-    nginxAptKeyring: rootFile,
-    nginxAptSource: rootFile,
-    nginxAptPin: rootFile,
-    nginxServiceMasked: () =>
-      old === true
+    nginxPackage: () =>
+      isInstalled(host, target)
         ? {
+            what: `the ${target} package`,
+            keep: true,
+            note:
+              target === "nginx"
+                ? NGINX_STAYS
+                : `${target} stays installed, with nginx.`,
+          }
+        : {
+            what: `note that ${target} isn't installed`,
+            run: () => packageGone(target),
+          },
+    nginxAccount: whileNginx(
+      "the nginx account",
+      "nginx's account stays while nginx is installed.",
+      () => ({
+        what: "remove the nginx account its package made",
+        run: () => removeAccount(host),
+      }),
+    ),
+    nginxAptKeyring: repositoryFile,
+    nginxAptSource: repositoryFile,
+    nginxAptPin: repositoryFile,
+    nginxServiceMasked:
+      old === true
+        ? () => ({
             what: `mask ${NGINX_UNIT}`,
             run: () => systemctl(host, ["mask", NGINX_UNIT]),
-          }
-        : { what: `unmask ${NGINX_UNIT}`, run: () => unmaskNginx(host) },
+          })
+        : whileNginx(
+            `the mask on ${NGINX_UNIT}`,
+            `${NGINX_UNIT} stays masked while nginx is installed, so its ` +
+              "default site can't start.",
+            () => ({
+              what: `unmask ${NGINX_UNIT}`,
+              run: () => systemctl(host, ["unmask", NGINX_UNIT]),
+            }),
+          ),
   };
   const make = new Map(Object.entries(steps)).get(name);
   const resettable =
@@ -437,7 +471,7 @@ function heldBy(key, left, stays) {
 async function runStep(run, step) {
   const { log } = run;
   if (step.keep === true) {
-    log.info("undo-apply", `Kept: ${step.what}.`);
+    log.info("undo-apply", step.note ?? `Kept: ${step.what}.`);
     return "kept";
   }
   if (step.declined === true) {
@@ -584,7 +618,7 @@ async function undoAll(run, filePath, fileThere) {
   }
   log.info(
     "undo-apply",
-    `The steps above that failed or were skipped stay in ${recordPath}. ` +
+    `The steps above that failed, were skipped or were kept stay in ${recordPath}. ` +
       "Running undo-apply again retries them.",
   );
   return failed === true ? 1 : 0;

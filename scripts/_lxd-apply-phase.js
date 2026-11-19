@@ -30,13 +30,16 @@
  * two keys added with an email and one of them removed, the flag back
  * once private rpc is on, and a later apply that asks nothing. undo-apply
  * answered no keeps the keys and the saved password, and the next apply
- * hands nginx the same keys. After the last undo-apply, answered yes, the
- * container must be as apply found it.
+ * hands nginx the same keys. The last undo-apply, answered yes, must
+ * leave nginx installed, stopped and masked, and say how to purge it.
+ * Once the test purges nginx, as the operator may, a second undo-apply
+ * must leave the container as apply found it.
  *
  * Last, a firewall rule for port 443 with a comment, added before apply
  * while ufw is off, as in a fresh container. An apply stopped after its
- * firewall stage must record the rule as found, and undo-apply must
- * leave it as the operator made it. The paths it checks come from the
+ * firewall stage must record the rule as found, and undo-apply, again
+ * with a purge of nginx and a second run, must leave it as the operator
+ * made it. The paths it checks come from the
  * app: the settings the tool loads there, and the tool's own paths.
  */
 
@@ -69,7 +72,9 @@ import {
 import {
   checkLogFolderComesBack,
   checkLogs,
+  checkNginxStays,
   checkOwnDev,
+  purgeThenUndo,
 } from "./_lxd-nginx-checks.js";
 import {
   AFFIRM_DISCLAIMER,
@@ -471,15 +476,17 @@ function checkUndone(name, watched, settings, failures) {
  * as in a fresh container, whose `ufw status` then lists no rule.
  * `ufw allow 443/tcp` would overwrite such a rule. apply stops after its
  * firewall stage, and its record must say it found the rule. Then
- * undo-apply runs, and the rule must still be there as the operator made
- * it, with nothing apply made left behind. The rule goes after.
- * @param {string} name  The container.
+ * undo-apply runs, and once nginx is purged, a second time. The rule
+ * must still be there as the operator made it, with nothing apply made
+ * left behind. The rule goes after.
+ * @param {import("./_lxd-api-key-checks.js").Guest} guest  The container.
  * @param {object} watched  The paths apply might make, and those of
  *   them that were there before it ran.
  * @param {string[]} failures  Collects what's wrong.
  * @returns {Promise<void>}
  */
-async function checkKeepsOperatorRule(name, watched, failures) {
+async function checkKeepsOperatorRule(guest, watched, failures) {
+  const { name } = guest;
   const comment = "added by the operator";
   const operatorRule = `ufw allow ${HTTPS_RULE} comment '${comment}'`;
   const added = asRoot(name, ["ufw", "allow", HTTPS_RULE, "comment", comment]);
@@ -495,6 +502,7 @@ async function checkKeepsOperatorRule(name, watched, failures) {
   const undone = await withAnswers(name, `node ${cli} undo-apply`, [
     AFFIRM_DISCLAIMER,
   ]);
+  const finished = await purgeThenUndo(guest);
   const left = leftovers(name, watched.paths, watched.before);
   for (const item of left) {
     console.error(`Left behind: ${item}`);
@@ -503,6 +511,7 @@ async function checkKeepsOperatorRule(name, watched, failures) {
     stopped.code === 1 &&
     foundRule === true &&
     undone.code === 0 &&
+    finished === true &&
     left.length === 0 &&
     ufwHolds(name, operatorRule);
   expect(
@@ -684,7 +693,13 @@ export async function runApplyPhase(name, settingsOf) {
     [KEYS_AND_PASSWORD_QUESTION, "y\n"],
   ]);
   expect(failures, "undo-apply finishes", undone.code === 0);
+  checkNginxStays(guest, undone.output);
+  expect(
+    failures,
+    "after the operator purges nginx, a second undo-apply finishes",
+    await purgeThenUndo(guest),
+  );
   checkUndone(name, watched, settings, failures);
-  await checkKeepsOperatorRule(name, watched, failures);
+  await checkKeepsOperatorRule(guest, watched, failures);
   return failures.length === 0;
 }

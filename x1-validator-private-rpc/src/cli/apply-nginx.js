@@ -31,8 +31,9 @@
  * random one, gets a 403. It runs the checks again until they pass, for up
  * to certificateWaitSeconds, since a reload takes a moment, while nginx
  * still checks against its old list of keys. Before the first start it
- * records the certificates' folders. `nginx -t` makes those first, so apply records
- * them as found. Purging nginx removes them at the shipped paths.
+ * records the certificates' folders. `nginx -t` makes those first, so
+ * apply records them as found. They stay with nginx, which undo-apply
+ * never removes, and a purge of nginx removes them at the shipped paths.
  */
 
 import path from "node:path";
@@ -154,8 +155,8 @@ async function makeLogFolder(context) {
 /**
  * Records each folder of nginx's certificates. `nginx -t` has just made
  * any that were missing, so each is recorded as found, and undo-apply
- * leaves it. Purging nginx removes them at the shipped paths. Root may
- * own a folder's parent, so root looks.
+ * leaves it. A purge of nginx removes them at the shipped paths. Root
+ * may own a folder's parent, so root looks.
  * @param {object} context  The run.
  */
 function recordCertificateFolders(context) {

@@ -125,7 +125,7 @@ Every test follows the same rules:
 
 ## The System Test
 
-`npm run test:system` runs x1-validator-private-rpc end to end on a real Ubuntu 24.04 system, with `systemd`, in a throwaway LXD container on the development machine. It never runs on a validator, and it isn't part of the gate. What it needs before it runs is in the feature README's [Test](../x1-validator-private-rpc/README.md#test) section.
+`npm run test:system` runs x1-validator-private-rpc end to end on a real Ubuntu 24.04 system, with `systemd`, in a throwaway LXD container. It runs on the development machine, or on GitHub's runner when someone starts the System Test workflow, which [The Pre-Commit Hook and CI](#the-pre-commit-hook-and-ci) describes. It never runs on a validator, and it isn't part of the gate. What it needs before it runs is in the feature README's [Test](../x1-validator-private-rpc/README.md#test) section.
 
 `scripts/test-in-lxd.js` sets the container up the way a validator is set up:
 
@@ -134,7 +134,7 @@ Every test follows the same rules:
 3. It copies in `package.json`, the lockfile and the feature's folder, without the operator's own settings, and installs the runtime dependencies, as a validator's install does.
 4. It runs the tool's commands as the container's ordinary user, who has `sudo`, as a validator's account does.
 
-A command that asks anything runs in a real terminal, which `script` makes, and its prompts are answered as they appear. The disclaimer's dialog is one of them: once `whiptail` draws its Decline button, the test presses the left arrow and Enter, to affirm it.
+A command that asks anything runs in a real terminal, which the `script` program makes, and its prompts are answered as they appear. The disclaimer's dialog is one of them: once `whiptail` draws its Decline button, the test presses the left arrow and Enter, to affirm it.
 
 Then it runs two phases:
 
@@ -149,8 +149,8 @@ Then it runs two phases:
   - the connections the removed key held open through its removal, which `x1-validator-private-rpc/test/helpers/reload-probe.js` opens. An http/1.1 one kept alive and an http/2 one no longer answer for it, and a websocket closes within the old worker's time limit.
   - both commands that switch private rpc, and a later `apply` that asks nothing
   - `undo-apply` answered no, which keeps the keys and the saved password, and the next `apply`, which hands `nginx` the same keys
-  - that the last `undo-apply`, answered yes, leaves the container as `apply` found it, with Autopilot's job still in the `crontab` and the start script still executable
-  - last, that a firewall rule for port 443 with a comment, added while `ufw` is off, survives an `apply` stopped after its firewall stage, then `undo-apply`
+  - that the last `undo-apply`, answered yes, leaves `nginx` installed, stopped and masked, and says how to purge it, and that once the test purges `nginx`, a second `undo-apply` leaves the container as `apply` found it, with Autopilot's job still in the `crontab` and the start script still executable
+  - last, that a firewall rule for port 443 with a comment, added while `ufw` is off, survives an `apply` stopped after its firewall stage, then `undo-apply`, a purge of `nginx` and `undo-apply` again
 
 Both phases decide what counts as left behind the same way, through `scripts/_lxd.js`. A leftover is anything watched that exists after a phase and didn't before it. What's watched comes from the app: every absolute path in the settings the tool loads in the container, nginx.org's repository files, `nginx`'s log folder, the folders above them all, and the `nginx` package and its user. The second phase adds the tool's own paths in the user's home and in the feature's folder. It also checks that the firewall rule, both `cron` lines and `nginx`'s mask are gone, and that `x1console`'s checkout is as committed. It reads the firewall rule from the rules the `ufw` command added, which `ufw` lists even while it's off, as it is in the container.
 
@@ -170,9 +170,10 @@ Files whose names start with an underscore are helper modules, never run by thei
 
 The pre-commit hook, `.husky/pre-commit`, runs `npm run lint`, and rewrites nothing. [`docs/npm-project-commands.md`](npm-project-commands.md) lists the commands that fix what it reports.
 
-GitHub runs two workflows:
+GitHub runs three workflows:
 
 - **CI**, `.github/workflows/ci.yml`, on every push and pull request to `main`. It runs `npm ci`, then `npm run check`, on Node.js 20.0.0, 22 and 24. Its jobs are `Check (Node.js 20.0.0)`, `Check (Node.js 22)` and `Check (Node.js 24)`.
 - **Security Audit**, `.github/workflows/security-audit.yml`. Its jobs are `Dependency Audit`, `Security Lint` and `Secret Scan`. [`docs/security.md`](security.md#the-audit-in-ci) says when it runs, and why.
+- **System Test**, `.github/workflows/system-test.yml`, only when someone starts it, from the Actions tab or with `gh workflow run system-test.yml`, since [the system test](#the-system-test) takes about ten minutes. Its one job, `System Test`, installs LXD on GitHub's Ubuntu runner with Canonical's action, `canonical/setup-lxd`, then runs `npm run test:system`. GitHub can start a workflow by hand only once the workflow is on `main`.
 
-`main` is protected. A change reaches it only through a pull request, and all six of those jobs must pass first. Renaming a job means updating the protection's required checks, or every pull request waits for a check that never comes.
+`main` is protected. A change reaches it only through a pull request, and the six jobs of CI and Security Audit must pass first. No pull request waits for the system test. Renaming a job means updating the protection's required checks, or every pull request waits for a check that never comes.

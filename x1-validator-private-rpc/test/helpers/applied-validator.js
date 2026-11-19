@@ -5,13 +5,16 @@
  * tests of the commands that come after it: ensure, undo-apply, url and
  * the api key commands. It also makes the run those commands take, with
  * a log whose lines the test can read, and the lines printed as is,
- * where the new keys' urls go.
+ * where the new keys' urls go. And it plays the operator's own purge of
+ * nginx, which undo-apply leaves to them.
  */
 
 import { runApply } from "../../src/cli/apply.js";
 import { featurePaths } from "../../src/cli/feature-paths.js";
 import { createLog } from "../../src/cli/log.js";
 import { API_KEY_PATTERN } from "../../src/lib/api-key.js";
+import { purgePackages } from "../../src/lib/apt.js";
+import { NGINX_PACKAGES } from "../../src/lib/nginx-org.js";
 import { loadSettings } from "../../src/lib/settings.js";
 import { copyShippedConfig } from "./config-copies.js";
 import { fakeX1Validator, HOSTNAME } from "./fake-x1-validator.js";
@@ -102,4 +105,14 @@ export async function appliedValidator(scenario = {}, choices = {}) {
   }
   const [apiKey] = printedKeys(run.printed);
   return { host, state, settings, scriptPath, apiKey };
+}
+
+/**
+ * Plays the operator's own purge of nginx and its modules, which
+ * undo-apply leaves to them, through the fake's apt.
+ * @param {object} host  The fake host.
+ * @returns {Promise<void>}
+ */
+export async function purgeNginxByHand(host) {
+  await purgePackages(host, NGINX_PACKAGES);
 }
