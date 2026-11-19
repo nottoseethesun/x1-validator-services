@@ -1,6 +1,6 @@
 # X1 Validator Services
 
-![X1 Validator Services banner: a butler in a black tuxedo beside the X1 logo and the words "Your X1 Validator Services Butler", with panels for api-key access, rate-limited access and encrypted traffic.](./assets/images/x1-validator-services-butler.jpeg "X1 Validator Services Banner")
+![An android in a formal black tuxedo with a bow tie, glowing blue eyes, and visible cybernetic facial and neck components stands in a dark high-tech room lit by blue neon. Holographic panels surround him showing a blockchain overview (network value $2.48B, transactions, block height), a network growth chart at +42.6%, and API key security details, with large text reading “Your X1 Validator Services Butler” beside a prominent X1 logo.](./assets/images/x1-validator-services-butler_1280-640.jpeg "X1 Validator Services Banner")
 
 [![Lint (JS+MD)](https://img.shields.io/github/actions/workflow/status/nottoseethesun/x1-validator-services/ci.yml?branch=main&label=lint)](https://github.com/nottoseethesun/x1-validator-services/actions/workflows/ci.yml)
 [![Tests (Node 20.0.0/22/24)](https://img.shields.io/github/actions/workflow/status/nottoseethesun/x1-validator-services/ci.yml?branch=main&label=tests)](https://github.com/nottoseethesun/x1-validator-services/actions/workflows/ci.yml)
