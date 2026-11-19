@@ -71,7 +71,7 @@ Each run that can change the system, the `nginx` upgrade check among them, shows
 - The project's code on the validator, as the project's [Install](../README.md#install) section describes.
 - The validator's account, with `sudo`.
 - The validator's public ipv4 address on one of its own interfaces. Servers behind address translation aren't supported.
-- Port 443 free on the validator, not closed by a `ufw` rule, and no `nginx` installed there.
+- Port 443 free on the validator, not closed by a `ufw` rule, and no `nginx` installed there, unless an earlier `apply` installed it.
 - A domain you own, where you can add a dns record.
 - For the alerts, `x1console`'s Telegram alerts, set up in `x1console`.
 
@@ -83,7 +83,7 @@ The tool works through a set of system programs, which the engineering reference
 
 ## Install
 
-> **Never point the validator's own `solana` cli at the keyed url, or at the validator's own address.** On the validator, don't set the cli's rpc url to anything that contains the tool's hostname (`x1-rpc.example.com` in these docs) or the validator's public address, whether from `x1console`'s network menu or with `solana config set --url`. Autopilot's health check uses that url. Under `--private-rpc`, the rpc no longer answers on the validator's address. The keyed url can stop answering too, for example while `nginx` restarts, or once its last key is removed. Autopilot answers a failed check by deleting the ledger and restarting the validator. `apply` stops at its first check, changing nothing, while the cli's url names either.
+> **Never point the validator's own `solana` cli at the keyed url, or at the validator's own address.** On the validator, don't set the cli's rpc url to anything that contains the tool's hostname (`x1-rpc.example.com` in these docs) or the validator's public address, whether from `x1console`'s network menu or with `solana config set --url`. Autopilot's health check uses that url, and answers a failed check by deleting the ledger and restarting the validator. Under `--private-rpc`, the rpc no longer answers on the validator's address. The keyed url can stop answering too, for example while `nginx` restarts, or once its last key is removed. `apply` stops at its first check, changing nothing, while the cli's url names either.
 
 ### Check That `nginx` Upgrades Keep Working
 
@@ -153,7 +153,7 @@ Once the staging run has finished, run `apply` again without `--acme-staging`, f
 node x1-validator-private-rpc/src/cli.js apply
 ```
 
-Every stage first checks whether its work is done, so running `apply` again is safe. It skips what's in place. If it stops partway, run it again, and it picks up from there. If `nginx` refuses a new configuration, `apply` puts the old one back, so `nginx` runs as before. It keeps what `nginx` refused, and why, in `x1-validator-private-rpc/logs/error.log`. A key it made and showed stays, so the next run makes none. On a first install, if `apply` stops at the question about saving the password, say with Ctrl-C, no later run asks it again, so the password stays unsaved. If you stop `apply` before its flag stage, `ensure` doesn't add the flag either: it leaves the start script alone until `apply` has added it.
+Every stage first checks whether its work is done, so running `apply` again changes nothing that's in place. If it stops partway, run it again, and it picks up from there. If `nginx` refuses a new configuration, `apply` puts the old one back, so `nginx` runs as before. It keeps what `nginx` refused, and why, in `x1-validator-private-rpc/logs/error.log`. A key it made and showed stays, so the next run makes none. On a first install, if `apply` stops at the question about saving the password, say with Ctrl-C, no later run asks it again, so the password stays unsaved. If you stop `apply` before its flag stage, `ensure` doesn't add the flag either: it leaves the start script alone until `apply` has added it.
 
 ### Restart the Validator
 
@@ -201,7 +201,7 @@ node x1-validator-private-rpc/src/cli.js apply
 
 If you had turned private rpc off, run `turn-off-private-rpc` again once `apply` is done, since `apply` turned it back on.
 
-`nginx` and its modules update with the system's other packages, whenever `apt upgrade` runs, as `x1console`'s Update X1 Validator does. The upgrade check above proved that safe.
+`nginx` and its modules update with the system's other packages, whenever `apt upgrade` runs, as `x1console`'s Update X1 Validator does. The upgrade check above proved, on this machine, that such an upgrade keeps the keyed url working.
 
 ---
 
@@ -223,14 +223,16 @@ node x1-validator-private-rpc/src/cli.js undo-apply
 
 First it asks one question: whether to delete every api key, and the saved password with them when `apply` saved it. The keys and the saved password go together, since the password opens nothing but the keys' records. So a no keeps both. A later `apply` then hands `nginx` the same keys, and your clients' urls keep working. After a yes, a later `apply` makes a new first key under a new password, and every client needs a new url. Then `undo-apply` removes each of these that `apply` made:
 
-- the `cron` lines and their folders
+- the `cron` lines, and the tool's `tmp/` and `logs/` folders, with `ensure`'s log and the tool's error log in them
 - the `git` hook
 - the start-script flag and its backups
 - the files the tool gave `nginx`, with its list of the api keys' hashes, whatever the answer
 - the saved password, unless you kept it, and the folders made for it and for the api keys' file, once nothing else is in them
 - the firewall rule
 
-`nginx` stays installed, with its two modules, since `undo-apply` removes no package. It stops, disables and masks `nginx`, so the package's default site can't start. `nginx`'s configuration in `/etc/nginx`, its certificates in `/var/cache/nginx`, its logs in `/var/log/nginx`, its account and nginx.org's `apt` repository stay too. Their entries stay in `x1-validator-private-rpc/app-data/what-apply-changed.json`, so a later `apply` takes this `nginx` as its own, and reuses its certificate. `undo-apply` says all this as it runs. If you want `nginx` gone, purge it, then run `undo-apply` again, which removes its account, nginx.org's repository and the mask:
+`undo-apply` stops, disables and masks `nginx`, but leaves it installed, with its two modules. With the files the tool gave it gone, a start of `nginx` would run the package's own configuration, `/etc/nginx/nginx.conf`, and its default site. The mask stops anything from starting it. `nginx`'s configuration in `/etc/nginx`, its certificates in `/var/cache/nginx`, its logs in `/var/log/nginx`, its account and nginx.org's `apt` repository stay too. `nginx`'s packages, its account, nginx.org's repository and the mask stay listed in `x1-validator-private-rpc/app-data/what-apply-changed.json`. So a later `apply` takes this `nginx` as the one it installed, rather than refusing it, and reuses its certificate. `undo-apply` says all this as it runs.
+
+If you want `nginx` gone, purge it, then run `undo-apply` again, which removes `nginx`'s account, nginx.org's repository and the mask:
 
 ```bash
 cd ~/x1-validator-services
@@ -297,11 +299,13 @@ Both commands then have a running `nginx` read its list again. A new key works, 
 
 Only one command changes the keys at a time. While `apply`, `undo-apply` or another key command is changing them, `add-api-key` and `remove-api-key` refuse, change nothing, and say to run them again.
 
-Both commands may ask for your account's `sudo` password, after their own questions and before they change anything, so a wrong or cancelled one changes nothing. `remove-api-key` takes the key out of `nginx`'s list first, and out of `hashed-api-keys.json`, the file of the keys' hashes and their records, last. If it stops in between, for any reason, run it again before any other key command or `apply`. `add-api-key`, another `remove-api-key` and `apply` each write `nginx`'s list from the file, which still holds the key, so the removed key would work again. The architecture's [The Keys' Path](docs/architecture.md#the-keys-path) says more.
+Both commands may ask for your account's `sudo` password, after their own questions and before they change anything, so a wrong or cancelled one changes nothing.
+
+If `remove-api-key` stops part way, for any reason, run it again before any other key command or `apply`. It takes the key out of `nginx`'s list first, and out of `hashed-api-keys.json`, the file of the keys' hashes and their records, last. So a stop in between leaves the key in that file. `add-api-key`, another `remove-api-key` and `apply` each write `nginx`'s list from the file, and would hand the removed key back to `nginx`. The architecture's [The Keys' Path](docs/architecture.md#the-keys-path) says more.
 
 ### Check
 
-`check-my-private-rpc` is a one-off check of your keyed url, made the way a client would. It asks for the rpc's hostname and the api key, and doesn't show the key as you type it. Then it sends the rpc a run of queries through `nginx`, one right after another, and prints a table of the answers. It ends with a green ✔ when every query worked, or a red ✘ and what went wrong.
+`check-my-private-rpc` checks your keyed url when you run it, querying it as a client would. It asks for the rpc's hostname and the api key, and doesn't show the key as you type it. Then it sends the rpc a run of queries through `nginx`, one right after another, and prints a table of the answers. It ends with a green ✔ when every query worked, or a red ✘ and what went wrong.
 
 Run it from the project root, on the validator or on any machine where the project is installed:
 
@@ -345,7 +349,7 @@ Neither restarts the validator. Restart it as in [Restart the Validator](#restar
 | The flag is back | `ensure` put `--private-rpc` back after an update | No |
 | No api key | `nginx`'s list holds no key, so `nginx` refuses every request | Every `apiKeyCountCheckHours`, while the list stays empty |
 
-The first two stay quiet while private rpc is off, as [Turn the Private Rpc Off and On](#turn-the-private-rpc-off-and-on) explains, and before `apply` has added the flag. An alert from `ensure` that Telegram doesn't take goes out at the next run. Without `x1console`'s Telegram files, both commands only log.
+The first two stay quiet while private rpc is off, as [Turn the Private Rpc Off and On](#turn-the-private-rpc-off-and-on) explains, and before `apply` has added the flag. An alert from `ensure` that Telegram doesn't take goes out at the next run. Without `x1console`'s Telegram files, `ensure` and the key count check only log their alerts.
 
 Two checks send no alert: whether the running validator carries `--private-rpc`, and what listens on ports 80 and 443. Their problems show only in the output and the exit code of an `ensure` you run yourself, without `--quiet`. The `cron` job runs it with `--quiet`, which leaves them out of its log.
 

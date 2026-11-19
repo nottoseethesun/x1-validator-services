@@ -214,9 +214,9 @@ async function main() {
       "the container clean. Then come apply, ensure, url, add-api-key, " +
       "remove-api-key, the key count check, turn-off-private-rpc, " +
       "turn-on-private-rpc and undo-apply, with Pebble in place of Let's " +
-      "Encrypt. Once the test purges the nginx undo-apply leaves, they end " +
-      "with the container as apply found it. " +
-      "Then it deletes the container.",
+      "Encrypt. undo-apply leaves nginx installed, so the test purges it " +
+      "and runs undo-apply again, which must leave the container as apply " +
+      "found it. Then it deletes the container.",
     [
       "0  both phases passed",
       "1  a phase failed, or the container couldn't be set up",

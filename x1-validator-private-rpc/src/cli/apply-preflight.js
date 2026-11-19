@@ -17,8 +17,13 @@
  */
 
 import { installedVersion } from "../lib/apt.js";
+import { NGINX_UNIT } from "../lib/nginx-org.js";
 import { parseOsRelease } from "../lib/os-release.js";
-import { MIN_SYSTEMD_VERSION, systemdVersion } from "../lib/systemd.js";
+import {
+  MIN_SYSTEMD_VERSION,
+  systemdVersion,
+  unitActiveState,
+} from "../lib/systemd.js";
 import { httpsRuleOf, httpsRuleProblem, packageKey } from "./apply-install.js";
 import { homePath, startScriptPathOf } from "./feature-paths.js";
 import { readStartScript } from "./start-script.js";
@@ -187,7 +192,9 @@ function checkFirewall(host, missing, problems) {
 
 /**
  * Checks that nginx is missing or apply's own, and that port 443 is free
- * or nginx's.
+ * or held by apply's own nginx, running. undo-apply leaves that nginx on
+ * record but stopped, and then whatever holds the port is another
+ * program.
  * @param {object} host  The host.
  * @param {Map<string, object>} whatApplyChanged  apply's record.
  * @param {string[]} problems  Collects what's wrong.
@@ -202,7 +209,9 @@ function checkNginx(host, whatApplyChanged, problems) {
     );
   }
   const listening = host.run("ss", ["-ltnH", "sport = :443"]).stdout.trim();
-  if (listening !== "" && ours === false) {
+  const oursRuns =
+    ours === true && unitActiveState(host, NGINX_UNIT) === "active";
+  if (listening !== "" && oursRuns === false) {
     problems.push("Something already listens on port 443.");
   }
 }

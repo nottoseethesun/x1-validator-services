@@ -5,9 +5,9 @@
  * nginx up with: the hostname, the address and the rpc port, which
  * ensure and url read, and which add-api-key and remove-api-key need
  * before they run. It also holds the operator's choice of a private or a
- * public rpc. The choice starts out unset. apply's flag stage and
- * turn-on-private-rpc set it on, turn-off-private-rpc sets it off, and
- * ensure follows it. So until apply has added the flag, or the operator
+ * public rpc. The choice starts out unset, and undo-apply unsets it
+ * again. apply's flag stage and turn-on-private-rpc set it on,
+ * turn-off-private-rpc sets it off, and ensure follows it. So until apply has added the flag, or the operator
  * has turned private rpc on, ensure leaves the start script alone. And
  * it holds whether a saved password is left from an earlier api keys'
  * file, so apply treats it as no saved password until the operator

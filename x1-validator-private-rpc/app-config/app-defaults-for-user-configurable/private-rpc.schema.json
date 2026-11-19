@@ -216,7 +216,7 @@
   },
   "$defs": {
     "systemPath": {
-      "description": "An absolute path of letters, digits, dots, dashes, underscores and slashes, safe to write into shell scripts, systemd units and nginx's configuration.",
+      "description": "An absolute path of letters, digits, dots, dashes, underscores and slashes alone, since the tool writes it into shell scripts, systemd units and nginx's configuration, where another character could change what a line means.",
       "type": "string",
       "pattern": "^/[A-Za-z0-9._/-]+$"
     },
@@ -226,7 +226,7 @@
       "pattern": "^(/|~/)[A-Za-z0-9._/-]+$"
     },
     "httpsUrl": {
-      "description": "An https url, safe to write into nginx's configuration.",
+      "description": "An https url of letters, digits, dots, colons, slashes, underscores, tildes and dashes alone, since the tool writes it into nginx's configuration, where another character could change what a line means.",
       "type": "string",
       "pattern": "^https://[A-Za-z0-9.:/_~-]+$"
     }

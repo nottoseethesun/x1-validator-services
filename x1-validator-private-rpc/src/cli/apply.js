@@ -12,7 +12,7 @@
  * Each stage skips work already done, so a second apply changes nothing.
  * Each setting apply changes is recorded the moment it changes, with its
  * old value, in app-data/what-apply-changed.json, and so is each one it
- * finds already as it needs it. So undo-apply puts back exactly what
+ * finds already as it needs it. So undo-apply puts back only what
  * apply changed, and nothing that was in place before. With --dry-run it
  * prints every change it would make, and makes none.
  *

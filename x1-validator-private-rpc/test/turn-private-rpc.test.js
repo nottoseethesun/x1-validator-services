@@ -18,7 +18,8 @@
  * - each says so when there's nothing to change
  * - apply turns private rpc on again
  * - before apply has added the flag, ensure leaves the start script
- *   alone, until turn-on turns private rpc on
+ *   alone, until turn-on turns private rpc on, and so it does in a
+ *   reinstall after an undo-apply that left nginx installed
  * - neither runs before apply
  * - ensure asks nothing and uses no sudo, with private rpc on or off
  */
@@ -39,6 +40,7 @@ import {
   runTurnOffPrivateRpc,
   runTurnOnPrivateRpc,
 } from "../src/cli/turn-private-rpc.js";
+import { runUndoApply } from "../src/cli/undo-apply.js";
 import { loadSettings } from "../src/lib/settings.js";
 import {
   appliedValidator,
@@ -311,6 +313,30 @@ test("before apply has added the flag, ensure leaves the start script alone, unt
   await host.sleep(settings.startScriptQuietSeconds * 1000);
   await ensure(host, settings);
   assert.match(host.files.get(scriptPath), FLAG);
+});
+
+test("after an undo-apply that left nginx installed, a later apply stopped before its flag stage keeps ensure off the start script", async () => {
+  const { host, settings, scriptPath } = await appliedValidator({
+    telegram: true,
+  });
+  const undo = commandRun(host, settings, {
+    prompts: scriptedPrompts({ ask: () => true }),
+  });
+  assert.equal(await runUndoApply(undo), 0, undo.lines.join("\n"));
+  const unflagged = host.files.get(scriptPath);
+  const stopped = commandRun(host, settings, {
+    prompts: scriptedPrompts({
+      confirm: (question) => !question.startsWith("Stage 6 of 8"),
+      passwords: [PASSWORD, PASSWORD],
+    }),
+    options: { yes: false, dryRun: false, acmeStaging: false },
+  });
+  assert.equal(await runApply(stopped), 1, stopped.lines.join("\n"));
+  assert.equal(choice(host), "");
+  await host.sleep(settings.startScriptQuietSeconds * 1000);
+  const checked = await ensure(host, settings);
+  assert.equal(checked.code, 0, checked.lines.join("\n"));
+  assert.equal(host.files.get(scriptPath), unflagged);
 });
 
 test("neither runs before apply", async () => {

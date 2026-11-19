@@ -14,9 +14,12 @@
  * - nginx.org's keyring that was there stays
  * - a folder stays when the settings moved it, or when it holds files
  *   apply didn't make
+ * - nginx's certificates stay, since apply records the folder nginx -t
+ *   made as found
  * - after apply --acme-staging with every setting changed and the
- *   password saved, the files are as apply found them, and undo-apply
- *   used each configured path and never a shipped one
+ *   password saved, and once the operator purges nginx, the files are as
+ *   apply found them, and undo-apply used each configured path and never
+ *   a shipped one
  * - every folder apply made for the saved password goes, however many
  *   were missing, and inside a folder only root can look into, one apply
  *   made goes while one that was there stays
@@ -219,12 +222,6 @@ test("undoes everything apply did, newest first, but leaves nginx installed, wit
     lines[0],
     `[undo-apply] Done: deleted every api key, with ${keysFile}.`,
   );
-  assert.ok(
-    host.calls.some(
-      (call) =>
-        call.kind === "removeRootTree" && call.path === settings.acmeStatePath,
-    ),
-  );
   const later = host.calls.slice(from);
   const sourceGone = later.findIndex(
     (call) =>
@@ -252,6 +249,35 @@ test("undoes everything apply did, newest first, but leaves nginx installed, wit
     second.lines.at(-1),
     "[undo-apply] Everything apply did is undone.",
   );
+});
+
+test("nginx's certificates stay: apply records the folder nginx -t made as found, and undo-apply leaves it", async () => {
+  const settings = loadSettings(
+    copyShippedConfig(JSON.stringify({ hostname: HOSTNAME })).configDir,
+  );
+  const folder = settings.acmeStatePath;
+  let host = null;
+  // nginx -t makes the certificates' folder, as nginx's ACME module does.
+  const respond = (call) => {
+    if (call.command === "nginx" && call.args[0] === "-t") {
+      for (let f = folder; f !== path.dirname(f); f = path.dirname(f)) {
+        host.files.set(f, "");
+      }
+    }
+    return undefined;
+  };
+  ({ host } = fakeX1Validator({ settings, respond }));
+  const applying = commandRun(host, settings, {
+    prompts: scriptedPrompts({ passwords: [PASSWORD, PASSWORD] }),
+    options: { yes: false, dryRun: false, acmeStaging: false },
+  });
+  assert.equal(await runApply(applying), 0, applying.lines.join("\n"));
+  const record = readRecord(host, featurePaths().whatApplyChangedPath);
+  const entry = record.get(`acmeStateFolder:${folder}`);
+  assert.equal(entry.applyChangedThisFromItsPreviousValue, false);
+  const { code, lines } = await undoApply(host, settings);
+  assert.equal(code, 0, lines.join("\n"));
+  assert.equal(host.files.has(folder), true);
 });
 
 test("a folder that was there keeps its mode and stays", async () => {
@@ -361,7 +387,7 @@ test("a folder stays when the settings moved it, or when others use it", async (
   );
 });
 
-test("after apply --acme-staging with every setting changed and the password saved, undo-apply leaves the files as apply found them, using each configured path and never a shipped one", async () => {
+test("after apply --acme-staging with every setting changed and the password saved, and once the operator purges nginx, undo-apply leaves the files as apply found them, using each configured path and never a shipped one", async () => {
   const { shipped, changed } = shippedAndChangedSettings();
   const scenario = { settings: { ...changed, hostname: HOSTNAME } };
   // A fresh fake holds the files as apply finds them.
@@ -520,7 +546,7 @@ test("a step that fails stays recorded, and a second undo-apply retries it", asy
   assert.ok(state.ufwRules.includes(HTTPS_RULE));
   assert.equal(
     first.lines.at(-1),
-    `[undo-apply] The steps above that failed, were skipped or were kept stay in ${featurePaths().whatApplyChangedPath}. Running undo-apply again retries them.`,
+    `[undo-apply] The steps above that failed, were skipped or were kept stay in ${featurePaths().whatApplyChangedPath}. Running undo-apply again retries those that failed or were skipped. Any kept while nginx is installed go at the first run after you purge nginx.`,
   );
   ufwWorks = true;
   const second = await undoApply(host, settings);

@@ -40,6 +40,7 @@ import { GATE_PAGE_PATH } from "../../src/lib/gate-page.js";
 import { hashApiKey } from "../../src/lib/key-hash-map.js";
 import {
   NGINX_LOG_DIR,
+  NGINX_PACKAGES,
   NGINX_UNIT,
   PINNED_FINGERPRINTS,
 } from "../../src/lib/nginx-org.js";
@@ -519,8 +520,11 @@ export function fakeX1Validator(scenario = {}) {
       packageAnswer(call, line, state, files) ??
       changeAnswer(call, line, state, files) ??
       gpgAnswer(call) ??
+      // dpkg knows nginx.org's three packages alone, so a question about
+      // any other name finds nothing installed, as on a validator.
       (call.command === "dpkg-query"
-        ? state.nginxInstalled === true
+        ? state.nginxInstalled === true &&
+          NGINX_PACKAGES.includes(call.args.at(-1))
           ? { stdout: "install ok installed 1.30.6-1~noble" }
           : { status: 1 }
         : undefined)

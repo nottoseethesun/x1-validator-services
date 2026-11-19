@@ -15,14 +15,17 @@
  *   record
  * - a later apply that moved nginx's list, which undo-apply removes, with
  *   each folder made for it
- * - nginx removed by hand, which leaves undo-apply no service to stop
- *   and no package to purge, so it says how to purge what may be left
+ * - nginx removed by hand, which leaves undo-apply no service to stop,
+ *   so it says how to purge what may be left
+ * - another program on port 443 once undo-apply has left nginx stopped,
+ *   which stops a later apply at its first check, changing nothing
  */
 
 import assert from "node:assert/strict";
 import path from "node:path";
 import { test } from "node:test";
 import { runApply } from "../src/cli/apply.js";
+import { HTTPS_RULE } from "../src/cli/apply-install.js";
 import {
   featurePaths,
   gitHookPathOf,
@@ -177,4 +180,34 @@ test("after nginx is removed by hand, undo-apply has no service to stop, says ho
   }
   assert.equal(host.exists(featurePaths().whatApplyChangedPath), false);
   assert.equal(lines.at(-1), "[undo-apply] Everything apply did is undone.");
+});
+
+test("once undo-apply has left nginx stopped, another program on port 443 stops a later apply at its first check, changing nothing", async () => {
+  let otherOn443 = false;
+  const { host, state, settings } = await appliedValidator({
+    respond: (call) =>
+      otherOn443 === true &&
+      call.command === "ss" &&
+      call.args.join(" ") === "-ltnH sport = :443"
+        ? { stdout: "LISTEN 0 4096 0.0.0.0:443 0.0.0.0:*\n" }
+        : undefined,
+  });
+  const undone = await undoApply(host, settings);
+  assert.equal(undone.code, 0, undone.lines.join("\n"));
+  otherOn443 = true;
+  const recordPath = featurePaths().whatApplyChangedPath;
+  const record = host.files.get(recordPath);
+  const applying = commandRun(host, settings, {
+    prompts: scriptedPrompts(),
+    options: { yes: false, dryRun: false, acmeStaging: false },
+  });
+  await assert.rejects(
+    runApply(applying),
+    /Something already listens on port 443/,
+  );
+  assert.deepEqual(
+    [state.ufwRules.includes(HTTPS_RULE), state.masked],
+    [false, true],
+  );
+  assert.equal(host.files.get(recordPath), record);
 });

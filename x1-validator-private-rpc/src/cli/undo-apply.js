@@ -3,14 +3,14 @@
  * @description
  * The `undo-apply` command, apply's counterpart. It reads apply's record,
  * app-data/what-apply-changed.json, and resets each setting apply changed
- * to its old value, newest first, until the machine is as apply found
- * it. Those settings are:
+ * to its old value, newest first, but leaves nginx installed, as below.
+ * Those settings are:
  *
  * - the cron lines and the tool's folders
  * - the git hook
  * - the start script's flag and backups
- * - nginx's service, files and certificates, the list of the api keys'
- *   hashes among the files
+ * - nginx's service and files, the list of the api keys' hashes among
+ *   the files
  * - the saved password, and the folders apply made for it and for the
  *   api keys' file
  * - the firewall rule
@@ -48,9 +48,9 @@
  * x1console file. The hook goes only while it's still the tool's. A
  * folder apply made for its files goes only once nothing else is in it.
  * Root looks for a folder root made, since it may sit in a folder only
- * root can look into. A folder that goes whole, with what nginx or the
- * cron job wrote in it, goes only while the settings still put that
- * folder there, so a damaged record can never aim a removal elsewhere.
+ * root can look into. A folder that goes whole, with what's in it, goes
+ * only while the settings still put that folder there, so a damaged
+ * record can never aim a removal elsewhere.
  *
  * A step that fails, or that the operator declines, stays in the record.
  * So does a folder, while such a step's target, or the kept api keys'
@@ -104,8 +104,8 @@ function removeCronLine(host, line) {
 }
 
 /**
- * Removes a folder whole, with what nginx or the cron job wrote in it,
- * but only while the settings still put that folder there.
+ * Removes a folder whole, with what's in it, but only while the settings
+ * still put that folder there.
  * @param {(folder: string) => void} remove  Removes a folder whole.
  * @param {string} folder  The recorded folder.
  * @param {string[]} named  Where the settings put such folders now.
@@ -204,14 +204,18 @@ async function removeRootFile(host, name, filePath) {
  * removes the rest.
  */
 export const NGINX_STAYS =
-  "nginx stays installed, with its two modules: undo-apply removes no " +
-  "package, since something else may need it. Its configuration in " +
+  "nginx stays installed, with its two modules, since undo-apply removes " +
+  "no package: something else may need them. Its configuration in " +
   "/etc/nginx, its certificates in /var/cache/nginx, its logs in " +
-  `${NGINX_LOG_DIR}, its account and nginx.org's repository stay too, and ` +
-  "a later apply takes this nginx as its own. If you want nginx gone, " +
-  `run sudo apt purge ${NGINX_PACKAGES.join(" ")}, after sudo apt-mark ` +
-  "unhold nginx if you hold it. Then run undo-apply again, which removes " +
-  "its account and nginx.org's repository.";
+  `${NGINX_LOG_DIR}, its account and nginx.org's apt repository stay too. ` +
+  `Its packages, its account, the repository and the mask on ${NGINX_UNIT} ` +
+  "stay listed in " +
+  "x1-validator-private-rpc/app-data/what-apply-changed.json, so a later " +
+  "apply takes this nginx as the one it installed, rather than refusing " +
+  "it, and reuses its certificate. If you want nginx gone, first run sudo " +
+  "apt-mark unhold nginx, if you hold it. Then run sudo apt purge " +
+  `${NGINX_PACKAGES.join(" ")}. Then run undo-apply again, which removes ` +
+  "nginx's account, nginx.org's repository and the mask.";
 
 /**
  * What undo-apply says when nginx is gone already at its package step. A
@@ -220,10 +224,10 @@ export const NGINX_STAYS =
  */
 export const NGINX_GONE_ALREADY =
   "nginx isn't installed, so there's nothing to remove. If it was " +
-  "removed with apt remove, its configuration in /etc/nginx, its " +
-  `certificates in /var/cache/nginx and its logs in ${NGINX_LOG_DIR} may ` +
-  "still be there. If you want them gone, sudo apt purge nginx deletes " +
-  "them.";
+  "removed with apt remove rather than purged, its configuration in " +
+  "/etc/nginx, its certificates in /var/cache/nginx and its logs in " +
+  `${NGINX_LOG_DIR} may still be there. If you want them gone, sudo apt ` +
+  "purge nginx deletes them.";
 
 /**
  * Tells whether a package is installed.
@@ -422,8 +426,9 @@ function resetStep(context, key, entry) {
           })
         : whileNginx(
             `the mask on ${NGINX_UNIT}`,
-            `${NGINX_UNIT} stays masked while nginx is installed, so its ` +
-              "default site can't start.",
+            `${NGINX_UNIT} stays masked while nginx is installed, so nothing ` +
+              "can start nginx with the package's own configuration and its " +
+              "default site.",
             () => ({
               what: `unmask ${NGINX_UNIT}`,
               run: () => systemctl(host, ["unmask", NGINX_UNIT]),
@@ -614,12 +619,17 @@ async function undoAll(run, filePath, fileThere) {
   const state = readState(host, paths.statePath);
   if (state !== undefined && state !== null) {
     state.setup = null;
+    // Unset, as on a first install, so ensure leaves the start script
+    // alone until a later apply adds the flag.
+    state.privateRpc = "";
     writeState(host, paths.statePath, state);
   }
   log.info(
     "undo-apply",
     `The steps above that failed, were skipped or were kept stay in ${recordPath}. ` +
-      "Running undo-apply again retries them.",
+      "Running undo-apply again retries those that failed or were skipped. " +
+      "Any kept while nginx is installed go at the first run after you " +
+      "purge nginx.",
   );
   return failed === true ? 1 : 0;
 }

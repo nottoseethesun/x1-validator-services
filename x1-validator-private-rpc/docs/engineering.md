@@ -40,7 +40,7 @@ Other references:
 ## Terminology
 
 - **The flag**: `--private-rpc`, in the validator's command in `x1console`'s start script.
-- **Private rpc on or off**: the operator's choice, kept in the tool's state, of whether `ensure` keeps the flag in the start script. `apply`'s flag stage and `turn-on-private-rpc` turn it on, and `turn-off-private-rpc` turns it off. Until one of them runs, it's unset, and `ensure` treats it as off.
+- **Private rpc on or off**: the operator's choice, kept in the tool's state, of whether `ensure` keeps the flag in the start script. `apply`'s flag stage and `turn-on-private-rpc` turn it on, and `turn-off-private-rpc` turns it off. It starts unset, and `undo-apply` unsets it again. While it's unset, `ensure` treats it as off.
 - **apply's record**: `app-data/what-apply-changed.json`. It holds every setting of the machine `apply` changed, such as whether a file is there, with its old value. It also holds every one `apply` found already in the state it needs, such as a firewall rule for port 443 that was there before. `undo-apply` puts back the old values of the ones `apply` changed.
 - **apply's dictionary**: `app-config/app-defaults-for-user-configurable/apply-settings-dictionary.json`, which names every setting `apply` can change, with the description and type that each entry in apply's record copies.
 - **The tool's state**: `app-data/state.json`, what `apply` set `nginx` up with, whether private rpc is on, and whether a saved password is stale, left from an earlier api keys' file.
@@ -171,13 +171,13 @@ The entry point, `src/cli.js`, hands the command line to the program that `src/c
 
 **`turn-off-private-rpc`** asks first, then takes the start script's lock, reads the state and the script again, turns private rpc off in the state, and takes the flag out of the script. When `ensure` or `undo-apply` holds the lock, it refuses and changes nothing. [Switching](architecture.md#switching) says why. **`turn-on-private-rpc`** turns it on, and puts the flag back. It needs no lock, since it only adds the flag, as `ensure` does.
 
-**`undo-apply`** first asks one question, while the api keys' file is there: whether to delete every key, and the saved password with them when apply's record shows apply saved it. A yes gets `sudo` first, as the key commands do, then deletes the file. Then it walks apply's record newest first, and puts back the old value of each setting apply changed. It never removes a package, so while `nginx` is installed, it keeps `nginx`'s packages, account, repository and mask on record, and says how the operator can purge `nginx`. After a no, apply's record keeps its entries for the saved password, the folder that holds it, and the folder of the kept api keys' file, and `undo-apply` leaves all three in place. [apply's Record](#applys-record) says what else stays on record, and when the record goes.
+**`undo-apply`** first asks one question, while the api keys' file is there: whether to delete every key, and the saved password with them when apply's record shows apply saved it. A yes gets `sudo` first, as the key commands do, then deletes the file. After a no, apply's record keeps its entries for the saved password, the folder that holds it, and the folder of the kept api keys' file, and `undo-apply` leaves all three in place. Then it walks apply's record newest first, and puts back the old value of each setting apply changed. It never removes a package, so while `nginx` is installed, it keeps `nginx`'s packages, account, repository and mask on record, and says how the operator can purge `nginx`. [apply's Record](#applys-record) says what else stays on record, and when the record goes.
 
 ---
 
 ## apply's Record
 
-`apply` records every setting it changes on the machine, the moment it changes it, in `app-data/what-apply-changed.json`. Such a setting is, for example, whether a file, folder, package, account, rule or line is there: a boolean. It also records every setting it finds already in the state it needs, such as a firewall rule for port 443 that was there before. `undo-apply` puts back the old value of each setting `apply` changed, newest first, and leaves the rest as they are. It never removes a package, though, so while `nginx` is installed, `nginx`'s packages, account, repository and mask stay on record, as the table below says.
+`apply` records every setting it changes on the machine, the moment it changes it, in `app-data/what-apply-changed.json`. Such a setting is, for example, whether a file, folder, package, account, rule or line is there: a boolean. It also records every setting it finds already in the state it needs, such as a firewall rule for port 443 that was there before. `undo-apply` puts back the old value of each setting `apply` changed, newest first, and leaves the rest as they are. It never removes a package, though. While `nginx` is installed, its packages stay on record, so a later `apply` takes that `nginx` as the one it installed. `nginx`'s account, nginx.org's repository and the mask stay with them, and go once `nginx` is gone, as the table below says.
 
 ```json
 {
@@ -212,10 +212,10 @@ A setting is recorded the moment `apply` changes it, so a stage that fails part 
 
 | Setting | Target | Recorded at | What `undo-apply` does |
 | --- | --- | --- | --- |
-| `nginxServiceMasked` | — | stages 2 and 5 | While `nginx` is installed, keeps it on record, so the mask stays. Once `nginx` is gone, unmasks `nginx.service`. Masks it, when it was masked before `apply` |
+| `nginxServiceMasked` | — | stages 2 and 5 | When it was masked before `apply`, masks it again. Otherwise, while `nginx` is installed, keeps it on record, so the mask stays, and once `nginx` is gone, unmasks `nginx.service` |
 | `nginxAptKeyring`, `nginxAptSource`, `nginxAptPin` | the file | stage 2 | While `nginx` is installed, keeps it on record, so the file stays, for `nginx`'s updates. Once `nginx` is gone, removes the file. After the source, refreshes `apt`'s lists |
 | `nginxAccount` | — | stage 2 | While `nginx` is installed, keeps it on record. Once `nginx` is gone, removes the `nginx` account. It's recorded before the packages, so it goes after them |
-| `nginxPackage` | the package | stage 2 | Never removes the package. While it's installed, keeps it on record, and for `nginx` itself, says what stays and how the operator can purge it. Otherwise it says there's nothing to remove, and for `nginx` itself, as after `apt remove` by hand, that `sudo apt purge nginx` would delete what it may have left |
+| `nginxPackage` | the package | stage 2 | Never removes the package. While it's installed, keeps it on record, and for `nginx` itself, says what stays and how the operator can purge it. Once it isn't installed, after the operator's purge or a removal by hand, says there's nothing to remove, and takes it off the record. For `nginx` itself, it adds that after `apt remove`, `sudo apt purge nginx` would delete what's left |
 | `firewallRule` | `443/tcp` | stage 3 | Runs `ufw delete allow 443/tcp` |
 | `hashedApiKeysFolder` | the folder | stage 4 | Removes the folder once it's empty |
 | `savedPasswordFolder` | the folder | stage 4 | Removes the folder once it's empty |
@@ -233,7 +233,7 @@ A setting is recorded the moment `apply` changes it, so a stage that fails part 
 
 The api keys themselves aren't in the record, since `add-api-key` and `remove-api-key` change them between runs of `apply`. `undo-apply`'s one question decides them, as the [Sequence View](#sequence-view) says.
 
-A step that fails stays in the record, and so does the saved password's step after a no to the one question. Running `undo-apply` again retries them. A folder also stays in the record while something inside it stays: such a step's target, or the api keys' file the operator kept. Once nothing is left, `undo-apply` removes `app-data/`, with the record in it.
+A step that fails stays in the record, and so does the saved password's step after a no to the one question. Running `undo-apply` again retries them. `nginx`'s entries stay too, while `nginx` is installed, and go at the first run after the operator purges it. A folder also stays in the record while something inside it stays: such a step's target, or the api keys' file the operator kept. Once nothing is left, `undo-apply` removes `app-data/`, with the record in it.
 
 A folder removed whole goes only while the current settings still put it there, so a damaged record can never aim a removal elsewhere. The mask comes off last, and only once `nginx` is gone, so the package's default site never runs. `apply` makes the saved password's folder only when it's missing, so a folder that was there keeps its own mode.
 

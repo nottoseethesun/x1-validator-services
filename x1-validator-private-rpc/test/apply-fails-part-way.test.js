@@ -112,7 +112,7 @@ async function failThenUndo(
   return { names, lines };
 }
 
-test("on a first install, a configuration nginx -t refuses leaves none of the files the run wrote for nginx, is kept in the tool's error log, and undo-apply leaves the machine as apply found it", async () => {
+test("on a first install, a configuration nginx -t refuses leaves none of the files the run wrote for nginx, is kept in the tool's error log, and once the operator purges nginx, undo-apply leaves the machine as apply found it", async () => {
   // The one nginx call to refuse, set once the fake's settings are known.
   let refused = "";
   const validator = freshValidator({
@@ -192,7 +192,7 @@ test("a repository file is on record from just before it's written, so one whose
   ]);
 });
 
-test("after a run that waited in vain for the certificate, undo-apply leaves the machine as apply found it", async () => {
+test("after a run that waited in vain for the certificate, and once the operator purges nginx, undo-apply leaves the machine as apply found it", async () => {
   const validator = freshValidator();
   const { host } = validator;
   const tlsGet = host.tlsGet;
