@@ -2,9 +2,9 @@
  * @file x1-validator-private-rpc/test/validate-nginx-upgrade.test.js
  * @description
  * Tests the nginx upgrade check on a fake host that plays a validator,
- * from helpers/fake-validator.js: the order of its steps, its verdict in each way the upgrade can go,
- * and its clean-up, which must remove everything it added even when a
- * step fails. Every scenario runs with each setting changed from its
+ * from helpers/fake-validator.js: the order of its steps, its verdict in
+ * each way the upgrade can go, and its clean-up, which must remove
+ * everything it added even when a step fails. Every scenario runs with each setting changed from its
  * shipped value, so a step that used a default instead would show. It
  * also tests the check's decisions and test configuration on their own,
  * and runs the real entry point for its help.
@@ -20,18 +20,35 @@ import {
   NGINX_APT_SOURCE_PATH,
   NGINX_KEYRING_PATH,
   NGINX_PACKAGES,
+  NGINX_UNIT,
 } from "../src/lib/nginx-org.js";
+import { API_KEY_PATTERN } from "../src/lib/api-key.js";
+import { GATE_PAGE_NAME } from "../src/lib/gate-page.js";
 import {
+  hashApiKey,
+  MAP_HASH_BUCKET_SIZE,
+  MAP_HASH_MAX_SIZE,
+} from "../src/lib/key-hash-map.js";
+import {
+  keyProblems,
   machineProblems,
   upgradeProblems,
 } from "../util/validate-nginx-upgrade/judge.js";
 import { renderTestNginxConfig } from "../util/validate-nginx-upgrade/render-test-config.js";
 import { validateNginxUpgrade } from "../util/validate-nginx-upgrade/steps.js";
 import { shippedAndChangedSettings } from "./helpers/config-copies.js";
-import { fakeValidator } from "./helpers/fake-validator.js";
+import { fakeValidator, testNginxAnswer } from "./helpers/fake-validator.js";
 
 /** Text in the command line of the step that removes the packages. */
 const PURGE = "purge --yes nginx";
+
+/** The path settings the upgrade check reads; the rest belong to apply. */
+const PATHS_THE_CHECK_USES = [
+  "nginxConfigPath",
+  "njsModulePath",
+  "hashedApiKeysMapPath",
+  "systemdDropInPath",
+];
 
 /**
  * The settings every scenario runs with.
@@ -86,7 +103,7 @@ function indexOfCall(calls, text) {
   );
 }
 
-test("passes when the upgrade keeps nginx running and unlocked", async () => {
+test("passes when the upgrade keeps nginx running, and the key working", async () => {
   const { host } = fakeValidator();
   const { result } = await runCheck(host);
   assert.deepEqual(result, { passed: true, problems: [], leftovers: [] });
@@ -96,9 +113,9 @@ test("masks nginx before installing, and upgrades only after the start", async (
   const { host } = fakeValidator();
   await runCheck(host);
   const order = [
-    "sudo systemctl mask nginx.service",
+    `sudo systemctl mask ${NGINX_UNIT}`,
     "nginx=1.30.5-1~noble",
-    "sudo systemctl start nginx.service",
+    `sudo systemctl start ${NGINX_UNIT}`,
     "nginx=1.30.6-1~noble",
   ].map((text) => indexOfCall(host.calls, text));
   assert.ok(
@@ -134,13 +151,11 @@ test("uses every configured setting, and never a shipped value instead", async (
     used.push(call.path ?? [call.command, ...call.args].join(" "));
   }
   const text = used.join("\n");
-  for (const [name, value] of Object.entries(shipped)) {
-    if (typeof value === "string") {
-      for (const shippedPath of [value, path.dirname(value)]) {
-        assert.ok(!text.includes(shippedPath), `${name}: ${shippedPath} used`);
-      }
-      assert.ok(text.includes(changed[name]), `${name} was never used`);
+  for (const name of PATHS_THE_CHECK_USES) {
+    for (const shippedPath of [shipped[name], path.dirname(shipped[name])]) {
+      assert.ok(!text.includes(shippedPath), `${name}: ${shippedPath} used`);
     }
+    assert.ok(text.includes(changed[name]), `${name} was never used`);
   }
   assert.ok(timeouts.length > 0);
   for (const timeoutMs of timeouts) {
@@ -156,7 +171,7 @@ test("leaves the machine as it found it, every folder it made included", async (
   assert.deepEqual(filesOutsideProc(host), before);
 });
 
-test("hands over a well-formed test key in a file only root can read", async () => {
+test("lists the hash of a throwaway key, writes the key nowhere, and asks with it before and after the upgrade", async () => {
   const { host } = fakeValidator();
   const settings = testSettings();
   const written = [];
@@ -165,12 +180,28 @@ test("hands over a well-formed test key in a file only root can read", async () 
     written.push({ filePath, content, mode });
     writeRootFile(filePath, content, mode);
   };
+  const asked = [];
+  const httpGet = host.httpGet;
+  host.httpGet = (url, timeoutMs) => {
+    asked.push(new URL(url).pathname);
+    return httpGet(url, timeoutMs);
+  };
   await runCheck(host);
-  const keyFile = written.find(
-    (file) => file.filePath === settings.keyHandOffPath,
+  const keyedPath = new RegExp(`^/(${API_KEY_PATTERN})/$`);
+  const keyed = asked
+    .map((urlPath) => keyedPath.exec(urlPath))
+    .filter((match) => match !== undefined && match !== null)
+    .map((match) => match[1]);
+  // The throwaway key and a random one, before and after the upgrade.
+  assert.equal(keyed.length, 4);
+  assert.equal(keyed[0], keyed[2]);
+  assert.notEqual(keyed[1], keyed[0]);
+  const list = written.find(
+    (file) => file.filePath === settings.hashedApiKeysMapPath,
   );
-  assert.equal(keyFile.mode, "0600");
-  assert.match(keyFile.content, /^[0-9a-f]{64}$/);
+  assert.equal(list.mode, "0644");
+  assert.equal(list.content, `${hashApiKey(keyed[0])} 1;\n`);
+  assert.ok(written.every((file) => !String(file.content).includes(keyed[0])));
   const config = written.find(
     (file) => file.filePath === settings.nginxConfigPath,
   );
@@ -182,10 +213,10 @@ test("removes everything it added, newest first", async () => {
   const settings = testSettings();
   await runCheck(host);
   const order = [
-    "sudo systemctl stop nginx.service",
+    `sudo systemctl stop ${NGINX_UNIT}`,
     `removeRootFile ${settings.systemdDropInPath}`,
     PURGE,
-    "sudo systemctl unmask nginx.service",
+    `sudo systemctl unmask ${NGINX_UNIT}`,
     `removeRootFile ${NGINX_APT_SOURCE_PATH}`,
     "sudo userdel nginx",
   ].map((text) =>
@@ -206,9 +237,8 @@ test("removes everything it added, newest first", async () => {
   for (const filePath of [
     settings.njsModulePath,
     settings.nginxConfigPath,
-    settings.startWrapperPath,
+    settings.hashedApiKeysMapPath,
     settings.systemdDropInPath,
-    settings.keyHandOffPath,
     NGINX_APT_PIN_PATH,
   ]) {
     assert.equal(host.files.has(filePath), false, filePath);
@@ -343,50 +373,89 @@ test("the long steps run through the spinner, saying the installs take minutes",
   ]);
 });
 
-test("fails when nginx never reports the key before the upgrade", async () => {
-  const { host } = fakeValidator({
-    httpGet: async () => ({ status: 200, body: "locked\n" }),
+test("fails, before upgrading, when nginx refuses the listed key", async () => {
+  const validator = fakeValidator({
+    httpGet: async (url) =>
+      new URL(url).pathname.length > 60
+        ? { status: 403, body: "" }
+        : testNginxAnswer(url, validator.host.files),
   });
-  const { result } = await runCheck(host);
+  const { result } = await runCheck(validator.host);
   assert.equal(result.passed, false);
-  assert.equal(
-    result.problems[0],
-    "Before the upgrade the gate page says locked, so nginx never got the " +
-      "api key.",
-  );
-  assert.equal(indexOfCall(host.calls, "nginx=1.30.6-1~noble"), -1);
+  assert.deepEqual(result.problems, [
+    "Before the upgrade a request with the listed key got 403, not 200: " +
+      "nginx didn't find the key's hash in its list.",
+  ]);
+  assert.equal(indexOfCall(validator.host.calls, "nginx=1.30.6-1~noble"), -1);
 });
 
 test("waits out a connection dropped while the old nginx shuts down", async () => {
   let dropped = false;
   const validator = fakeValidator({
-    httpGet: async () => {
-      if (validator.state.installed === "1.30.6-1~noble" && !dropped) {
+    httpGet: async (url) => {
+      if (validator.state.installed === "1.30.6-1~noble" && dropped === false) {
         dropped = true;
         throw new Error("socket hang up");
       }
-      return { status: 200, body: "unlocked\n" };
+      return testNginxAnswer(url, validator.host.files);
     },
   });
+  const pauses = [];
+  const sleep = validator.host.sleep;
+  validator.host.sleep = (ms) => {
+    pauses.push(ms);
+    return sleep(ms);
+  };
   const { result } = await runCheck(validator.host);
   assert.equal(dropped, true);
   assert.deepEqual(result, { passed: true, problems: [], leftovers: [] });
+  assert.deepEqual(pauses, [testSettings().upgradeCheckPollMs]);
 });
 
-test("fails when the gate page never answers after the upgrade", async () => {
+test("fails when the new nginx never answers after the upgrade", async () => {
   const validator = fakeValidator({
-    httpGet: async () => {
+    httpGet: async (url) => {
       if (validator.state.installed === "1.30.6-1~noble") {
         throw new Error("socket hang up");
       }
-      return { status: 200, body: "unlocked\n" };
+      return testNginxAnswer(url, validator.host.files);
     },
   });
   const { result } = await runCheck(validator.host);
   assert.deepEqual(result.problems, [
-    "After the upgrade the gate page never said unlocked; its last answer " +
+    `After the upgrade ${GATE_PAGE_NAME} never said ok. Its last answer ` +
       "was no answer (socket hang up).",
+    "After the upgrade a request with the listed key got 0, not 200: " +
+      "nginx didn't find the key's hash in its list.",
+    "After the upgrade a request with a random key got 0, not 403.",
   ]);
+});
+
+test("a test configuration nginx refuses stops the check before the start, with nginx's reason", async () => {
+  const { host } = fakeValidator({
+    respond: (call) =>
+      call.command === "nginx" && call.args[0] === "-t"
+        ? { status: 1, stderr: "nginx: [emerg] could not build map_hash" }
+        : undefined,
+  });
+  const { result } = await runCheck(host);
+  assert.deepEqual(result.problems, [
+    "Testing the test configuration failed with exit code 1: nginx: " +
+      "[emerg] could not build map_hash",
+  ]);
+  assert.equal(indexOfCall(host.calls, "systemctl start"), -1);
+  assert.deepEqual(result.leftovers, []);
+});
+
+test("a random key that gets through fails the check", () => {
+  assert.deepEqual(
+    keyProblems({ gate: "ok", keyed: 200, stranger: 200 }, "After the upgrade"),
+    ["After the upgrade a request with a random key got 200, not 403."],
+  );
+  assert.deepEqual(
+    keyProblems({ gate: "ok", keyed: 200, stranger: 403 }, "Before"),
+    [],
+  );
 });
 
 test("fails when the old nginx main process keeps running", async () => {
@@ -454,26 +523,26 @@ test("names every way nginx can fail the upgrade", () => {
     ]),
     programAfter: "/usr/sbin/nginx (deleted)",
     oldMainRunning: true,
-    gateAfter: "locked",
+    answersAfter: { gate: "no answer (refused)", keyed: 0, stranger: 0 },
     installedVersion: null,
     expectedVersion: "1.30.6-1~noble",
   });
-  assert.equal(problems.length, 7);
+  assert.equal(problems.length, 9);
 });
 
-test("the test configuration listens on 127.0.0.1 alone, with the key", () => {
-  const config = renderTestNginxConfig({
-    port: 18080,
-    njsModulePath:
-      "/etc/nginx/x1-validator-private-rpc/x1-validator-private-rpc.js",
-  });
+test("the test configuration listens on 127.0.0.1 alone, and checks keys against the list it includes", () => {
+  const { njsModulePath, hashedApiKeysMapPath: mapPath } = testSettings();
+  const config = renderTestNginxConfig({ port: 18080, njsModulePath, mapPath });
   assert.match(config, /^\s*listen 127\.0\.0\.1:18080;$/m);
-  assert.match(config, /^env X1_RPC_KEY;$/m);
   assert.match(config, /^pid \/run\/nginx\.pid;$/m);
-  assert.match(
-    config,
-    /js_import x1rpc from \/etc\/nginx\/x1-validator-private-rpc\/x1-validator-private-rpc\.js;/,
-  );
+  assert.match(config, /^\s*js_engine qjs;$/m);
+  assert.ok(config.includes(`js_import x1rpc from ${njsModulePath};`), config);
+  assert.match(config, /^\s*js_set \$x1_rpc_key_hash x1rpc\.keyHash;$/m);
+  assert.ok(config.includes(`include ${mapPath};`), config);
+  // The real configuration's sizes, without which nginx can't build it.
+  assert.ok(config.includes(`map_hash_bucket_size ${MAP_HASH_BUCKET_SIZE};`));
+  assert.ok(config.includes(`map_hash_max_size ${MAP_HASH_MAX_SIZE};`));
+  assert.doesNotMatch(config, /^env /m);
 });
 
 test("the real entry point prints its help with exit code 0", () => {

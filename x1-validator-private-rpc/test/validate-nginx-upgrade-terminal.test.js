@@ -12,6 +12,7 @@ import { EventEmitter } from "node:events";
 import { test } from "node:test";
 import {
   createTerminal,
+  PASSED,
   reportOutcome,
 } from "../util/validate-nginx-upgrade/terminal.js";
 
@@ -23,8 +24,8 @@ const PREFIX = "[validate-nginx-upgrade]";
  * @param {{isTTY?: boolean, columns?: number}} stdout  The stand-in
  *   output stream.
  * @returns {{terminal: object, signals: EventEmitter, made: object[],
- *   printed: string[]}} The terminal; its Ctrl-C source; the options of
- *   each spinner made; and every line printed and spinner call, in order.
+ *   printed: string[]}} The terminal, its Ctrl-C source, the options of
+ *   each spinner made, and every line printed and spinner call, in order.
  */
 function terminalOn(t, stdout) {
   const printed = [];
@@ -103,9 +104,7 @@ test("a pass is reported, with exit code 0", () => {
     (line) => reported.push(line),
   );
   assert.equal(code, 0);
-  assert.deepEqual(reported, [
-    "Passed: an apt upgrade of nginx keeps the gated rpc unlocked.",
-  ]);
+  assert.deepEqual(reported, [PASSED]);
 });
 
 test("a failure lists each problem on stderr, with exit code 1", (t) => {

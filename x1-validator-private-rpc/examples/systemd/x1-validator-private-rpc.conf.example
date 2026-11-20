@@ -1,0 +1,11 @@
+# x1-validator-private-rpc: systemd drop-in for nginx.service.
+[Service]
+# Before each start, make nginx's log folder when it's missing, since
+# nginx can't start without it.
+ExecStartPre=/bin/sh -c 'test -d /var/log/nginx || install -d -m 0755 /var/log/nginx'
+# Start nginx with the tool's own configuration, not the package's.
+ExecStart=
+ExecStart=/usr/sbin/nginx -c /etc/nginx/x1-validator-private-rpc/nginx.conf
+# Give nginx its own /dev, read-only, so reopening its logs can't hand
+# the machine's /dev/null to the nginx account.
+PrivateDevices=yes

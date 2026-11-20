@@ -6,7 +6,8 @@
  * name nginx.org's repository. Names that nginx.org decides
  * are constants here, not settings: its signing key's address and the
  * two fingerprints the tool trusts, its repository, the three packages,
- * and the apt files its instructions name.
+ * the systemd unit and the log folder they install, and the apt files
+ * the tool adds for them.
  *
  * Each module package is built for one exact nginx version, which leads
  * its version string: `1.30.5+1.0.1-1~noble` is njs 1.0.1 built for
@@ -49,6 +50,15 @@ export const NGINX_PACKAGES = [
   "nginx-module-njs",
   "nginx-module-acme",
 ];
+export const NGINX_UNIT = "nginx.service";
+
+/**
+ * nginx's log folder. nginx.org's package makes it with this mode, its
+ * logrotate rule rotates each `.log` file in it daily and keeps 52, and
+ * purging the package removes it.
+ */
+export const NGINX_LOG_DIR = "/var/log/nginx";
+export const NGINX_LOG_DIR_MODE = "0755";
 
 /**
  * @typedef {object} PackageVersion
@@ -88,7 +98,7 @@ const PRIORITY = /^-?\d+$/;
  * amd64 Packages`.
  * @param {string} line  The line.
  * @returns {{version?: string, source?: string}} The version a version
- *   line names, or the source a source line names; nothing for any other
+ *   line names, the source a source line names, or nothing for any other
  *   line.
  */
 function readPolicyLine(line) {
@@ -123,12 +133,15 @@ export function parseAptPolicy(text) {
     if (/^\S+:$/.test(line)) {
       name = line.slice(0, -1);
       version = null;
-    } else if (listed !== undefined) {
+    } else if (listed !== undefined && listed !== null) {
       version = listed;
     } else if (
       source !== undefined &&
+      source !== null &&
       NGINX_REPOSITORY.test(source) &&
+      name !== undefined &&
       name !== null &&
+      version !== undefined &&
       version !== null
     ) {
       entries.push({ name, version });
@@ -141,8 +154,8 @@ export function parseAptPolicy(text) {
 /**
  * @typedef {object} SourceEntry
  * @property {string[]} uris  The repositories the entry names.
- * @property {string[]} signedBy  What its signed-by option names: key
- *   files or fingerprints; nothing when it has no such option.
+ * @property {string[]} signedBy  What its signed-by option names, key
+ *   files or fingerprints, or nothing when it has no such option.
  */
 
 /**
@@ -171,7 +184,7 @@ function oneLineEntries(text) {
       {
         uris: [rest.split(/\s+/)[0]],
         signedBy:
-          signedBy === undefined
+          signedBy === undefined || signedBy === null
             ? []
             : signedBy.slice("signed-by=".length).split(","),
       },
@@ -229,11 +242,11 @@ function deb822Entries(text) {
  *   `.sources` files are, rather than the one-line format of `.list`
  *   files.
  * @returns {string[][]} For each entry naming nginx.org's repository,
- *   the absolute paths of the key files it names; empty when it names
- *   none.
+ *   the absolute paths of the key files it names, or an empty list when
+ *   it names none.
  */
 export function nginxOrgKeyFiles(text, deb822) {
-  const entries = deb822 ? deb822Entries(text) : oneLineEntries(text);
+  const entries = deb822 === true ? deb822Entries(text) : oneLineEntries(text);
   return entries
     .filter((entry) => entry.uris.some((uri) => NGINX_REPOSITORY.test(uri)))
     .map((entry) => entry.signedBy.filter((value) => value.startsWith("/")));
@@ -284,7 +297,8 @@ export function newestFirst(a, b) {
  * @param {string} nginxVersion  The nginx version, such as
  *   `1.30.5-1~noble`.
  * @returns {PackageVersion}
- * @throws {Error} When nginx.org has no build of the module for it.
+ * @throws {Error} When nginx.org has no build of the module for it, since
+ *   nginx can't load a module built for another version.
  */
 function moduleFor(entries, name, nginxVersion) {
   const upstream = nginxVersion.split("-")[0];
@@ -306,7 +320,8 @@ function moduleFor(entries, name, nginxVersion) {
  * @returns {{previous: PackageVersion[], newest: PackageVersion[]}} Each
  *   set lists nginx first, then its modules.
  * @throws {Error} When nginx.org offers fewer than two nginx versions,
- *   or lacks a module build for one of them.
+ *   or lacks a module build for one of them, since the upgrade can't be
+ *   tried without both sets.
  */
 export function pickUpgradePair(entries) {
   const versions = [

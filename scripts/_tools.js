@@ -6,35 +6,36 @@
  * directory never redirects a run. They find each tool's command in
  * `node_modules/.bin`, never through npx. They run a command either with
  * the terminal attached, so its output streams as it comes, or with its
- * output captured for a report. And they give every script the same
- * handling of `--help` and of arguments it doesn't take.
+ * output captured for a report. And they start every script's
+ * command-line program the same way, with commander.
  */
 
 import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { Command } from "commander";
 
 /**
- * Handles a script's arguments before it does any work. Asked for help
- * with `--help` or `-h`, it prints the script's usage to stdout and exits
- * 0. Given an argument the script doesn't take, it prints the argument
- * and the usage to stderr and exits 1.
- * @param {string[]} args  The script's arguments, without node and the
- *   script's path.
- * @param {string[]} accepted  The arguments the script takes.
- * @param {string} usage  The script's usage text.
+ * Starts a script's command-line program, with commander, so the help is
+ * made from the options the script declares and can't drift from them.
+ * Asked for help with `--help` or `-h`, it prints it to stdout and exits
+ * 0. Given an argument the script doesn't take, it prints the reason and
+ * the help to stderr and exits 1.
+ * @param {string} script  The script's path, such as `scripts/lint.js`.
+ * @param {string} description  What the script does.
+ * @param {string[]} exitCodes  One line per exit code, such as
+ *   `0  every check passed`.
+ * @returns {Command} The program, for the script to add its options to
+ *   and parse.
  */
-export function checkScriptArgs(args, accepted, usage) {
-  if (args.includes("--help") || args.includes("-h")) {
-    console.log(usage);
-    process.exit(0);
-  }
-  const unknown = args.filter((arg) => !accepted.includes(arg));
-  if (unknown.length > 0) {
-    console.error(`Unknown argument: ${unknown.join(" ")}\n\n${usage}`);
-    process.exit(1);
-  }
+export function scriptProgram(script, description, exitCodes) {
+  const codes = exitCodes.map((line) => `  ${line}`).join("\n");
+  return new Command(`node ${script}`)
+    .description(description)
+    .helpOption("-h, --help", "print this help and exit")
+    .addHelpText("after", `\nExit codes:\n${codes}`)
+    .showHelpAfterError();
 }
 
 /**

@@ -7,7 +7,7 @@
  * the files entry points load: the files in folders under a feature's
  * `src/`, and the files of a standalone tool's folder other than its
  * `index.js`. Installed files are the ones a feature copies into another
- * program, such as nginx's njs modules; no entry point loads them.
+ * program, such as nginx's njs modules. No entry point loads them.
  */
 
 import path from "node:path";

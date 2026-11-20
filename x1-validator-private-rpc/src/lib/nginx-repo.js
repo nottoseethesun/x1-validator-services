@@ -2,11 +2,13 @@
  * @file x1-validator-private-rpc/src/lib/nginx-repo.js
  * @description
  * Adds nginx.org's apt repository the way nginx.org's instructions say,
- * with one difference: apt trusts only the two keys the tool pins, not
- * every key in nginx.org's key file. The tool downloads the key file,
- * requires both pinned fingerprints in it, and exports only those two
- * keys into the keyring apt reads. A change at nginx.org therefore stops
- * the tool with a message instead of being trusted.
+ * with two differences. Its files go where apt's manual prefers, in the
+ * format it prefers, as nginx-org.js says. And apt trusts only the two keys
+ * the tool pins, not every key in nginx.org's key file. The tool
+ * downloads the key file, requires both pinned fingerprints in it, and
+ * exports only those two keys into the keyring apt reads. A change at
+ * nginx.org therefore stops the tool with a message instead of being
+ * trusted.
  *
  * Files that already exist are left as they are. So is an entry for
  * nginx.org's repository that the machine already has in another file,
@@ -19,7 +21,9 @@
  * nginx.org's packages. A key file already at the tool's own keyring
  * path is checked the same way. The function returns the files it
  * wrote, so a caller that must leave the system as it found it can
- * remove exactly those.
+ * remove exactly those. It can also name each file to the caller just
+ * before writing it, so the caller's record holds the file even when the
+ * run dies part way.
  */
 
 import path from "node:path";
@@ -37,6 +41,14 @@ import {
 import { renderAptPin, renderAptSource } from "./render-host-files.js";
 
 /**
+ * @typedef {object} RepositoryOptions  What adding the repository needs.
+ * @property {string} codename  The Ubuntu release's code name.
+ * @property {number} timeoutMs  How long to wait for nginx.org.
+ * @property {(filePath: string) => void} [beforeWrite]  Called with each
+ *   file just before it's written, so the caller can record it first.
+ */
+
+/**
  * Runs gpg against a folder of its own, so the user's keyrings are never
  * touched.
  * @param {object} host  The host.
@@ -47,10 +59,12 @@ import { renderAptPin, renderAptSource } from "./render-host-files.js";
  * @returns {import("./command-result.js").CommandResult}
  */
 function gpg(host, home, args, what, options = {}) {
-  return mustSucceed(
-    host.run("gpg", ["--homedir", home, "--batch", ...args], options),
-    what,
+  const result = host.run(
+    "gpg",
+    ["--homedir", home, "--batch", ...args],
+    options,
   );
+  return mustSucceed(result, what);
 }
 
 /**
@@ -66,7 +80,7 @@ function withGpgHome(host, work) {
     return work(home);
   } finally {
     host.run("gpgconf", ["--homedir", home, "--kill", "all"]);
-    host.removeTempDir(home);
+    host.removeUserTree(home);
   }
 }
 
@@ -76,7 +90,8 @@ function withGpgHome(host, work) {
  * @param {string} home  gpg's folder.
  * @param {string} keyFile  The key file, armored or binary.
  * @param {string} what  The step, for an error.
- * @returns {string[]} The missing fingerprints; none when it holds both.
+ * @returns {string[]} The missing fingerprints, or none when it holds
+ *   both.
  */
 function missingPinnedKeys(host, home, keyFile, what) {
   const shown = gpg(
@@ -94,7 +109,8 @@ function missingPinnedKeys(host, home, keyFile, what) {
  * @param {object} host  The host.
  * @param {string} keyText  The key file nginx.org serves.
  * @returns {Buffer} A binary keyring holding the two pinned keys.
- * @throws {Error} When the key file lacks a pinned fingerprint.
+ * @throws {Error} When the key file lacks a pinned fingerprint, since
+ *   apt would otherwise trust packages signed by a key nobody checked.
  */
 export function exportPinnedKeys(host, keyText) {
   return withGpgHome(host, (home) => {
@@ -184,7 +200,8 @@ function checkExistingEntries(host, sourcePath) {
  * @param {object} host  The host.
  * @param {number} timeoutMs  How long to wait for nginx.org.
  * @returns {Promise<string>} The key file's text.
- * @throws {Error} When nginx.org answers with anything but the file.
+ * @throws {Error} When nginx.org answers with anything but the file,
+ *   since there is then no key to check.
  */
 async function downloadSigningKey(host, timeoutMs) {
   const response = await host.httpsGet(NGINX_SIGNING_KEY_URL, timeoutMs);
@@ -201,7 +218,7 @@ async function downloadSigningKey(host, timeoutMs) {
  * Lists the apt source files, other than the tool's own, that already
  * name nginx.org's repository in a line that isn't a comment.
  * @param {object} host  The host.
- * @returns {string[]} The files; none when nothing else names it.
+ * @returns {string[]} The files, or none when nothing else names it.
  */
 function otherNginxSources(host) {
   const result = host.run("grep", [
@@ -227,12 +244,12 @@ function otherNginxSources(host) {
  * written. First it checks the key files apt would use that are already
  * on the machine: those another entry names, or the tool's own keyring.
  * @param {object} host  The host.
- * @param {{codename: string, timeoutMs: number}} options  The Ubuntu
- *   release's code name, and how long to wait for nginx.org.
+ * @param {RepositoryOptions} options  What the files need.
  * @param {string[]} written  Collects the files written.
  * @returns {Promise<void>}
  */
-async function writeRepositoryFiles(host, { codename, timeoutMs }, written) {
+async function writeRepositoryFiles(host, options, written) {
+  const { codename, timeoutMs, beforeWrite = () => {} } = options;
   const others = otherNginxSources(host);
   for (const sourcePath of others) {
     checkExistingEntries(host, sourcePath);
@@ -247,6 +264,7 @@ async function writeRepositoryFiles(host, { codename, timeoutMs }, written) {
     } else {
       const keyText = await downloadSigningKey(host, timeoutMs);
       const keyring = exportPinnedKeys(host, keyText);
+      beforeWrite(NGINX_KEYRING_PATH);
       host.writeRootFile(NGINX_KEYRING_PATH, keyring, "0644");
       written.push(NGINX_KEYRING_PATH);
     }
@@ -254,6 +272,7 @@ async function writeRepositoryFiles(host, { codename, timeoutMs }, written) {
   }
   for (const [filePath, text] of files) {
     if (!host.exists(filePath)) {
+      beforeWrite(filePath);
       host.writeRootFile(filePath, text, "0644");
       written.push(filePath);
     }
@@ -293,8 +312,7 @@ function removeAfterFailure(host, written, error) {
  * example the refresh, the files written so far are removed again before
  * the error goes on, so a failure leaves none of them behind.
  * @param {object} host  The host.
- * @param {{codename: string, timeoutMs: number}} options  The Ubuntu
- *   release's code name, and how long to wait for nginx.org.
+ * @param {RepositoryOptions} options  What the files need.
  * @returns {Promise<string[]>} The files it wrote.
  */
 export async function addNginxRepository(host, options) {

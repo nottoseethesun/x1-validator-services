@@ -50,7 +50,7 @@ const OPTIONS = { codename: "noble", timeoutMs: 1000 };
  * @param {string[]} fingerprints  What the key files hold.
  * @param {object} [scenario]  More of the fake's scenario.
  * @param {string} [scenario.grep]  The apt source files grep finds
- *   naming nginx.org, one per line; none unless given.
+ *   naming nginx.org, one per line, or none unless given.
  * @returns {object}
  */
 function hostWithKeys(fingerprints, { grep = "", ...extra } = {}) {

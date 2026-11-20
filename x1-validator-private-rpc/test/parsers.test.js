@@ -36,9 +36,14 @@ test("reads systemctl show's properties", () => {
   assert.equal(properties.get("ActiveState"), "active");
 });
 
-test("reads an installed package's version, or nothing", () => {
+test("reads an installed package's version, held or not, or nothing", () => {
   assert.equal(
     parseDpkgQuery("install ok installed 1.30.6-1~noble"),
+    "1.30.6-1~noble",
+  );
+  // What dpkg says of a package the operator holds back with apt-mark.
+  assert.equal(
+    parseDpkgQuery("hold ok installed 1.30.6-1~noble"),
     "1.30.6-1~noble",
   );
   assert.equal(
@@ -78,22 +83,22 @@ function fakeClock() {
 }
 
 test("waiting stops at the first wanted answer", async () => {
-  const answers = ["starting", "starting", "unlocked"];
+  const answers = ["starting", "starting", "ok"];
   const result = await pollUntil(
     async () => answers.shift(),
-    (answer) => answer === "unlocked",
+    (answer) => answer === "ok",
     { timeoutMs: 10_000, intervalMs: 250, ...fakeClock() },
   );
-  assert.deepEqual(result, { wanted: true, answer: "unlocked" });
+  assert.deepEqual(result, { wanted: true, answer: "ok" });
 });
 
 test("waiting gives up when the time runs out, with the last answer", async () => {
   const clock = fakeClock();
   const result = await pollUntil(
-    async () => "locked",
-    (answer) => answer === "unlocked",
+    async () => "starting",
+    (answer) => answer === "ok",
     { timeoutMs: 1000, intervalMs: 250, ...clock },
   );
-  assert.deepEqual(result, { wanted: false, answer: "locked" });
+  assert.deepEqual(result, { wanted: false, answer: "starting" });
   assert.equal(clock.now(), 1000);
 });

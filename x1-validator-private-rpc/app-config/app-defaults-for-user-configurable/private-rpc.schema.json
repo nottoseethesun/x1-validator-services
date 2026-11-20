@@ -2,54 +2,233 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "private-rpc.schema.json",
   "title": "x1-validator-private-rpc settings",
-  "description": "Every setting the tool reads. An override file may set any of them, and nothing else.",
+  "description": "Every setting the tool reads. An override file may set any of them, and nothing else but notes, keys that start with _. hostname, publicIp and acmeEmail have no shipped value: the operator sets hostname before apply, and the other two only when wanted.",
   "type": "object",
   "additionalProperties": false,
+  "patternProperties": {
+    "^_": {
+      "description": "A note, such as the warning beside a setting in the shipped file. The tool skips it.",
+      "type": "string"
+    }
+  },
   "required": [
+    "x1consoleDir",
+    "startScriptFile",
+    "hashedApiKeysPath",
     "nginxConfigPath",
     "njsModulePath",
-    "startWrapperPath",
+    "hashedApiKeysMapPath",
     "systemdDropInPath",
-    "keyHandOffPath",
-    "requestTimeoutSeconds"
+    "passwordCredentialPath",
+    "acmeDirectoryUrl",
+    "acmeStatePath",
+    "acmeStagingDirectoryUrl",
+    "acmeStagingStatePath",
+    "nginxWorkerPriority",
+    "websocketIdleTimeoutSeconds",
+    "certificateWaitSeconds",
+    "certificateWarningDays",
+    "certificateReminderHours",
+    "exposedReminderMinutes",
+    "rateLimitRequestsPerSecond",
+    "requestTimeoutSeconds",
+    "cronitorCheckInTries",
+    "gatePollMs",
+    "upgradeCheckPollMs",
+    "startScriptQuietSeconds",
+    "passwordMinLength",
+    "passwordTries",
+    "maxApiKeys",
+    "apiKeyCountCheckHours",
+    "checkQueryCount"
   ],
   "properties": {
     "$schema": {
       "description": "Points editors at this schema.",
       "type": "string"
     },
+    "hostname": {
+      "description": "The rpc's hostname, such as x1-rpc.example.com: a dns name with at least one dot, and no scheme, path or port. Its A record must name the validator's public address.",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9-]+(\\.[A-Za-z0-9-]+)+$"
+    },
+    "publicIp": {
+      "description": "The validator's public ipv4 address, which nginx listens on. Leave it out to use the address the X1 network sees.",
+      "type": "string",
+      "pattern": "^(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])(\\.(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])){3}$"
+    },
+    "acmeEmail": {
+      "description": "A contact address for Let's Encrypt. Leave it out for none.",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(\\.[A-Za-z0-9-]+)+$"
+    },
+    "x1consoleDir": {
+      "description": "Where x1console lives.",
+      "$ref": "#/$defs/homePath"
+    },
+    "startScriptFile": {
+      "description": "x1console's start script, inside x1consoleDir.",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._-]+$"
+    },
+    "hashedApiKeysPath": {
+      "description": "The api keys' file: each key's SHA-256 hash, with a record whose values the x1-validator-services password encrypts. The keys themselves are never kept.",
+      "$ref": "#/$defs/homePath"
+    },
     "nginxConfigPath": {
       "description": "Where the tool writes nginx's main configuration.",
       "$ref": "#/$defs/systemPath"
     },
     "njsModulePath": {
-      "description": "Where the tool installs the api-key check that nginx runs.",
+      "description": "Where the tool installs the key check that nginx runs.",
       "$ref": "#/$defs/systemPath"
     },
-    "startWrapperPath": {
-      "description": "Where the tool installs the script that starts nginx with the api key.",
+    "hashedApiKeysMapPath": {
+      "description": "Where the tool writes nginx's list of the api keys' hashes, which nginx checks each request against.",
       "$ref": "#/$defs/systemPath"
     },
     "systemdDropInPath": {
-      "description": "Where the tool writes the systemd drop-in that starts nginx through the start wrapper.",
+      "description": "Where the tool writes the systemd drop-in that starts nginx with the tool's configuration.",
       "$ref": "#/$defs/systemPath"
     },
-    "keyHandOffPath": {
-      "description": "The memory-only file through which the tool hands nginx the api key at a start.",
+    "passwordCredentialPath": {
+      "description": "Where systemd keeps the saved, encrypted password.",
       "$ref": "#/$defs/systemPath"
+    },
+    "acmeDirectoryUrl": {
+      "description": "The certificate authority's ACME directory.",
+      "$ref": "#/$defs/httpsUrl"
+    },
+    "acmeStatePath": {
+      "description": "Where nginx keeps its ACME account and certificate.",
+      "$ref": "#/$defs/systemPath"
+    },
+    "acmeStagingDirectoryUrl": {
+      "description": "The ACME directory that apply --acme-staging uses.",
+      "$ref": "#/$defs/httpsUrl"
+    },
+    "acmeStagingStatePath": {
+      "description": "Where nginx keeps its staging account and certificate.",
+      "$ref": "#/$defs/systemPath"
+    },
+    "nginxWorkerPriority": {
+      "description": "nginx's worker_priority, a nice value: the higher it is, the lower the priority of nginx's workers beside the validator.",
+      "type": "integer",
+      "minimum": -20,
+      "maximum": 20
+    },
+    "websocketIdleTimeoutSeconds": {
+      "description": "How long a quiet websocket subscription stays open: nginx's proxy_read_timeout.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 86400
+    },
+    "certificateWaitSeconds": {
+      "description": "How long apply waits for nginx's certificate, and then, after a reload, for its test requests through nginx to pass.",
+      "type": "integer",
+      "minimum": 10,
+      "maximum": 3600
+    },
+    "certificateWarningDays": {
+      "description": "How close to its expiry the certificate must come before ensure alerts.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 89
+    },
+    "certificateReminderHours": {
+      "description": "How often ensure repeats the alert while the certificate needs attention.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 168
+    },
+    "exposedReminderMinutes": {
+      "description": "How often ensure repeats its alerts that the rpc is public, and that --private-rpc is missing from the start script and couldn't go back.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1440
+    },
+    "rateLimitRequestsPerSecond": {
+      "description": "How many keyed requests a second nginx forwards to the rpc, all keys' together. It also lets a burst of as many more through at once, and answers the rest 429 Too Many Requests. The shipped value is half of the 40 requests a second that Moralis's entry plan, Starter, allows an api key.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 10000
     },
     "requestTimeoutSeconds": {
-      "description": "The time limit of each request the tool makes, and how long it waits for nginx to answer.",
+      "description": "The time limit of each request the tool makes. The nginx upgrade check also waits this long for nginx or systemd to change.",
       "type": "integer",
       "minimum": 1,
       "maximum": 120
+    },
+    "cronitorCheckInTries": {
+      "description": "How many times ensure tries its Cronitor check-in on each run before it gives up until the next run.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 5
+    },
+    "gatePollMs": {
+      "description": "How long apply waits between two looks at /x1-rpc-gate, nginx's page for the tool's own checks, while it waits for nginx's certificate. After a reload, it's also the wait between two rounds of apply's test requests through nginx.",
+      "type": "integer",
+      "minimum": 100,
+      "maximum": 10000
+    },
+    "upgradeCheckPollMs": {
+      "description": "How long util/validate-nginx-upgrade waits between two looks at nginx or systemd, while it waits for a change.",
+      "type": "integer",
+      "minimum": 50,
+      "maximum": 5000
+    },
+    "startScriptQuietSeconds": {
+      "description": "How long ensure leaves the start script alone after the script last changed, so it never edits the script in the middle of an x1console update. A run from the tool's git hook doesn't wait.",
+      "type": "integer",
+      "minimum": 5,
+      "maximum": 600
+    },
+    "passwordMinLength": {
+      "description": "The fewest characters a new x1-validator-services password may have.",
+      "type": "integer",
+      "minimum": 12,
+      "maximum": 1024
+    },
+    "passwordTries": {
+      "description": "How many times a password may be typed before a command that asks for it stops.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 10
+    },
+    "maxApiKeys": {
+      "description": "The most api keys there may be. add-api-key refuses to go past it.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 500000
+    },
+    "apiKeyCountCheckHours": {
+      "description": "How often, in hours, a cron job checks that nginx holds at least one api key.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 24
+    },
+    "checkQueryCount": {
+      "description": "How many queries check-my-private-rpc sends through the keyed url, one right after another.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 50
     }
   },
   "$defs": {
     "systemPath": {
-      "description": "An absolute path of letters, digits, dots, dashes, underscores and slashes, safe to write into shell scripts and systemd units.",
+      "description": "An absolute path of letters, digits, dots, dashes, underscores and slashes alone, since the tool writes it into shell scripts, systemd units and nginx's configuration, where another character could change what a line means.",
       "type": "string",
       "pattern": "^/[A-Za-z0-9._/-]+$"
+    },
+    "homePath": {
+      "description": "An absolute path of letters, digits, dots, dashes, underscores and slashes, or one that starts with ~/, in the account's home folder.",
+      "type": "string",
+      "pattern": "^(/|~/)[A-Za-z0-9._/-]+$"
+    },
+    "httpsUrl": {
+      "description": "An https url of letters, digits, dots, colons, slashes, underscores, tildes and dashes alone, since the tool writes it into nginx's configuration, where another character could change what a line means.",
+      "type": "string",
+      "pattern": "^https://[A-Za-z0-9.:/_~-]+$"
     }
   }
 }

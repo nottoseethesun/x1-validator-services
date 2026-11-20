@@ -15,3 +15,8 @@ docs/claude/memory/private/
 # Each feature's per-install settings; the README explaining them stays.
 x1-validator-private-rpc/app-config/user-configurable/*
 !x1-validator-private-rpc/app-config/user-configurable/README.md
+
+# What a feature records and logs on the validator: apply's record of
+# its changes, ensure's alert state, and the scheduled ensure's log.
+x1-validator-private-rpc/app-data/
+x1-validator-private-rpc/logs/

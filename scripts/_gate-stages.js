@@ -1,14 +1,15 @@
 /**
  * @file scripts/_gate-stages.js
  * @description
- * Every check the gate runs besides the tests, written down once as data:
- * a name, a command and its arguments. `npm run lint` runs the lint
- * stages, `npm run check` runs those and the audit stages, and the
- * single-purpose scripts (format, audit) run one stage each, so a
- * command is never spelled out in two places. Each stage's file list
- * comes from scripts/lint-targets.js.
+ * Every check the gate runs besides the tests and the coverage verdict,
+ * written down once as data: a name, a command and its arguments. `npm
+ * run lint` runs the lint stages, `npm run check` runs those and the
+ * audit stages, and the single-purpose scripts (format, audit) run one
+ * stage each. Two npm scripts, knip:files and audit:deps, spell out a
+ * stage's command again. The stages take their file lists from
+ * scripts/lint-targets.js, but for Prettier's json and yaml globs, here.
  *
- * A stage only describes its command; scripts/lint.js and
+ * A stage only describes its command. scripts/lint.js and
  * scripts/check.js run it.
  */
 
@@ -43,7 +44,7 @@ export function eslintStage({ fix }) {
   return {
     name: "Lint (JavaScript)",
     command: toolPath("eslint"),
-    args: fix ? [...args, "--fix"] : args,
+    args: fix === true ? [...args, "--fix"] : args,
   };
 }
 
@@ -56,13 +57,13 @@ export function markdownStage({ fix }) {
   return {
     name: "Lint (Markdown)",
     command: toolPath("markdownlint-cli2"),
-    args: fix ? ["--fix", ...MARKDOWN_TARGETS] : [...MARKDOWN_TARGETS],
+    args: fix === true ? ["--fix", ...MARKDOWN_TARGETS] : [...MARKDOWN_TARGETS],
   };
 }
 
 /**
- * Prettier over one kind of file. Prettier formats only JavaScript, JSON
- * and YAML here, never Markdown, which it would rewrite wholesale.
+ * Prettier over one kind of file. Prettier formats only JavaScript, json
+ * and yaml here, never Markdown, which it would rewrite wholesale.
  * @param {"js"|"json"|"yaml"} kind  Which files.
  * @param {{write: boolean}} options  Rewrite, or only check.
  * @returns {Stage}
@@ -70,15 +71,15 @@ export function markdownStage({ fix }) {
 export function prettierStage(kind, { write }) {
   const kinds = new Map([
     ["js", { label: "JavaScript", globs: JS_TARGETS }],
-    ["json", { label: "JSON", globs: ["**/*.json"] }],
-    ["yaml", { label: "YAML", globs: ["**/*.{yml,yaml}"] }],
+    ["json", { label: "json", globs: ["**/*.json"] }],
+    ["yaml", { label: "yaml", globs: ["**/*.{yml,yaml}"] }],
   ]);
   const { label, globs } = kinds.get(kind);
   return {
     name: `Format (${label})`,
     command: toolPath("prettier"),
     args: [
-      write ? "--write" : "--check",
+      write === true ? "--write" : "--check",
       "--no-error-on-unmatched-pattern",
       ...globs,
     ],
@@ -112,8 +113,8 @@ export function knipStage() {
 }
 
 /**
- * The check that every module under a feature's `src/` is loaded by one
- * of the feature's entry points, not only by tests.
+ * The check that every module under a feature's `src/` or `util/` is
+ * loaded by one of the feature's entry points, not only by tests.
  * @returns {Stage}
  */
 export function unusedSrcModulesStage() {

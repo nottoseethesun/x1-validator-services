@@ -1,0 +1,6 @@
+{
+  "$schema": "../app-defaults-for-user-configurable/private-rpc.schema.json",
+  "hostname": "x1-rpc.example.com",
+  "publicIp": "203.0.113.10",
+  "acmeEmail": "you@example.com"
+}

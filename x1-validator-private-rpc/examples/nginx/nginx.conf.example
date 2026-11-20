@@ -1,0 +1,133 @@
+# x1-validator-private-rpc: nginx for a private X1 validator rpc.
+#
+# Written by x1-validator-private-rpc. The nginx service starts nginx with
+# this configuration, through the tool's systemd drop-in. The packaged
+# /etc/nginx/nginx.conf stays untouched and unused.
+#
+# For a manual setup, replace x1-rpc.example.com with your hostname (one
+# place) and 203.0.113.10 with the validator's public ipv4 address (two places).
+
+user nginx;
+worker_processes 1;
+worker_priority 10;
+pid /run/nginx.pid;
+
+# Notice and above. At info or debug, nginx would also write here the
+# request line, key and all, of a client that stalls, hangs up or sends a
+# header nginx can't read.
+error_log /var/log/nginx/error.log notice;
+
+# After a reload, the old worker closes what it still holds open within
+# 10 seconds. A websocket's key is checked only when it opens, so this
+# is what ends a removed key's websocket. Its client must reconnect, and
+# meets the new list.
+worker_shutdown_timeout 10s;
+
+load_module modules/ngx_http_js_module.so;
+load_module modules/ngx_http_acme_module.so;
+
+events {
+    worker_connections 1024;
+}
+
+http {
+    server_tokens off;
+    default_type application/octet-stream;
+
+    # A connection has 5 seconds from its opening to finish its tls
+    # handshake and send its request's header, and each later request on
+    # it has 5 seconds of its own. That raises the cost of filling nginx's
+    # connections with handshakes and headers sent a few bytes at a time,
+    # but one machine can still do it, as the tool's docs/architecture.md
+    # explains.
+    client_header_timeout 5s;
+
+    # The system's dns resolver, used to find the certificate authority.
+    resolver 127.0.0.53 ipv6=off;
+
+    acme_issuer letsencrypt {
+        uri https://acme-v02.api.letsencrypt.org/directory;
+        challenge tls-alpn-01;
+        state_path /var/cache/nginx/acme-letsencrypt;
+        accept_terms_of_service;
+    }
+
+    js_engine qjs;
+    js_import x1rpc from /etc/nginx/x1-validator-private-rpc/x1-validator-private-rpc.js;
+    js_set $x1_rpc_key_hash x1rpc.keyHash;
+    js_set $x1_rpc_path x1rpc.forwardPath;
+    # The url the access log shows: <key> in place of anything that looks
+    # like a key, wherever the client put it, in either case, and even a
+    # character short or long.
+    js_set $x1_rpc_logged_uri x1rpc.loggedUri;
+
+    # Buckets big enough for 64-character hashes, so the list's table
+    # builds at once for any number of keys the tool allows.
+    map_hash_bucket_size 1024;
+    map_hash_max_size 524288;
+
+    # 1 when the key's hash is in nginx's list, 0 otherwise.
+    map $x1_rpc_key_hash $x1_rpc_key_ok {
+        default 0;
+        include /etc/nginx/x1-validator-private-rpc/hashed-api-keys.map;
+    }
+
+    map $http_upgrade $x1_rpc_backend {
+        websocket 127.0.0.1:8900;
+        default   127.0.0.1:8899;
+    }
+
+    map $http_upgrade $x1_rpc_connection {
+        default upgrade;
+        ''      close;
+    }
+
+    log_format x1_rpc '$time_iso8601 $remote_addr $request_method '
+                      '"$x1_rpc_logged_uri" $status $body_bytes_sent $request_time';
+
+    # One budget that every key's requests share, refilled 20 times a second.
+    limit_req_zone $server_name zone=x1_rpc:1m rate=20r/s;
+
+    server {
+        listen 203.0.113.10:443 ssl;
+        http2 on;
+        server_name x1-rpc.example.com;
+
+        acme_certificate letsencrypt;
+        ssl_certificate $acme_certificate;
+        ssl_certificate_key $acme_certificate_key;
+        ssl_certificate_cache max=2;
+
+        access_log /var/log/nginx/access.log x1_rpc;
+
+        # Local-only page: says ok, so the tool knows nginx answers.
+        location = /x1-rpc-gate {
+            allow 203.0.113.10;
+            deny all;
+            access_log off;
+            js_content x1rpc.gatePage;
+        }
+
+        location / {
+            # No error log: nginx's error lines carry the request line, key and all.
+            error_log /dev/null;
+            # Request bodies of at most 10 KB, held in memory. A larger one gets 413.
+            client_max_body_size 10k;
+            client_body_buffer_size 10k;
+            # 20 keyed requests a second, plus a burst of 20 more. The rest get 429.
+            limit_req zone=x1_rpc burst=20 nodelay;
+            limit_req_status 429;
+            if ($x1_rpc_key_ok = 0) {
+                return 403;
+            }
+            rewrite ^ $x1_rpc_path break;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection $x1_rpc_connection;
+            proxy_read_timeout 3600s;
+            # Never write a response to a temporary file on disk.
+            proxy_max_temp_file_size 0;
+            proxy_pass http://$x1_rpc_backend;
+        }
+    }
+}

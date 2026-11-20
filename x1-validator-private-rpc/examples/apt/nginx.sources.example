@@ -1,0 +1,6 @@
+# x1-validator-private-rpc: nginx.org's stable packages for Ubuntu.
+Types: deb
+URIs: https://nginx.org/packages/ubuntu
+Suites: noble
+Components: nginx
+Signed-By: /etc/apt/keyrings/nginx-archive-keyring.gpg

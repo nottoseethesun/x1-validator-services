@@ -1,16 +1,17 @@
 /**
  * @file scripts/lint-targets.js
  * @description
- * The one list of files each gate checks. ESLint, Prettier, the security
- * pass, the secret scan, Markdown lint, the dead-code checks, the test
- * runner and the coverage report all take their lists from here, so no
- * two of them can check different files.
+ * The file lists the gates share. ESLint, Prettier for JavaScript, the
+ * security pass, the secret scan, Markdown lint, the dead-code checks,
+ * the test runner and the coverage report take their lists from here.
+ * Prettier's json and yaml globs are in scripts/_gate-stages.js, and
+ * knip adds its own entries in knip.config.js.
  *
  * The project is a set of features, each in a sub-directory of its own
  * with `src/`, `test/` and, when it has standalone tools, `util/`. Every
  * list below is built from FEATURES, so a new feature joins every gate by
  * being named there. A feature's entry points are the files directly in
- * its `src/` and its `util/` tools; the modules they load sit in folders
+ * its `src/` and its `util/` tools. The modules they load sit in folders
  * under `src/`.
  */
 
@@ -89,10 +90,10 @@ export const TEST_JS_TARGETS = TEST_FOLDERS.map(
 );
 
 /**
- * JavaScript files that only ever run in the full gate, on Node.js 24:
- * the tests of the project's own tooling, the lint rules, and the tools'
- * configuration files. Everything else also runs on Node.js 20.0.0, on
- * the validator or in the gate's tests-only mode.
+ * JavaScript files that only ever run in the full gate, on Node.js 22.13
+ * or newer: the tests of the project's own tooling, the lint rules, and
+ * the tools' configuration files. Everything else also runs on Node.js
+ * 20.0.0, on the validator or in the gate's tests-only mode.
  * @type {string[]}
  */
 export const FULL_GATE_ONLY_TARGETS = [
@@ -148,6 +149,8 @@ export const MARKDOWN_TARGETS = [
   ...FEATURES.flatMap((feature) => [
     `${feature}/README.md`,
     `${feature}/docs/*.md`,
+    `${feature}/examples/README.md`,
+    `${feature}/app-config/user-configurable/README.md`,
   ]),
 ];
 

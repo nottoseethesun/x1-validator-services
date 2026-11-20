@@ -9,7 +9,7 @@
 
 /**
  * Reads the text of `/etc/os-release` into its fields. Values may be
- * quoted; the quotes are removed.
+ * quoted, and the quotes are removed.
  * @param {string} text  The file's text.
  * @returns {Map<string, string>} Each field's name and value.
  */
@@ -17,7 +17,7 @@ export function parseOsRelease(text) {
   const fields = new Map();
   for (const line of text.split("\n")) {
     const match = /^([A-Z_]+)=(.*)$/.exec(line.trim());
-    if (match !== null) {
+    if (match !== undefined && match !== null) {
       fields.set(match[1], match[2].replace(/^"(.*)"$/, "$1"));
     }
   }

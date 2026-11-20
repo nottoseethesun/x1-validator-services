@@ -5,12 +5,17 @@
  * upgrade check's tests. It answers the check's commands from a small
  * state that its apt installs change: the first install puts nginx.org's
  * previous nginx in place and creates nginx's user, and a later one
- * upgrades it, handing over to a new main process. Each scenario changes
- * the starting state, or answers some commands itself.
+ * upgrades it, handing over to a new main process. Its test nginx answers
+ * as the check's configuration would: the gate page says ok, a key whose
+ * hash a list it was given holds gets 200, and any other path 403. Each
+ * scenario changes the starting state, or answers some commands itself.
  */
 
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { API_KEY_PATTERN } from "../../src/lib/api-key.js";
+import { GATE_PAGE_PATH } from "../../src/lib/gate-page.js";
+import { hashApiKey } from "../../src/lib/key-hash-map.js";
 import {
   NGINX_APT_PIN_PATH,
   NGINX_APT_SOURCE_PATH,
@@ -25,6 +30,9 @@ const NJS_SOURCE = fileURLToPath(
 
 const NGINX_ORG =
   "https://nginx.org/packages/ubuntu noble/nginx amd64 Packages";
+
+/** A keyed path, with the key it carries. */
+const KEYED_PATH = new RegExp(`^/(${API_KEY_PATTERN})/$`);
 
 const POLICY = [
   ["nginx", "1.30.6-1~noble", "1.30.5-1~noble"],
@@ -48,6 +56,30 @@ const COLONS = PINNED_FINGERPRINTS.map(
 ).join("\n");
 
 /**
+ * Answers a request to the test nginx, as its configuration would: the
+ * gate page says ok, a key whose hash one of the files lists gets 200,
+ * and any other path 403.
+ * @param {string} url  The request's url.
+ * @param {Map<string, string>} files  The fake's files.
+ * @returns {{status: number, body: string}}
+ */
+export function testNginxAnswer(url, files) {
+  const { pathname } = new URL(url);
+  if (pathname === GATE_PAGE_PATH) {
+    return { status: 200, body: "ok\n" };
+  }
+  const keyed = KEYED_PATH.exec(pathname);
+  const line =
+    keyed === undefined || keyed === null ? "" : `${hashApiKey(keyed[1])} 1;`;
+  const listed =
+    line !== "" &&
+    [...files.values()].some((text) => String(text).split("\n").includes(line));
+  return listed === true
+    ? { status: 200, body: "ok\n" }
+    : { status: 403, body: "" };
+}
+
+/**
  * Answers the commands about nginx's user, which nginx's package creates.
  * @param {string} line  The command line.
  * @param {object} state  The fake validator's state.
@@ -55,7 +87,7 @@ const COLONS = PINNED_FINGERPRINTS.map(
  */
 function userAnswer(line, state) {
   if (line === "getent passwd nginx") {
-    return state.nginxUser
+    return state.nginxUser === true
       ? { stdout: "nginx:x:101:101::/nonexistent" }
       : { status: 2 };
   }
@@ -67,15 +99,15 @@ function userAnswer(line, state) {
 }
 
 /**
- * Plays an apt install: the first one installs nginx and creates its
- * user; a later one upgrades nginx, handing over to a new main process.
+ * Plays an apt install. The first one installs nginx and creates its
+ * user. A later one upgrades nginx, handing over to a new main process.
  * @param {object} call  The command.
  * @param {object} state  The fake validator's state.
  * @param {Map<string, string>} files  The fake's files.
  */
 function playInstall(call, state, files) {
-  if (state.installed !== null) {
-    if (!state.keepOldMain) {
+  if (state.installed !== undefined && state.installed !== null) {
+    if (state.keepOldMain === false) {
       files.delete(`/proc/${state.mainPid}`);
     }
     state.mainPid = state.upgradedPid;
@@ -98,7 +130,7 @@ function commonAnswer(call, state, files) {
     return { stdout: "systemd 255 (255.4-1ubuntu8)\n" };
   }
   if (call.command === "dpkg-query") {
-    return state.installed === null
+    return state.installed === undefined || state.installed === null
       ? { status: 1 }
       : { stdout: `install ok installed ${state.installed}` };
   }
@@ -137,7 +169,7 @@ function commonAnswer(call, state, files) {
  *   [overrides.respond]  Answers some commands before the common ones.
  * @param {object} [overrides.state]  Changes to the starting state.
  * @param {(url: string) => Promise<object>} [overrides.httpGet]  Answers
- *   the gate page.
+ *   the test nginx's requests, as testNginxAnswer does unless given.
  * @returns {{host: object, state: object}}
  */
 export function fakeValidator(overrides = {}) {
@@ -168,7 +200,7 @@ export function fakeValidator(overrides = {}) {
       NGINX_APT_PIN_PATH,
     ].map((filePath) => path.dirname(filePath)),
     httpsGet: async () => ({ status: 200, body: "-----BEGIN PGP-----" }),
-    httpGet: overrides.httpGet,
+    httpGet: overrides.httpGet ?? (async (url) => testNginxAnswer(url, files)),
   });
   return { host, state };
 }

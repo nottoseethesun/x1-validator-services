@@ -1,0 +1,155 @@
+/**
+ * @file x1-validator-private-rpc/src/cli/turn-private-rpc.js
+ * @description
+ * The two commands that switch the validator's rpc between private and
+ * public, once apply has set nginx up:
+ *
+ * - `turn-off-private-rpc` takes `--private-rpc` out of x1console's
+ *   start script, and records the choice, so ensure stops putting the
+ *   flag back and stops checking that the rpc is private. It asks first,
+ *   unless given --yes, since the rpc is public after the validator's
+ *   next start. It takes out only the word the tool adds, on the port
+ *   line. When the script still carries the flag elsewhere, it says the
+ *   flag stays. Otherwise it says what the validator's next start
+ *   changes, unless the running validator lacks the flag already, when a
+ *   restart changes nothing.
+ * - `turn-on-private-rpc` puts the flag back, and records that choice,
+ *   so ensure keeps the flag in place again. apply's sixth stage does the
+ *   same.
+ *
+ * Either change reaches the validator at its next start, which is the
+ * operator's to choose. nginx stays as it is, and keeps serving the
+ * keyed url, since the rpc listens on the loopback address either way.
+ *
+ * turn-off-private-rpc reads the state and the script again after its
+ * question, while it holds the start script's lock, and writes both
+ * before it lets go. ensure holds the same lock while it decides about
+ * the flag, so it can't put the flag back in between, and a flag it put
+ * back while the question waited still comes out. When ensure holds the
+ * lock, turn-off-private-rpc refuses and changes nothing.
+ * turn-on-private-rpc needs no lock, since it only adds the flag, as
+ * ensure does. It records its choice before it changes the script, so a
+ * scheduled ensure that runs between the two already follows it.
+ */
+
+import { restartAfterFlagOut, scriptCarriesFlag } from "./checks.js";
+import { startScriptPathOf } from "./feature-paths.js";
+import {
+  addPrivateRpc,
+  flagStaysNote,
+  removePrivateRpc,
+  RESTART_HOW,
+} from "./start-script.js";
+import { readAppliedState, withStartScriptLock, writeState } from "./state.js";
+
+/**
+ * Reads the tool's state and the start script, for either command.
+ * @param {object} run  The run: host, settings, paths.
+ * @returns {{state: import("./state.js").State, scriptPath: string,
+ *   text: string}}
+ */
+function readSwitch({ host, settings, paths }) {
+  const state = readAppliedState(host, paths.statePath);
+  const homeDir = host.homeDir();
+  const scriptPath = startScriptPathOf(settings, homeDir);
+  const text = host.readText(scriptPath);
+  return { state, scriptPath, text };
+}
+
+/**
+ * Writes the start script anew, keeping its mode.
+ * @param {object} host  The host.
+ * @param {string} scriptPath  The start script.
+ * @param {string} text  Its new text.
+ */
+function writeScript(host, scriptPath, text) {
+  const mode = host.fileMode(scriptPath);
+  host.writeUserFile(scriptPath, text, mode);
+}
+
+/**
+ * Runs turn-off-private-rpc.
+ * @param {object} run  The run: host, settings, paths, log, prompts.
+ * @returns {Promise<number>} The exit code: 1 when the operator said no.
+ * @throws {Error} When ensure or undo-apply holds the start script's
+ *   lock, before anything changes, since it could put the flag back
+ *   after this command took it out.
+ */
+export async function runTurnOffPrivateRpc(run) {
+  const { host, paths, log, prompts } = run;
+  const name = "turn-off-private-rpc";
+  const { state, scriptPath, text } = readSwitch(run);
+  const edit = removePrivateRpc(text, scriptPath);
+  if (state.privateRpc === "off" && edit.changed === false) {
+    log.info(name, "Private rpc is off already.");
+    return 0;
+  }
+  const wanted = await prompts.confirm(
+    "From its next start, the validator's rpc listens on every interface, " +
+      "so anyone can reach it. Turn off private rpc?",
+  );
+  if (wanted === false) {
+    log.info(name, "Stopped. Nothing changed.");
+    return 1;
+  }
+  /*-
+   * Read again under the start script's lock, since ensure may have put
+   * the flag back while the question waited.
+   */
+  await withStartScriptLock(host, paths.statePath, () => {
+    const current = readSwitch(run);
+    const removed = removePrivateRpc(current.text, current.scriptPath);
+    current.state.privateRpc = "off";
+    writeState(host, paths.statePath, current.state);
+    if (removed.changed === true) {
+      writeScript(host, current.scriptPath, removed.text);
+    }
+  });
+  if (scriptCarriesFlag(host, scriptPath)) {
+    const note = flagStaysNote(scriptPath, "the tool");
+    log.info(name, `Private rpc is off, but ${note}`);
+    return 0;
+  }
+  log.info(
+    name,
+    `Private rpc is off: ${scriptPath} lacks --private-rpc, and ensure ` +
+      "leaves it out until turn-on-private-rpc, or a later apply, puts it " +
+      "back.",
+  );
+  const restart = restartAfterFlagOut(host, scriptPath);
+  if (restart !== undefined && restart !== null) {
+    log.info(name, restart);
+  }
+  return 0;
+}
+
+/**
+ * Runs turn-on-private-rpc.
+ * @param {object} run  The run: host, settings, paths, log.
+ * @returns {Promise<number>} The exit code, 0.
+ */
+export async function runTurnOnPrivateRpc(run) {
+  const { host, paths, log } = run;
+  const name = "turn-on-private-rpc";
+  const { state, scriptPath, text } = readSwitch(run);
+  const edit = addPrivateRpc(text, scriptPath);
+  if (state.privateRpc !== "on") {
+    state.privateRpc = "on";
+    writeState(host, paths.statePath, state);
+  }
+  if (edit.changed === false) {
+    log.info(
+      name,
+      "Private rpc is on: the start script carries --private-rpc.",
+    );
+    return 0;
+  }
+  writeScript(host, scriptPath, edit.text);
+  log.info(
+    name,
+    `Private rpc is on: added --private-rpc to ${scriptPath}, and ensure ` +
+      "keeps it there.",
+  );
+  log.info(name, `The validator takes it at its next start. ${RESTART_HOW}`);
+  return 0;
+}

@@ -7,8 +7,8 @@
  * them any state.
  */
 
-/** The oldest systemd the tool supports: `systemd-creds` arrived in 250. */
-const MIN_SYSTEMD_VERSION = 250;
+import { GATE_PAGE_NAME } from "../../src/lib/gate-page.js";
+import { MIN_SYSTEMD_VERSION } from "../../src/lib/systemd.js";
 
 /**
  * Lists what stops the check from running on this machine.
@@ -17,11 +17,11 @@ const MIN_SYSTEMD_VERSION = 250;
  * @param {Map<string, string>} facts.osRelease  `/etc/os-release`.
  * @param {number|null} facts.systemdVersion  systemd's major version.
  * @param {string|null} facts.nginxVersion  The installed nginx, if any.
- * @returns {string[]} One message per problem; none when it can run.
+ * @returns {string[]} One message per problem, or none when it can run.
  */
 export function machineProblems(facts) {
   const problems = [];
-  if (facts.isRoot) {
+  if (facts.isRoot === true) {
     problems.push(
       "Run this as the validator's account, not as root or with sudo. It " +
         "asks for sudo itself when it needs it.",
@@ -38,17 +38,51 @@ export function machineProblems(facts) {
     );
   }
   const version = facts.systemdVersion;
-  if (version === null || version < MIN_SYSTEMD_VERSION) {
+  if (
+    version === undefined ||
+    version === null ||
+    version < MIN_SYSTEMD_VERSION
+  ) {
     problems.push(
-      `systemd is ${version ?? "of an unknown version"}; the tool needs ` +
-        `${MIN_SYSTEMD_VERSION} or newer.`,
+      `systemd is ${version ?? "of an unknown version"}, but the tool ` +
+        `needs ${MIN_SYSTEMD_VERSION} or newer.`,
     );
   }
-  if (facts.nginxVersion !== null) {
+  if (facts.nginxVersion !== undefined && facts.nginxVersion !== null) {
     problems.push(
       `nginx ${facts.nginxVersion} is already installed. This check ` +
         "installs and removes nginx itself, so it runs only before nginx " +
         "is installed.",
+    );
+  }
+  return problems;
+}
+
+/**
+ * Lists how nginx's answers fell short: the gate page must say ok, a
+ * request with the listed key must get 200, and one with a random key
+ * 403.
+ * @param {{gate: string, keyed: number, stranger: number}} answers  The
+ *   gate page's answer, and the two requests' statuses, 0 for none.
+ * @param {string} when  Before or after the upgrade, for the messages.
+ * @returns {string[]} One message per failure, or none.
+ */
+export function keyProblems(answers, when) {
+  const problems = [];
+  if (answers.gate !== "ok") {
+    problems.push(
+      `${when} ${GATE_PAGE_NAME} never said ok. Its last answer was ${answers.gate}.`,
+    );
+  }
+  if (answers.keyed !== 200) {
+    problems.push(
+      `${when} a request with the listed key got ${answers.keyed}, not ` +
+        "200: nginx didn't find the key's hash in its list.",
+    );
+  }
+  if (answers.stranger !== 403) {
+    problems.push(
+      `${when} a request with a random key got ${answers.stranger}, not 403.`,
     );
   }
   return problems;
@@ -62,10 +96,11 @@ export function machineProblems(facts) {
  * @param {string} seen.programAfter  The program the main process runs.
  * @param {boolean} seen.oldMainRunning  Whether the old main process is
  *   still running.
- * @param {string} seen.gateAfter  What the gate page says after.
+ * @param {{gate: string, keyed: number, stranger: number}}
+ *   seen.answersAfter  How nginx answered after, as keyProblems judges.
  * @param {string|null} seen.installedVersion  The installed nginx.
  * @param {string} seen.expectedVersion  The version upgraded to.
- * @returns {string[]} One message per failure; none when it passed.
+ * @returns {string[]} One message per failure, or none when it passed.
  */
 export function upgradeProblems(seen) {
   const problems = [];
@@ -79,7 +114,7 @@ export function upgradeProblems(seen) {
   if (seen.after.get("InvocationID") !== seen.before.get("InvocationID")) {
     problems.push(
       "systemd restarted nginx during the upgrade instead of following " +
-        "the hand-over, so without a saved password nginx would be locked.",
+        "the hand-over, so the upgrade dropped every open connection.",
     );
   }
   if (seen.after.get("MainPID") === seen.before.get("MainPID")) {
@@ -93,20 +128,10 @@ export function upgradeProblems(seen) {
         "installed /usr/sbin/nginx.",
     );
   }
-  if (seen.oldMainRunning) {
+  if (seen.oldMainRunning === true) {
     problems.push("The old nginx main process is still running.");
   }
-  if (seen.gateAfter === "locked") {
-    problems.push(
-      "After the upgrade the gate page says locked: the api key didn't " +
-        "carry over.",
-    );
-  } else if (seen.gateAfter !== "unlocked") {
-    problems.push(
-      "After the upgrade the gate page never said unlocked; its last " +
-        `answer was ${seen.gateAfter}.`,
-    );
-  }
+  problems.push(...keyProblems(seen.answersAfter, "After the upgrade"));
   if (seen.installedVersion !== seen.expectedVersion) {
     problems.push(
       `nginx ${seen.installedVersion ?? "(none)"} is installed, not ` +

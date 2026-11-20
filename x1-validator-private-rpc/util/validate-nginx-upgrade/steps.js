@@ -2,15 +2,17 @@
  * @file x1-validator-private-rpc/util/validate-nginx-upgrade/steps.js
  * @description
  * The upgrade check, step by step. It proves on this machine that a
- * regular apt upgrade of nginx keeps the gated rpc working, before the
- * tool is installed. It installs nginx.org's previous release, starts it
- * under systemd the way the tool will (through the start wrapper, with
- * an api key handed over in the memory-only file), and checks that the
- * gate page says unlocked. Then it upgrades the packages with apt, which
- * runs the package's own hand-over from the old nginx to the new one,
- * and checks that systemd followed the new process without restarting
- * it and that the key carried over. Last, it removes everything it
- * added, even when a step failed, leaving the machine as it found it.
+ * regular apt upgrade of nginx keeps the keyed url working, before the
+ * tool is installed. It installs nginx.org's previous release, and
+ * starts it under systemd the way the tool will: through the tool's
+ * drop-in, with a list holding the hash of a throwaway api key. It
+ * checks that the gate page says ok, that a request with the key gets
+ * 200, and that one with a random key gets 403. Then it upgrades the
+ * packages with apt, which runs the package's own hand-over from the old
+ * nginx to the new one, and checks that systemd followed the new process
+ * without restarting it, and that the new nginx answers both requests as
+ * the old one did. Last, it removes everything it added, even when a
+ * step failed, leaving the machine as it found it.
  *
  * Every change is recorded with the step that undoes it, as it's made,
  * and the command that undoes it by hand, which the check prints if its
@@ -23,9 +25,9 @@
  * so tests pass a stand-in.
  */
 
-import crypto from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { makeApiKey } from "../../src/lib/api-key.js";
 import {
   installedVersion,
   installVersions,
@@ -33,26 +35,26 @@ import {
   purgePackages,
 } from "../../src/lib/apt.js";
 import { mustSucceed } from "../../src/lib/command-result.js";
-import { NGINX_PACKAGES, pickUpgradePair } from "../../src/lib/nginx-org.js";
+import { foldersToMake } from "../../src/lib/folders-to-make.js";
+import { GATE_PAGE_PATH } from "../../src/lib/gate-page.js";
+import { hashApiKey, mapText } from "../../src/lib/key-hash-map.js";
+import {
+  NGINX_PACKAGES,
+  NGINX_UNIT,
+  pickUpgradePair,
+} from "../../src/lib/nginx-org.js";
 import {
   addNginxRepository,
   removeNginxRepository,
 } from "../../src/lib/nginx-repo.js";
 import { parseOsRelease } from "../../src/lib/os-release.js";
 import { pollUntil } from "../../src/lib/poll.js";
-import {
-  renderDropIn,
-  renderStartWrapper,
-} from "../../src/lib/render-host-files.js";
+import { renderDropIn } from "../../src/lib/render-host-files.js";
 import { showUnit, systemctl, systemdVersion } from "../../src/lib/systemd.js";
-import { machineProblems, upgradeProblems } from "./judge.js";
+import { keyProblems, machineProblems, upgradeProblems } from "./judge.js";
 import { renderTestNginxConfig } from "./render-test-config.js";
 
-const UNIT = "nginx.service";
 const UNIT_STATE = ["ActiveState", "InvocationID", "MainPID"];
-
-/** The pause between two questions to nginx or systemd. */
-const POLL_INTERVAL_MS = 250;
 
 /** What the check reports when Ctrl-C stopped it. */
 const STOPPED = "Stopped because Ctrl-C was pressed.";
@@ -81,7 +83,8 @@ const STOPPED = "Stopped because Ctrl-C was pressed.";
 /**
  * Stops the check, so the undo steps run, when Ctrl-C was pressed.
  * @param {Context} context  The run.
- * @throws {Error} When Ctrl-C was pressed.
+ * @throws {Error} When Ctrl-C was pressed, since only an error stops the
+ *   steps and still runs the undo steps.
  */
 function stopIfInterrupted(context) {
   if (context.isInterrupted()) {
@@ -118,7 +121,8 @@ function shippedFile(relative) {
  *   code name.
  */
 function readMachine(host) {
-  const osRelease = parseOsRelease(host.readText("/etc/os-release"));
+  const osReleaseText = host.readText("/etc/os-release");
+  const osRelease = parseOsRelease(osReleaseText);
   return {
     isRoot: host.isRoot(),
     osRelease,
@@ -137,13 +141,7 @@ function readMachine(host) {
  * @param {string} folder  The folder.
  */
 function trackNewFolders({ host, undo }, folder) {
-  const missing = [];
-  let current = folder;
-  while (!host.exists(current) && current !== path.dirname(current)) {
-    missing.unshift(current);
-    current = path.dirname(current);
-  }
-  for (const newFolder of missing) {
+  for (const newFolder of foldersToMake(host, folder)) {
     undo.push({
       what: `Removing ${newFolder}`,
       action: () => host.removeRootDir(newFolder),
@@ -187,9 +185,10 @@ async function installPreviousRelease(context, codename) {
     undo.push({
       what: "Removing the nginx user",
       action: () => {
-        // nginx's package creates the user; a stop before that leaves none.
+        // nginx's package creates the user. A stop before that leaves none.
         if (hasNginxUser()) {
-          mustSucceed(host.sudo("userdel", ["nginx"]), "Removing nginx's user");
+          const removed = host.sudo("userdel", ["nginx"]);
+          mustSucceed(removed, "Removing nginx's user");
         }
       },
       byHand: "sudo userdel nginx",
@@ -214,11 +213,11 @@ async function installPreviousRelease(context, codename) {
   stopIfInterrupted(context);
   const pair = pickUpgradePair(offeredVersions(host, NGINX_PACKAGES));
   report("Masking nginx, so the package's default site never starts.");
-  systemctl(host, ["mask", UNIT]);
+  systemctl(host, ["mask", NGINX_UNIT]);
   undo.push({
     what: "Unmasking nginx",
-    action: () => systemctl(host, ["unmask", UNIT]),
-    byHand: `sudo systemctl unmask ${UNIT}`,
+    action: () => systemctl(host, ["unmask", NGINX_UNIT]),
+    byHand: `sudo systemctl unmask ${NGINX_UNIT}`,
   });
   undo.push({
     what: "Removing nginx and its modules",
@@ -235,72 +234,81 @@ async function installPreviousRelease(context, codename) {
 }
 
 /**
- * Installs the key check, a test configuration, the start wrapper and
- * the drop-in, at the paths the tool itself uses.
+ * Installs the key check, the list with the throwaway key's hash, a
+ * test configuration and the drop-in, at the paths the tool itself uses.
+ * The key itself exists only in memory.
  * @param {Context} context  The run.
  * @param {number} port  The port on 127.0.0.1 for the test configuration.
+ * @param {string} key  The throwaway api key.
  */
-function installTestFiles(context, port) {
+function installTestFiles(context, port, key) {
   const { host, settings, report, undo } = context;
-  report("Installing the key check, the start wrapper and the drop-in.");
+  report(
+    "Installing four files: a test configuration for nginx, the tool's " +
+      "api key check, a list that holds the throwaway key's hash, and a " +
+      "systemd drop-in that starts nginx with the test configuration.",
+  );
   const njsSource = host.readText(
     shippedFile("src/njs/x1-validator-private-rpc.js"),
   );
   writeTracked(context, settings.njsModulePath, njsSource, "0644");
-  writeTracked(
-    context,
-    settings.nginxConfigPath,
-    renderTestNginxConfig({ port, njsModulePath: settings.njsModulePath }),
-    "0644",
-  );
-  const wrapper = renderStartWrapper({
-    validatorUser: host.userName(),
-    nodeBin: host.nodePath(),
-    toolCli: shippedFile("src/cli.js"),
-    nginxConfigPath: settings.nginxConfigPath,
-    keyHandOffPath: settings.keyHandOffPath,
+  const mapPath = settings.hashedApiKeysMapPath;
+  const hash = hashApiKey(key);
+  const listText = mapText([hash]);
+  writeTracked(context, mapPath, listText, "0644");
+  const config = renderTestNginxConfig({
+    port,
+    njsModulePath: settings.njsModulePath,
+    mapPath,
   });
-  writeTracked(context, settings.startWrapperPath, wrapper, "0755");
+  writeTracked(context, settings.nginxConfigPath, config, "0644");
   undo.push({
     what: "Reloading systemd",
     action: () => systemctl(host, ["daemon-reload"]),
     byHand: "sudo systemctl daemon-reload",
   });
-  const dropIn = renderDropIn({
-    startWrapperPath: settings.startWrapperPath,
-    passwordCredentialPath: null,
-  });
+  const dropIn = renderDropIn({ nginxConfigPath: settings.nginxConfigPath });
   writeTracked(context, settings.systemdDropInPath, dropIn, "0644");
 }
 
 /**
- * Hands nginx a random test key the way `unlock` will, then starts nginx
- * under systemd. The key exists only in memory and in the memory-only
- * hand-off file, which the start wrapper deletes.
+ * Tests the configuration, so a mistake shows nginx's own reason, then
+ * starts nginx under systemd, through the tool's drop-in.
  * @param {Context} context  The run.
  */
 function startNginx(context) {
   const { host, settings, report, undo } = context;
-  const folder = path.dirname(settings.keyHandOffPath);
-  if (!host.exists(folder)) {
-    trackNewFolders(context, folder);
-    host.makeRootDir(folder, "0700");
-  }
-  writeTracked(
-    context,
-    settings.keyHandOffPath,
-    crypto.randomBytes(32).toString("hex"),
-    "0600",
-  );
-  report("Starting nginx under systemd, through the start wrapper.");
+  const tested = host.sudo("nginx", ["-t", "-c", settings.nginxConfigPath]);
+  mustSucceed(tested, "Testing the test configuration");
+  report("Starting nginx under systemd, through that drop-in.");
   systemctl(host, ["daemon-reload"]);
-  systemctl(host, ["unmask", UNIT]);
+  systemctl(host, ["unmask", NGINX_UNIT]);
   undo.push({
     what: "Stopping nginx",
-    action: () => systemctl(host, ["stop", UNIT]),
-    byHand: `sudo systemctl stop ${UNIT}`,
+    action: () => systemctl(host, ["stop", NGINX_UNIT]),
+    byHand: `sudo systemctl stop ${NGINX_UNIT}`,
   });
-  systemctl(host, ["start", UNIT]);
+  systemctl(host, ["start", NGINX_UNIT]);
+}
+
+/**
+ * Asks the test nginx for one path, and gives the answer's status.
+ * @param {object} host  The host.
+ * @param {number} port  The test configuration's port.
+ * @param {string} urlPath  The path.
+ * @param {number} timeoutMs  How long to wait for an answer.
+ * @returns {Promise<number>} The http status, or 0 with no answer.
+ */
+async function readStatus(host, port, urlPath, timeoutMs) {
+  try {
+    const response = await host.httpGet(
+      `http://127.0.0.1:${port}${urlPath}`,
+      timeoutMs,
+    );
+    return response.status;
+  } catch {
+    return 0;
+  }
 }
 
 /**
@@ -308,12 +316,12 @@ function startNginx(context) {
  * @param {object} host  The host.
  * @param {number} port  The test configuration's port.
  * @param {number} timeoutMs  How long to wait for an answer.
- * @returns {Promise<string>} `unlocked`, `locked`, or what came instead.
+ * @returns {Promise<string>} `ok`, or what came instead.
  */
 async function readGate(host, port, timeoutMs) {
   try {
     const response = await host.httpGet(
-      `http://127.0.0.1:${port}/x1-rpc-gate`,
+      `http://127.0.0.1:${port}${GATE_PAGE_PATH}`,
       timeoutMs,
     );
     return response.status === 200
@@ -332,7 +340,7 @@ async function readGate(host, port, timeoutMs) {
 function timing({ host, settings }) {
   return {
     timeoutMs: settings.requestTimeoutSeconds * 1000,
-    intervalMs: POLL_INTERVAL_MS,
+    intervalMs: settings.upgradeCheckPollMs,
     now: host.now,
     sleep: host.sleep,
   };
@@ -352,18 +360,26 @@ function processProgram(host, pid) {
 }
 
 /**
- * Waits for the gate page to say unlocked, or for the time to run out.
+ * Waits for the gate page to say ok, then asks for a path with the
+ * throwaway key and one with a random key.
  * @param {Context} context  The run.
  * @param {number} port  The test configuration's port.
- * @returns {Promise<string>} The gate page's last answer.
+ * @param {string} key  The throwaway api key.
+ * @returns {Promise<{gate: string, keyed: number, stranger: number}>}
+ *   The gate page's last answer, and the two answers' statuses.
  */
-async function waitForUnlocked(context, port) {
-  const { answer } = await pollUntil(
-    () => readGate(context.host, port, timing(context).timeoutMs),
-    (gate) => gate === "unlocked",
+async function askWithKeys(context, port, key) {
+  const { host } = context;
+  const { timeoutMs } = timing(context);
+  const { answer: gate } = await pollUntil(
+    () => readGate(host, port, timeoutMs),
+    (answer) => answer === "ok",
     timing(context),
   );
-  return answer;
+  const keyed = await readStatus(host, port, `/${key}/`, timeoutMs);
+  const randomKey = makeApiKey();
+  const stranger = await readStatus(host, port, `/${randomKey}/`, timeoutMs);
+  return { gate, keyed, stranger };
 }
 
 /**
@@ -373,16 +389,17 @@ async function waitForUnlocked(context, port) {
  * The hand-over is done once systemd follows the new main process, or
  * stops counting nginx as active, and the old main process has exited.
  * Until then the old nginx's workers are shutting down, and one of them
- * may accept a request and close it unanswered, so the gate page is read
- * only after that, and given the time limit to say unlocked.
+ * may accept a request and close it unanswered, so nginx is asked only
+ * after that, and given the time limit for its gate page to say ok.
  * @param {Context} context  The run.
  * @param {number} port  The test configuration's port.
  * @param {object[]} newest  The package set to upgrade to.
+ * @param {string} key  The throwaway api key.
  * @returns {Promise<object>} What upgradeProblems judges.
  */
-async function upgradeAndObserve(context, port, newest) {
+async function upgradeAndObserve(context, port, newest, key) {
   const { host } = context;
-  const before = showUnit(host, UNIT, UNIT_STATE);
+  const before = showUnit(host, NGINX_UNIT, UNIT_STATE);
   const oldMain = `/proc/${before.get("MainPID")}`;
   await longStep(
     context,
@@ -391,7 +408,7 @@ async function upgradeAndObserve(context, port, newest) {
     () => installVersions(host, newest),
   );
   const { answer: after } = await pollUntil(
-    async () => showUnit(host, UNIT, UNIT_STATE),
+    async () => showUnit(host, NGINX_UNIT, UNIT_STATE),
     (state) =>
       state.get("MainPID") !== before.get("MainPID") ||
       state.get("ActiveState") !== "active",
@@ -399,15 +416,15 @@ async function upgradeAndObserve(context, port, newest) {
   );
   const { wanted: oldMainGone } = await pollUntil(
     async () => host.exists(oldMain),
-    (running) => !running,
+    (running) => running === false,
     timing(context),
   );
   return {
     before,
     after,
     programAfter: processProgram(host, after.get("MainPID") ?? "0"),
-    oldMainRunning: !oldMainGone,
-    gateAfter: await waitForUnlocked(context, port),
+    oldMainRunning: oldMainGone === false,
+    answersAfter: await askWithKeys(context, port, key),
     installedVersion: installedVersion(host, "nginx"),
     expectedVersion: newest[0].version,
   };
@@ -416,7 +433,8 @@ async function upgradeAndObserve(context, port, newest) {
 /**
  * Runs the steps, recording each change's undo step as it goes.
  * @param {Context} context  The run.
- * @returns {Promise<string[]>} What failed; nothing when the check passed.
+ * @returns {Promise<string[]>} What failed, or nothing when the check
+ *   passed.
  */
 async function runSteps(context) {
   const { host, report } = context;
@@ -427,29 +445,24 @@ async function runSteps(context) {
     return refusals;
   }
   report("Asking for sudo, which the next steps need.");
-  mustSucceed(host.sudo("true", []), "Getting sudo");
+  const asked = host.sudo("true", []);
+  mustSucceed(asked, "Getting sudo");
   stopIfInterrupted(context);
   const pair = await installPreviousRelease(context, facts.codename);
   stopIfInterrupted(context);
   const port = await host.freeLoopbackPort();
-  installTestFiles(context, port);
+  const key = makeApiKey();
+  installTestFiles(context, port, key);
   stopIfInterrupted(context);
   startNginx(context);
-  const gate = await waitForUnlocked(context, port);
+  const answers = await askWithKeys(context, port, key);
   stopIfInterrupted(context);
-  if (gate === "locked") {
-    return [
-      "Before the upgrade the gate page says locked, so nginx never got " +
-        "the api key.",
-    ];
+  const before = keyProblems(answers, "Before the upgrade");
+  if (before.length > 0) {
+    return before;
   }
-  if (gate !== "unlocked") {
-    return [
-      "Before the upgrade the gate page never said unlocked; its last " +
-        `answer was ${gate}.`,
-    ];
-  }
-  return upgradeProblems(await upgradeAndObserve(context, port, pair.newest));
+  const observed = await upgradeAndObserve(context, port, pair.newest, key);
+  return upgradeProblems(observed);
 }
 
 /**
@@ -479,12 +492,12 @@ async function undoAll({ undo }) {
  * @param {object} options.host  The host.
  * @param {object} options.settings  The tool's settings.
  * @param {(line: string) => void} options.report  Prints a progress line.
- * @param {Context["wait"]} [options.wait]  Runs a long step; without a
+ * @param {Context["wait"]} [options.wait]  Runs a long step. Without a
  *   spinner, it prints the step's line and runs it.
  * @param {() => boolean} [options.isInterrupted]  Whether Ctrl-C was
- *   pressed; never, unless the caller watches for it.
+ *   pressed, which is never unless the caller watches for it.
  * @returns {Promise<{passed: boolean, problems: string[],
- *   leftovers: string[]}>} The verdict; what failed in the check; and
+ *   leftovers: string[]}>} The verdict, what failed in the check, and
  *   what the clean-up couldn't remove.
  */
 export async function validateNginxUpgrade({
