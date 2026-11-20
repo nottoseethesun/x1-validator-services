@@ -211,12 +211,12 @@ async function main() {
     "scripts/test-in-lxd.js",
     "Runs x1-validator-private-rpc end to end in a throwaway Ubuntu 24.04 " +
       "LXD container. First comes the nginx upgrade check, which must leave " +
-      "the container clean. Then come apply, ensure, url, add-api-key, " +
-      "remove-api-key, the key count check, turn-off-private-rpc, " +
-      "turn-on-private-rpc and undo-apply, with Pebble in place of Let's " +
-      "Encrypt. undo-apply leaves nginx installed, so the test purges it " +
-      "and runs undo-apply again, which must leave the container as apply " +
-      "found it. Then it deletes the container.",
+      "the container as it found it. Then come apply, ensure, url, " +
+      "add-api-key, remove-api-key, the key count check, " +
+      "turn-off-private-rpc, turn-on-private-rpc and undo-apply, with " +
+      "Pebble in place of Let's Encrypt. undo-apply leaves nginx installed, " +
+      "so the test purges it and runs undo-apply again, which must leave " +
+      "the container as apply found it. Then it deletes the container.",
     [
       "0  both phases passed",
       "1  a phase failed, or the container couldn't be set up",

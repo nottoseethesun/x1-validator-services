@@ -191,7 +191,8 @@ function addCommands(program, makers) {
   program
     .command("ensure")
     .description(
-      "put --private-rpc back after an update, check the setup and send alerts",
+      "put --private-rpc back after an update, check the rpc, nginx and its " +
+        "certificate, and send alerts",
     )
     .option("-q, --quiet", "print only what changed and the alerts sent", false)
     .option(

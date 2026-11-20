@@ -134,7 +134,7 @@ Every test follows the same rules:
 3. It copies in `package.json`, the lockfile and the feature's folder, without the operator's own settings, and installs the runtime dependencies, as a validator's install does.
 4. It runs the tool's commands as the container's ordinary user, who has `sudo`, as a validator's account does.
 
-A command that asks anything runs in a real terminal, which the `script` program makes, and its prompts are answered as they appear. The disclaimer's dialog is one of them: once `whiptail` draws its Decline button, the test presses the left arrow and Enter, to affirm it.
+A command that asks anything runs in a real terminal, which the `script` program makes, and its prompts are answered as they appear. The disclaimer's dialog is one of them. Decline has the focus at first, and Affirm sits to its left. So once `whiptail` draws the Decline button, the test presses the left arrow and Enter.
 
 Then it runs two phases:
 

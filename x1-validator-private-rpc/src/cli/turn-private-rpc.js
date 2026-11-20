@@ -8,7 +8,11 @@
  *   start script, and records the choice, so ensure stops putting the
  *   flag back and stops checking that the rpc is private. It asks first,
  *   unless given --yes, since the rpc is public after the validator's
- *   next start.
+ *   next start. It takes out only the word the tool adds, on the port
+ *   line. When the script still carries the flag elsewhere, it says the
+ *   flag stays. Otherwise it says what the validator's next start
+ *   changes, unless the running validator lacks the flag already, when a
+ *   restart changes nothing.
  * - `turn-on-private-rpc` puts the flag back, and records that choice,
  *   so ensure keeps the flag in place again. apply's sixth stage does the
  *   same.
@@ -28,9 +32,11 @@
  * scheduled ensure that runs between the two already follows it.
  */
 
+import { restartAfterFlagOut, scriptCarriesFlag } from "./checks.js";
 import { startScriptPathOf } from "./feature-paths.js";
 import {
   addPrivateRpc,
+  flagStaysNote,
   removePrivateRpc,
   RESTART_HOW,
 } from "./start-script.js";
@@ -99,16 +105,21 @@ export async function runTurnOffPrivateRpc(run) {
       writeScript(host, current.scriptPath, removed.text);
     }
   });
+  if (scriptCarriesFlag(host, scriptPath)) {
+    const note = flagStaysNote(scriptPath, "the tool");
+    log.info(name, `Private rpc is off, but ${note}`);
+    return 0;
+  }
   log.info(
     name,
     `Private rpc is off: ${scriptPath} lacks --private-rpc, and ensure ` +
       "leaves it out until turn-on-private-rpc, or a later apply, puts it " +
       "back.",
   );
-  log.info(
-    name,
-    `The running validator keeps its rpc as it is until its next start. ${RESTART_HOW}`,
-  );
+  const restart = restartAfterFlagOut(host, scriptPath);
+  if (restart !== undefined && restart !== null) {
+    log.info(name, restart);
+  }
   return 0;
 }
 

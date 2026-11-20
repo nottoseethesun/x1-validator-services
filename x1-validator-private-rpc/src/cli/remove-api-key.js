@@ -63,8 +63,10 @@ function missingFile(filePath) {
 export function halfRemoved(filePath, reason) {
   return (
     `Couldn't write ${filePath} (${reason}). nginx refuses the key now, ` +
-    "but the file still holds it. Run remove-api-key again before any " +
-    "other key command or apply, which would give the key back to nginx."
+    "but the file still holds it. Run remove-api-key again with the same " +
+    "key before add-api-key, remove-api-key for another key, or apply. " +
+    "Each writes nginx's list from the file, and would give the key back " +
+    "to nginx."
   );
 }
 

@@ -2,7 +2,7 @@
   "$schema": "./private-rpc.schema.json",
   "x1consoleDir": "~/x1console",
   "startScriptFile": "start_validator.sh",
-  "_hashedApiKeysPathWarning": "Warning: to move the api keys' file, move the file itself first, then change hashedApiKeysPath, then run apply. With no file at the new path, apply takes the machine for a first install: it makes a new first key under a new password, and hands nginx a list that holds only that key, so every key your clients hold stops working. The feature README's Configure section says so too.",
+  "_hashedApiKeysPathWarning": "Warning: to move the api keys' file, move the file itself first, then change hashedApiKeysPath, then run apply. With no file at the new path, apply takes the machine for a first install: it makes a new first key under a new password, and hands nginx a list that holds only that key. Every key your clients hold then stops working. The feature README's Configure section says so too.",
   "hashedApiKeysPath": "~/.config/x1-validator-services/hashed-api-keys.json",
   "nginxConfigPath": "/etc/nginx/x1-validator-private-rpc/nginx.conf",
   "njsModulePath": "/etc/nginx/x1-validator-private-rpc/x1-validator-private-rpc.js",

@@ -5,14 +5,25 @@
  * nginx up with: the hostname, the address and the rpc port, which
  * ensure and url read, and which add-api-key and remove-api-key need
  * before they run. It also holds the operator's choice of a private or a
- * public rpc. The choice starts out unset, and undo-apply unsets it
- * again. apply's flag stage and turn-on-private-rpc set it on,
- * turn-off-private-rpc sets it off, and ensure follows it. So until apply has added the flag, or the operator
- * has turned private rpc on, ensure leaves the start script alone. And
- * it holds whether a saved password is left from an earlier api keys'
- * file, so apply treats it as no saved password until the operator
- * answers the save question again. What apply changed on the machine is
- * in its own record, which what-apply-changed.js keeps.
+ * public rpc. apply's flag stage and turn-on-private-rpc set it on,
+ * turn-off-private-rpc sets it off, and ensure follows it. The choice
+ * starts out unset, so until apply has added the flag, or the operator
+ * has turned private rpc on, ensure leaves the start script alone.
+ * undo-apply unsets it whenever it clears the setup, so that no ensure
+ * adds the flag before apply does. ensure does nothing while the state
+ * holds no setup. A later apply records the setup again at its fifth
+ * stage, which starts nginx, and from then on ensure acts on the choice.
+ * But apply adds the flag only at its sixth stage, and installs the cron
+ * job and the git hook that run ensure only at its seventh. So after an
+ * apply that stopped between its fifth and sixth stages, a choice left on
+ * would have an ensure run by hand add the flag. A later apply would find
+ * that flag and record it as found, not as its own change. undo-apply
+ * takes back only apply's changes, so it would leave the flag.
+ *
+ * The state also holds whether a saved password is left from an
+ * earlier api keys' file, so apply treats it as no saved password until
+ * the operator answers the save question again. What apply changed on
+ * the machine is in its own record, which what-apply-changed.js keeps.
  *
  * The state's folder also carries the start script's lock. ensure holds
  * it while it reads the choice and puts the flag back, and so do the
@@ -32,7 +43,7 @@ const FORMAT_VERSION = 1;
  *   until its nginx stage has run.
  * @property {""|"on"|"off"} privateRpc  Whether ensure keeps
  *   `--private-rpc` in the start script: "on" or "off", or "" until apply
- *   or turn-on-private-rpc first turns it on.
+ *   or turn-on-private-rpc turns it on, and again once undo-apply has run.
  * @property {boolean} savedPasswordStale  Whether a saved password is
  *   left from an earlier api keys' file, and so can't open this one.
  */

@@ -169,7 +169,7 @@ Once the name resolves to the server and port 443 is open, `nginx`'s ACME module
 - Port 443 must reach `nginx` from the internet.
 - `CAA` records, if any, must allow the certificate authority.
 
-Fix the dns before you run `apply`, which starts `nginx`. Certificate authorities limit failed attempts. `nginx` logs the module's progress to `/var/log/nginx/error.log`.
+Fix the dns before you run `apply`, which starts `nginx`. Certificate authorities limit failed attempts. `nginx` writes the module's failures, such as a refusal from Let's Encrypt, to `/var/log/nginx/error.log`.
 
 ## Changing or Removing the Record
 

@@ -15,10 +15,15 @@
  *   certificate
  * - the access log shows each url through the njs module's mask, which
  *   njs-key-check.test.js tests
+ * - no key reaches the access log: every server block's log uses the
+ *   tool's format or is off, so does every other access log, and the
+ *   format, read whole, holds only the masked url and six fields that
+ *   carry no key
  * - the logs are .log files in nginx's own folder, which nginx.org's
- *   logrotate rule rotates
- * - the keyed location writes no error log, since nginx's error lines
- *   carry the key
+ *   logrotate rule rotates, and the main error log stays at notice,
+ *   since at info or debug nginx would write clients' keys into it
+ * - every location but the gate page writes no error log, since nginx's
+ *   error lines carry the key
  * - after a reload, the old worker closes what it holds open within a
  *   time limit, websockets included
  * - a new connection has a shorter time limit to finish its handshake
@@ -36,6 +41,7 @@ import {
   MAP_HASH_BUCKET_SIZE,
   MAP_HASH_MAX_SIZE,
 } from "../src/lib/key-hash-map.js";
+import { GATE_PAGE_PATH } from "../src/lib/gate-page.js";
 import { NGINX_LOG_DIR } from "../src/lib/nginx-org.js";
 import { shippedAndChangedSettings } from "./helpers/config-copies.js";
 
@@ -48,6 +54,21 @@ const USED = [
   "nginxWorkerPriority",
   "websocketIdleTimeoutSeconds",
   "rateLimitRequestsPerSecond",
+];
+
+/**
+ * The access log format's only fields: the time, the client's address,
+ * the method, the masked url, the status, the bytes sent and the
+ * request's duration. None carries a key.
+ */
+const KEYLESS_LOG_FIELDS = [
+  "time_iso8601",
+  "remote_addr",
+  "request_method",
+  "x1_rpc_logged_uri",
+  "status",
+  "body_bytes_sent",
+  "request_time",
 ];
 
 /**
@@ -167,7 +188,46 @@ test("the access log shows each url through the njs module's mask, and never the
   assert.doesNotMatch(text, /\$request_uri/);
 });
 
-test("the logs are .log files in nginx's own folder, where nginx.org's logrotate rule rotates them", () => {
+test("no key reaches the access log: every access log uses the tool's format or is off, and the format holds no field that carries a key", () => {
+  const { text } = renderChanged();
+  /*-
+   * Where no access_log names a format, nginx uses its own, which writes
+   * the request line as the client sent it, key and all. A server block
+   * with no access_log line of its own gets that format, in nginx's own
+   * access log.
+   */
+  const keyLeak = "would write every client's key into the access log";
+  const servers = text.split(/^ {4}server \{$/m).slice(1);
+  assert.ok(servers.length > 0, text);
+  for (const server of servers) {
+    assert.match(
+      server,
+      /^ {8}access_log (?:\S+ x1_rpc|off);$/m,
+      `Each server block's log must name the x1_rpc format, or be off. Without either, nginx ${keyLeak}.`,
+    );
+  }
+  for (const directive of text.match(/^ *access_log [^;]*;/gm) ?? []) {
+    assert.match(
+      directive.trim(),
+      /^access_log (?:\S+ x1_rpc|off);$/,
+      `${directive.trim()} ${keyLeak}.`,
+    );
+  }
+  /*-
+   * The format ends with a quote and a semicolon at a line's end, so a
+   * semicolon inside its quotes doesn't cut it short.
+   */
+  const format = /log_format x1_rpc ([\s\S]*?['"]);$/m.exec(text)?.at(1) ?? "";
+  const fields = [...format.matchAll(/\$\{?(\w+)/g)].map((match) => match[1]);
+  assert.ok(fields.length > 0, text);
+  assert.deepEqual(
+    fields.filter((field) => !KEYLESS_LOG_FIELDS.includes(field)),
+    [],
+    `A field such as $request ${keyLeak}.`,
+  );
+});
+
+test("the logs are .log files in nginx's own folder, where nginx.org's logrotate rule rotates them, and the main error log keeps no key", () => {
   const { text } = renderChanged();
   const logs = [...text.matchAll(/^\s*(?:error|access)_log (\S+?)[ ;]/gm)]
     .map((match) => match[1])
@@ -176,16 +236,39 @@ test("the logs are .log files in nginx's own folder, where nginx.org's logrotate
     `${NGINX_LOG_DIR}/error.log`,
     `${NGINX_LOG_DIR}/access.log`,
   ]);
+  /*-
+   * Until nginx picks a location, its errors go to the main error log. At
+   * info, it writes one for each client that stalls, drops or garbles its
+   * request's header, with the request line as far as the client sent
+   * it, key and all.
+   */
+  assert.ok(
+    text.split("\n").includes(`error_log ${NGINX_LOG_DIR}/error.log notice;`),
+    "nginx's main error log must stay at notice. At info or debug, nginx " +
+      "would write clients' keys into the error log.",
+  );
 });
 
-test("the keyed location writes no error log, since nginx's error lines carry the key", () => {
+test("every location but the gate page writes no error log, since nginx's error lines carry the key", () => {
   const { text } = renderChanged();
-  const keyed = text.slice(text.indexOf("location / {"));
-  const logs = keyed.match(/^\s*error_log .*$/gm) ?? [];
-  assert.deepEqual(
-    logs.map((line) => line.trim()),
-    ["error_log /dev/null;"],
-  );
+  /*-
+   * Each location ends at its own closing brace. A location with no
+   * error_log line of its own writes into the main error log.
+   */
+  const keyed = text
+    .split(/^ {8}location /m)
+    .slice(1)
+    .map((block) => block.slice(0, block.indexOf("\n        }\n")))
+    .filter((block) => !block.startsWith(`= ${GATE_PAGE_PATH} `));
+  assert.ok(keyed.length > 0, text);
+  for (const location of keyed) {
+    const logs = location.match(/^\s*error_log .*$/gm) ?? [];
+    assert.deepEqual(
+      logs.map((line) => line.trim()),
+      ["error_log /dev/null;"],
+      location,
+    );
+  }
 });
 
 test("with staging, a second issuer serves the certificate", () => {

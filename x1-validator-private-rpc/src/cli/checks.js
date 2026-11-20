@@ -17,6 +17,11 @@
  * Whether nginx's list holds an api key is a check of its own, which
  * ensure-there-is-at-least-one-rpc-api-key makes every few hours.
  *
+ * apply asks the running validator too, to say whether a restart would
+ * give it the flag. So do turn-off-private-rpc and undo-apply, once they
+ * have taken the flag out, to say whether a restart would open its rpc.
+ * They also read the start script again, to say when a flag stays in it.
+ *
  * Reading the machine goes through the host. Every judgment is a pure
  * function of what was read, so tests feed it captured output.
  */
@@ -25,7 +30,7 @@ import { GATE_PAGE_NAME } from "../lib/gate-page.js";
 import { NGINX_UNIT } from "../lib/nginx-org.js";
 import { unitActiveState } from "../lib/systemd.js";
 import { askGate } from "./nginx-gate.js";
-import { readStartScript } from "./start-script.js";
+import { readStartScript, RPC_KEPT_UNTIL_RESTART } from "./start-script.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -207,6 +212,46 @@ export function runningFlag(host, rpcPort) {
         ? "The running validator carries --private-rpc."
         : "The running validator lacks --private-rpc. Restart it to take the flag.",
   };
+}
+
+/**
+ * Says what the validator's next start changes, once a command has taken
+ * the flag out of the start script. While the running validator lacks the
+ * flag already, a restart changes nothing, so there's nothing to say. When
+ * it can't tell, it says it anyway. That's when nothing listens on the
+ * rpc port, since the validator may be starting, and may have read the
+ * script before the flag came out. It's also when it can't read the
+ * script, or the validator's command.
+ * @param {object} host  The host.
+ * @param {string} scriptPath  The start script, which names the rpc port.
+ * @returns {string|null} The line, or null when a restart changes nothing.
+ */
+export function restartAfterFlagOut(host, scriptPath) {
+  let lacksFlag;
+  try {
+    const text = host.readText(scriptPath);
+    const { rpcPort } = readStartScript(text, scriptPath);
+    lacksFlag = runningFlag(host, rpcPort).status === "problem";
+  } catch {
+    lacksFlag = false;
+  }
+  return lacksFlag === true ? null : RPC_KEPT_UNTIL_RESTART;
+}
+
+/**
+ * Says whether the start script carries `--private-rpc`, on any of the
+ * validator's lines, such as one the tool didn't add, which it leaves.
+ * @param {object} host  The host.
+ * @param {string} scriptPath  The start script.
+ * @returns {boolean} False too when it can't read the script.
+ */
+export function scriptCarriesFlag(host, scriptPath) {
+  try {
+    const text = host.readText(scriptPath);
+    return readStartScript(text, scriptPath).hasFlag;
+  } catch {
+    return false;
+  }
 }
 
 /**

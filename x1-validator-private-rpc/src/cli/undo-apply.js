@@ -25,9 +25,11 @@
  * It never removes a package, since something else may need it. So while
  * nginx is installed, its packages stay on record, with its account,
  * nginx.org's repository and the mask, which keeps nginx's default site
- * from starting. A later apply then takes that nginx as its own. undo-apply
- * says what stays, and how the operator can purge nginx if they choose.
- * Once they have, a later undo-apply takes back the rest.
+ * from starting. A later apply refuses an installed nginx unless the
+ * record shows apply installed it. With these entries, a later apply
+ * takes that nginx as its own. undo-apply says what stays, and how the
+ * operator can purge nginx if they choose. Once they have, a later
+ * undo-apply takes back the rest.
  *
  * The api keys aren't in the record, since keys come and go through
  * add-api-key and remove-api-key. Before any step, undo-apply asks one
@@ -45,12 +47,17 @@
  *
  * It takes back only what apply did. The start script loses just the
  * word apply added, and never gets an old backup copied over a newer
- * x1console file. The hook goes only while it's still the tool's. A
- * folder apply made for its files goes only once nothing else is in it.
- * Root looks for a folder root made, since it may sit in a folder only
- * root can look into. A folder that goes whole, with what's in it, goes
- * only while the settings still put that folder there, so a damaged
- * record can never aim a removal elsewhere.
+ * x1console file. A flag apply didn't add, such as one
+ * turn-on-private-rpc added after an apply that stopped before its flag
+ * stage, stays, and undo-apply says so. Once it has taken the flag out,
+ * it says what the validator's next start changes, unless the running
+ * validator lacks the flag already. The hook goes
+ * only while it's still the tool's. A folder apply made for its files
+ * goes only once nothing else is in it. Root looks for a folder root
+ * made, since it may sit in a folder only root can look into. A folder
+ * that goes whole, with what's in it, goes only while the settings still
+ * put that folder there, so a damaged record can never aim a removal
+ * elsewhere.
  *
  * A step that fails, or that the operator declines, stays in the record.
  * So does a folder, while such a step's target, or the kept api keys'
@@ -63,10 +70,11 @@ import { mustSucceed } from "../lib/command-result.js";
 import { rootLooks } from "../lib/folders-to-make.js";
 import { NGINX_LOG_DIR, NGINX_PACKAGES, NGINX_UNIT } from "../lib/nginx-org.js";
 import { systemctl } from "../lib/systemd.js";
-import { hashedApiKeysPathOf } from "./feature-paths.js";
+import { restartAfterFlagOut, scriptCarriesFlag } from "./checks.js";
+import { hashedApiKeysPathOf, startScriptPathOf } from "./feature-paths.js";
 import { askSudoFirst, withApiKeysLock } from "./hashed-api-keys.js";
 import { isToolHook } from "./render-watchers.js";
-import { removePrivateRpc } from "./start-script.js";
+import { flagStaysNote, removePrivateRpc } from "./start-script.js";
 import { readState, withStartScriptLock, writeState } from "./state.js";
 import {
   oldValueOf,
@@ -177,6 +185,27 @@ function removeFlag(host, scriptPath) {
 }
 
 /**
+ * Says so when the start script carries a --private-rpc that apply didn't
+ * add, such as one turn-on-private-rpc added after an apply that stopped
+ * before its flag stage. undo-apply leaves it, so the validator's rpc
+ * stays private after its next start too.
+ * @param {object} run  The run.
+ * @param {Set<string>} names  The settings apply changed.
+ * @returns {string|null} The note, or null when apply added the flag, or
+ *   when the script lacks it or can't be read.
+ */
+function flagStays({ host, settings }, names) {
+  if (names.has("privateRpcFlag")) {
+    return null;
+  }
+  const homeDir = host.homeDir();
+  const scriptPath = startScriptPathOf(settings, homeDir);
+  return scriptCarriesFlag(host, scriptPath)
+    ? flagStaysNote(scriptPath, "apply")
+    : null;
+}
+
+/**
  * Removes one of the files apply wrote as root. After the drop-in it
  * reloads systemd, and after nginx.org's apt source it refreshes apt's
  * package lists, so nginx.org's lists go too.
@@ -209,10 +238,10 @@ export const NGINX_STAYS =
   "/etc/nginx, its certificates in /var/cache/nginx, its logs in " +
   `${NGINX_LOG_DIR}, its account and nginx.org's apt repository stay too. ` +
   `Its packages, its account, the repository and the mask on ${NGINX_UNIT} ` +
-  "stay listed in " +
-  "x1-validator-private-rpc/app-data/what-apply-changed.json, so a later " +
-  "apply takes this nginx as the one it installed, rather than refusing " +
-  "it, and reuses its certificate. If you want nginx gone, first run sudo " +
+  "stay listed in x1-validator-private-rpc/app-data/what-apply-changed.json. " +
+  "A later apply refuses an installed nginx unless that file shows apply " +
+  "installed it. With these entries, a later apply takes this nginx as its " +
+  "own, and reuses its certificate. If you want nginx gone, first run sudo " +
   "apt-mark unhold nginx, if you hold it. Then run sudo apt purge " +
   `${NGINX_PACKAGES.join(" ")}. Then run undo-apply again, which removes ` +
   "nginx's account, nginx.org's repository and the mask.";
@@ -223,11 +252,10 @@ export const NGINX_STAYS =
  * certificates and its logs, which only a purge deletes.
  */
 export const NGINX_GONE_ALREADY =
-  "nginx isn't installed, so there's nothing to remove. If it was " +
-  "removed with apt remove rather than purged, its configuration in " +
-  "/etc/nginx, its certificates in /var/cache/nginx and its logs in " +
-  `${NGINX_LOG_DIR} may still be there. If you want them gone, sudo apt ` +
-  "purge nginx deletes them.";
+  "nginx isn't installed. If it was removed with apt remove rather than " +
+  "purged, its configuration in /etc/nginx, its certificates in " +
+  `/var/cache/nginx and its logs in ${NGINX_LOG_DIR} may still be there. ` +
+  "If you want them gone, sudo apt purge nginx deletes them.";
 
 /**
  * Tells whether a package is installed.
@@ -249,9 +277,7 @@ function isInstalled(host, name) {
  * @returns {string} The note.
  */
 function packageGone(name) {
-  return name === "nginx"
-    ? NGINX_GONE_ALREADY
-    : `${name} isn't installed, so there's nothing to remove.`;
+  return name === "nginx" ? NGINX_GONE_ALREADY : `${name} isn't installed.`;
 }
 
 /**
@@ -291,10 +317,12 @@ function removeAccount(host) {
  * @param {string} key  The setting.
  * @param {import("./what-apply-changed.js").Entry} entry  Its entry.
  * @returns {{what: string, declined?: boolean, keep?: boolean,
- *   note?: string, run?: () => (unknown|Promise<unknown>)}} The step,
- *   with `declined` for one the operator's answer keeps, and `keep` for
- *   a setting that stays: one this version of the tool can't reset, or
- *   one that stays with nginx while it's installed, which `note` says.
+ *   note?: string, after?: () => (string|null),
+ *   run?: () => (unknown|Promise<unknown>)}} The step, with `declined`
+ *   for one the operator's answer keeps, and `keep` for a setting that
+ *   stays: one this version of the tool can't reset, or one that stays
+ *   with nginx while it's installed, which `note` says. `after` gives a
+ *   line to print once it's done, or null for none.
  */
 function resetStep(context, key, entry) {
   const { host, settings, paths, keysKept } = context;
@@ -358,6 +386,7 @@ function resetStep(context, key, entry) {
         withStartScriptLock(host, paths.statePath, () =>
           removeFlag(host, target),
         ),
+      after: () => restartAfterFlagOut(host, target),
     }),
     startScriptBackup: () => ({
       what: `remove ${target}`,
@@ -426,9 +455,10 @@ function resetStep(context, key, entry) {
           })
         : whileNginx(
             `the mask on ${NGINX_UNIT}`,
-            `${NGINX_UNIT} stays masked while nginx is installed, so nothing ` +
-              "can start nginx with the package's own configuration and its " +
-              "default site.",
+            `${NGINX_UNIT} stays masked while nginx is installed. With the ` +
+              "tool's files gone, a start of nginx would run the package's " +
+              "own configuration and its default site. The mask stops " +
+              "anything from starting it.",
             () => ({
               what: `unmask ${NGINX_UNIT}`,
               run: () => systemctl(host, ["unmask", NGINX_UNIT]),
@@ -489,6 +519,10 @@ async function runStep(run, step) {
       "undo-apply",
       typeof note === "string" ? note : `Done: ${step.what}.`,
     );
+    const after = step.after?.();
+    if (after !== undefined && after !== null) {
+      log.info("undo-apply", after);
+    }
     return "done";
   } catch (error) {
     log.problem("undo-apply", `Couldn't ${step.what}: ${error.message}`);
@@ -609,6 +643,10 @@ async function undoAll(run, filePath, fileThere) {
   }
   const stays = keysKept === true ? [filePath] : [];
   const { left, failed } = await runSteps(context, newestFirst, stays);
+  const flagNote = flagStays(run, names);
+  if (flagNote !== undefined && flagNote !== null) {
+    log.info("undo-apply", flagNote);
+  }
   if (left.size === 0) {
     host.removeUserTree(path.dirname(recordPath));
     log.info("undo-apply", "Everything apply did is undone.");
@@ -619,8 +657,18 @@ async function undoAll(run, filePath, fileThere) {
   const state = readState(host, paths.statePath);
   if (state !== undefined && state !== null) {
     state.setup = null;
-    // Unset, as on a first install, so ensure leaves the start script
-    // alone until a later apply adds the flag.
+    /*-
+     * Unset, as on a first install, so that no ensure adds the flag
+     * before apply does. A later apply records the setup again at its
+     * fifth stage, which starts nginx, and from then on ensure acts on
+     * the choice. But apply adds the flag only at its sixth stage, and
+     * installs the cron job and the git hook that run ensure only at its
+     * seventh. So after an apply that stopped between its fifth and sixth
+     * stages, a choice left on would have an ensure run by hand add the
+     * flag. A later apply would find that flag and record it as found, not
+     * as its own change. undo-apply takes back only apply's changes, so it
+     * would leave the flag.
+     */
     state.privateRpc = "";
     writeState(host, paths.statePath, state);
   }

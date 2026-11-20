@@ -27,7 +27,9 @@
  * fails to start or reload while the list is missing. Once started, it
  * answers the gate page with ok, a key whose hash it read with the rpc's
  * health check, and any other path with a 403, with a certificate for
- * the hostname. A scenario changes the starting state.
+ * the hostname. A scenario changes the starting state, and a test may
+ * change the state later: with validatorRunning false, for one, nothing
+ * listens on the rpc port, as while the validator starts.
  */
 
 import fs from "node:fs";
@@ -106,6 +108,7 @@ function startingState(changes = {}) {
     crontab: autopilotCrontab(),
     rpcAddress: "0.0.0.0",
     flagRunning: false,
+    validatorRunning: true,
     certificateDays: 89,
     tpm2: NO_TPM2,
     rootOnlyFolders: [],
@@ -257,13 +260,19 @@ function systemAnswer(line, state) {
     [
       "ss -ltnH ( sport = :8899 or sport = :8900 )",
       {
-        stdout: `LISTEN 0 1024 ${state.rpcAddress}:8899 0.0.0.0:*\nLISTEN 0 1024 ${state.rpcAddress}:8900 0.0.0.0:*\n`,
+        stdout:
+          state.validatorRunning === true
+            ? `LISTEN 0 1024 ${state.rpcAddress}:8899 0.0.0.0:*\nLISTEN 0 1024 ${state.rpcAddress}:8900 0.0.0.0:*\n`
+            : "",
       },
     ],
     [
       "ss -ltnpH sport = :8899",
       {
-        stdout: `LISTEN 0 1024 ${state.rpcAddress}:8899 0.0.0.0:* users:(("tachyon-validat",pid=4242,fd=50))\n`,
+        stdout:
+          state.validatorRunning === true
+            ? `LISTEN 0 1024 ${state.rpcAddress}:8899 0.0.0.0:* users:(("tachyon-validat",pid=4242,fd=50))\n`
+            : "",
       },
     ],
   ]);

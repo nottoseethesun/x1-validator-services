@@ -9,7 +9,9 @@
  *   comes out of the start script, so a change an x1console update made
  *   since stays. nginx stays installed, and its packages, account,
  *   repository and mask stay on record, until the operator purges nginx
- *   and runs undo-apply again, which leaves the machine as apply found it.
+ *   and runs undo-apply again, which leaves the machine as apply found
+ *   it. What it says about restarting the validator is tested in
+ *   turn-private-rpc.test.js, beside turn-off-private-rpc's.
  * - a folder that was there keeps its mode and stays
  * - nginx.org's keyring that was there stays
  * - a folder stays when the settings moved it, or when it holds files
@@ -26,7 +28,8 @@
  * - the dry run changes nothing
  * - a step that fails stays recorded, and a second undo-apply retries it
  * - while another command holds the start script's lock, the flag stays
- *   recorded, and a second undo-apply takes it out
+ *   recorded, and isn't called one apply didn't add, and a second
+ *   undo-apply takes it out
  * - a setting this version can't reset stays recorded
  * - with nothing recorded, there's nothing to do
  */
@@ -43,6 +46,7 @@ import {
   gitHookPathOf,
   hashedApiKeysPathOf,
 } from "../src/cli/feature-paths.js";
+import { flagStaysNote } from "../src/cli/start-script.js";
 import { lockStartScript, START_SCRIPT_LOCKED } from "../src/cli/state.js";
 import { NGINX_STAYS, runUndoApply } from "../src/cli/undo-apply.js";
 import {
@@ -309,7 +313,7 @@ test("a folder that was there keeps its mode and stays", async () => {
   assert.equal(host.files.has(settings.passwordCredentialPath), false);
 });
 
-test("nginx.org's keyring that was there before apply stays, while the files apply wrote go", async () => {
+test("nginx.org's keyring that was there before apply stays, while the files apply wrote go once the operator purges nginx", async () => {
   const theirs = "the operator's keyring";
   const { host, settings } = await appliedValidator({
     files: new Map([[NGINX_KEYRING_PATH, theirs]]),
@@ -449,7 +453,7 @@ test("inside a folder only root can look into, undo-apply removes the folder app
   }
 });
 
-test("a later apply keeps the first one's old values, replaces its own hook and cron lines, and undo-apply removes all it made", async () => {
+test("a later apply keeps the first one's old values, replaces its own hook and cron lines, and once the operator purges nginx, undo-apply removes all it made", async () => {
   const { host, state, settings, scriptPath } = await appliedValidator();
   const hookPath = gitHookPathOf(settings, HOME);
   await host.sleep(1000);
@@ -566,6 +570,10 @@ test("while another command holds the start script's lock, the flag stays on rec
   );
   assert.match(host.files.get(scriptPath), / --private-rpc \\$/m);
   assert.ok(targetsNamed(host, "privateRpcFlag").includes(scriptPath));
+  // The flag that stays is apply's, so it isn't called one apply didn't add.
+  const note = flagStaysNote(scriptPath, "apply");
+  const disowned = first.lines.includes(`[undo-apply] ${note}`);
+  assert.equal(disowned, false, first.lines.join("\n"));
   const second = await undoApply(host, settings);
   assert.equal(second.code, 0, second.lines.join("\n"));
   assert.equal(host.files.get(scriptPath), fixtureScript());

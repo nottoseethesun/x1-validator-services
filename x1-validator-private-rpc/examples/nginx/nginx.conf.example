@@ -11,6 +11,10 @@ user nginx;
 worker_processes 1;
 worker_priority 10;
 pid /run/nginx.pid;
+
+# Notice and above. At info or debug, nginx would also write here the
+# request line, key and all, of a client that stalls, hangs up or sends a
+# header nginx can't read.
 error_log /var/log/nginx/error.log notice;
 
 # After a reload, the old worker closes what it still holds open within

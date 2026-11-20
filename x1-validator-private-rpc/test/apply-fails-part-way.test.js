@@ -10,8 +10,8 @@
  * once the operator has purged the nginx it leaves, and skips a package
  * on record that apt never installed. On a first install, a
  * configuration nginx -t refuses leaves none of the files the run wrote
- * for nginx, is kept in the tool's error log, and undo-apply takes all
- * back.
+ * for nginx, is kept in the tool's error log, and once the operator
+ * purges nginx, undo-apply takes all back.
  */
 
 import assert from "node:assert/strict";

@@ -166,7 +166,7 @@
       "maximum": 5
     },
     "gatePollMs": {
-      "description": "How long apply waits between two looks at /x1-rpc-gate, nginx's page for the tool's own checks, while it waits for nginx's certificate, and between two rounds of its test requests through nginx after a reload.",
+      "description": "How long apply waits between two looks at /x1-rpc-gate, nginx's page for the tool's own checks, while it waits for nginx's certificate. After a reload, it's also the wait between two rounds of apply's test requests through nginx.",
       "type": "integer",
       "minimum": 100,
       "maximum": 10000

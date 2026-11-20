@@ -1,6 +1,6 @@
 # Examples
 
-`apply` writes each of these files for you, with your own values. They're here to read. Each but the list of hashes opens with a short header that says what it is. The list has none, since `apply` writes it as hash lines alone. The commands below show where each one goes, for a set-up by hand. Don't leave such a copy on a machine where you'll run `apply`. It won't write over an `nginx` configuration, key check or drop-in it didn't write: it stops, and says to move the file away.
+`apply` writes each of these files for you, with your own values. They're here to read. Each but the list of hashes opens with a short header that says what it is. The list has none, since `apply` writes it as hash lines alone. The commands below show where each one goes, for a set-up by hand. Don't leave such a copy on a machine where you'll run `apply`. `apply` won't write over a file it didn't write: an `nginx` configuration, a `systemd` drop-in, or a key check, the njs file `nginx` runs on each request. It stops instead, and says to move the file away.
 
 Replace the placeholders with your own values:
 
