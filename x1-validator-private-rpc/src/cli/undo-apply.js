@@ -47,17 +47,19 @@
  *
  * It takes back only what apply did. The start script loses just the
  * word apply added, and never gets an old backup copied over a newer
- * x1console file. A flag apply didn't add, such as one
- * turn-on-private-rpc added after an apply that stopped before its flag
- * stage, stays, and undo-apply says so. Once it has taken the flag out,
- * it says what the validator's next start changes, unless the running
- * validator lacks the flag already. The hook goes
- * only while it's still the tool's. A folder apply made for its files
- * goes only once nothing else is in it. Root looks for a folder root
- * made, since it may sit in a folder only root can look into. A folder
- * that goes whole, with what's in it, goes only while the settings still
- * put that folder there, so a damaged record can never aim a removal
- * elsewhere.
+ * x1console file. A flag apply didn't add stays, and undo-apply says so.
+ * turn-on-private-rpc adds one, for example, after an apply that stopped
+ * before its flag stage. After its flag step, which takes out apply's
+ * word or finds it gone already, it reads the script again. A flag still
+ * there isn't apply's, since apply adds only that word, so it says that
+ * flag stays. Otherwise it says that the rpc listens on every interface
+ * from the validator's next start, unless the running validator lacks
+ * the flag already. The hook goes only while it's still the tool's. A
+ * folder apply made for its files goes only once nothing else is in it.
+ * Root looks for a folder root made, since it may sit in a folder only
+ * root can look into. A folder that goes whole, with what's in it, goes
+ * only while the settings still put that folder there, so a damaged
+ * record can never aim a removal elsewhere.
  *
  * A step that fails, or that the operator declines, stays in the record.
  * So does a folder, while such a step's target, or the kept api keys'
@@ -182,6 +184,23 @@ function removeFlag(host, scriptPath) {
     const mode = host.fileMode(scriptPath);
     host.writeUserFile(scriptPath, text, mode);
   }
+}
+
+/**
+ * What undo-apply says once its flag step is done. A flag still in the
+ * start script isn't apply's, since apply adds only the word the step
+ * takes out, so it stays, and the note says so. Otherwise it says that
+ * the rpc listens on every interface from the validator's next start,
+ * unless the running validator lacks the flag already.
+ * @param {object} host  The host.
+ * @param {string} scriptPath  The start script.
+ * @returns {string|null} The line, or null when a restart changes nothing.
+ */
+function afterFlagOut(host, scriptPath) {
+  if (scriptCarriesFlag(host, scriptPath)) {
+    return flagStaysNote(scriptPath, "apply");
+  }
+  return restartAfterFlagOut(host, scriptPath);
 }
 
 /**
@@ -386,7 +405,7 @@ function resetStep(context, key, entry) {
         withStartScriptLock(host, paths.statePath, () =>
           removeFlag(host, target),
         ),
-      after: () => restartAfterFlagOut(host, target),
+      after: () => afterFlagOut(host, target),
     }),
     startScriptBackup: () => ({
       what: `remove ${target}`,
@@ -663,11 +682,12 @@ async function undoAll(run, filePath, fileThere) {
      * fifth stage, which starts nginx, and from then on ensure acts on
      * the choice. But apply adds the flag only at its sixth stage, and
      * installs the cron job and the git hook that run ensure only at its
-     * seventh. So after an apply that stopped between its fifth and sixth
-     * stages, a choice left on would have an ensure run by hand add the
-     * flag. A later apply would find that flag and record it as found, not
-     * as its own change. undo-apply takes back only apply's changes, so it
-     * would leave the flag.
+     * seventh. So had undo-apply left the choice on, an ensure run by hand
+     * after an apply that stopped between its fifth and sixth stages would
+     * add the flag. A later apply would find that flag and record it as
+     * found, not as its own change. undo-apply takes back only apply's
+     * changes, so it would leave the flag, and the rpc would stay private
+     * after the validator's next start.
      */
     state.privateRpc = "";
     writeState(host, paths.statePath, state);

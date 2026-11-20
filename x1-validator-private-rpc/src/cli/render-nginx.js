@@ -12,8 +12,8 @@
  * upgrade. The logs are nginx's usual access.log and error.log, in the
  * folder that nginx.org's package makes and rotates. The access log
  * shows `<key>` in place of anything in the url that looks like a key,
- * wherever the client put it, so a key in the query string or after a
- * prefix, or a mistyped one, never writes the key there. The njs module does the
+ * wherever the client put it, so no key reaches it: not one in the query
+ * string or after a prefix, nor a mistyped one. The njs module does the
  * masking. The keyed location writes no error log at all, since each of
  * nginx's error lines carries the request line, and with it the key. The
  * main error log keeps notice and above, which leaves out the info lines
@@ -125,9 +125,11 @@ worker_processes 1;
 worker_priority ${settings.nginxWorkerPriority};
 pid /run/nginx.pid;
 
-# Notice and above. At info or debug, nginx would also write here the
-# request line, key and all, of a client that stalls, hangs up or sends a
-# header nginx can't read.
+# Notice and above. nginx writes here the errors from before it has read
+# a request's header and picked its location, so the keyed location's
+# /dev/null doesn't catch them. At info or debug, this log would hold the
+# request line, key and all, of a client that stalls or hangs up partway
+# through its header, or sends a header line nginx can't read.
 error_log ${NGINX_LOG_DIR}/error.log notice;
 
 # After a reload, the old worker closes what it still holds open within

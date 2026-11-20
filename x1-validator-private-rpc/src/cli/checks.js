@@ -2,9 +2,7 @@
  * @file x1-validator-private-rpc/src/cli/checks.js
  * @description
  * ensure's checks, each reported as ok, problem or unknown, with a line
- * that says what was found. They're the cheap ones from the Verification
- * Checks in the hand-off the project started from,
- * project-kickoff-documents/x1-validator-private-rpc-handoff.md:
+ * that says what was found:
  *
  * - The start script carries `--private-rpc`.
  * - The running validator carries it too: the process that listens on
@@ -215,9 +213,10 @@ export function runningFlag(host, rpcPort) {
 }
 
 /**
- * Says what the validator's next start changes, once a command has taken
- * the flag out of the start script. While the running validator lacks the
- * flag already, a restart changes nothing, so there's nothing to say. When
+ * Says that the rpc listens on every interface from the validator's next
+ * start, once a command has taken the flag out of the start script. While
+ * the running validator lacks the flag already, a restart changes
+ * nothing, so there's nothing to say. When
  * it can't tell, it says it anyway. That's when nothing listens on the
  * rpc port, since the validator may be starting, and may have read the
  * script before the flag came out. It's also when it can't read the

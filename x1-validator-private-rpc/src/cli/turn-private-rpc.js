@@ -10,9 +10,12 @@
  *   unless given --yes, since the rpc is public after the validator's
  *   next start. It takes out only the word the tool adds, on the port
  *   line. When the script still carries the flag elsewhere, it says the
- *   flag stays. Otherwise it says what the validator's next start
- *   changes, unless the running validator lacks the flag already, when a
- *   restart changes nothing.
+ *   flag stays. Otherwise it says that the rpc listens on every interface
+ *   from the validator's next start, unless the running validator lacks
+ *   the flag already, when a restart changes nothing. When private rpc is
+ *   off already, and the port line holds no word of the tool's, it
+ *   changes nothing and says so, adding that a flag stays when the script
+ *   still carries one.
  * - `turn-on-private-rpc` puts the flag back, and records that choice,
  *   so ensure keeps the flag in place again. apply's sixth stage does the
  *   same.
@@ -81,6 +84,11 @@ export async function runTurnOffPrivateRpc(run) {
   const { state, scriptPath, text } = readSwitch(run);
   const edit = removePrivateRpc(text, scriptPath);
   if (state.privateRpc === "off" && edit.changed === false) {
+    if (scriptCarriesFlag(host, scriptPath)) {
+      const note = flagStaysNote(scriptPath, "the tool");
+      log.info(name, `Private rpc is off already, but ${note}`);
+      return 0;
+    }
     log.info(name, "Private rpc is off already.");
     return 0;
   }
@@ -107,7 +115,10 @@ export async function runTurnOffPrivateRpc(run) {
   });
   if (scriptCarriesFlag(host, scriptPath)) {
     const note = flagStaysNote(scriptPath, "the tool");
-    log.info(name, `Private rpc is off, but ${note}`);
+    log.info(
+      name,
+      `Private rpc is off: ensure no longer puts --private-rpc back. But ${note}`,
+    );
     return 0;
   }
   log.info(
