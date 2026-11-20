@@ -47,9 +47,9 @@ export const RPC_KEPT_UNTIL_RESTART =
  */
 export function flagStaysNote(scriptPath, adder) {
   return (
-    `--private-rpc stays in ${scriptPath}, since ${adder} didn't add it. ` +
-    "So the validator's rpc listens only on 127.0.0.1 after its next " +
-    "start. To change that, take --private-rpc out of that file by hand."
+    `${scriptPath} still carries a --private-rpc that ${adder} didn't add. ` +
+    "It stays, so the validator's rpc listens only on 127.0.0.1 after its " +
+    "next start. To change that, take --private-rpc out of that file by hand."
   );
 }
 

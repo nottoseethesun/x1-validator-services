@@ -28,8 +28,9 @@
  * question, while it holds the start script's lock, and writes both
  * before it lets go. ensure holds the same lock while it decides about
  * the flag, so it can't put the flag back in between, and a flag it put
- * back while the question waited still comes out. When ensure holds the
- * lock, turn-off-private-rpc refuses and changes nothing.
+ * back while the question waited still comes out. When ensure or
+ * undo-apply holds the lock, turn-off-private-rpc refuses and changes
+ * nothing.
  * turn-on-private-rpc needs no lock, since it only adds the flag, as
  * ensure does. It records its choice before it changes the script, so a
  * scheduled ensure that runs between the two already follows it.
@@ -86,7 +87,10 @@ export async function runTurnOffPrivateRpc(run) {
   if (state.privateRpc === "off" && edit.changed === false) {
     if (scriptCarriesFlag(host, scriptPath)) {
       const note = flagStaysNote(scriptPath, "the tool");
-      log.info(name, `Private rpc is off already, but ${note}`);
+      log.info(
+        name,
+        `Private rpc is off already: ensure doesn't put --private-rpc back. But ${note}`,
+      );
       return 0;
     }
     log.info(name, "Private rpc is off already.");

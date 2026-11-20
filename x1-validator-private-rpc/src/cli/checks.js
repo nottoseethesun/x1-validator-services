@@ -216,11 +216,11 @@ export function runningFlag(host, rpcPort) {
  * Says that the rpc listens on every interface from the validator's next
  * start, once a command has taken the flag out of the start script. While
  * the running validator lacks the flag already, a restart changes
- * nothing, so there's nothing to say. When
- * it can't tell, it says it anyway. That's when nothing listens on the
- * rpc port, since the validator may be starting, and may have read the
- * script before the flag came out. It's also when it can't read the
- * script, or the validator's command.
+ * nothing, so there's nothing to say. When it can't tell, it returns the
+ * line anyway. That's when nothing listens on the rpc port, since the
+ * validator may be starting, and may have read the script before the
+ * flag came out. It's also when it can't read the script, or the
+ * validator's command.
  * @param {object} host  The host.
  * @param {string} scriptPath  The start script, which names the rpc port.
  * @returns {string|null} The line, or null when a restart changes nothing.

@@ -280,7 +280,7 @@ test("after turn-off, a flag added by hand on a line of its own stays, and turn-
   assert.deepEqual(again.asked, []);
   const offNote = flagStaysNote(scriptPath, "the tool");
   assert.deepEqual(again.lines, [
-    `[turn-off-private-rpc] Private rpc is off already, but ${offNote}`,
+    `[turn-off-private-rpc] Private rpc is off already: ensure doesn't put --private-rpc back. But ${offNote}`,
   ]);
   const undo = commandRun(host, settings, {
     prompts: scriptedPrompts({ ask: () => true }),

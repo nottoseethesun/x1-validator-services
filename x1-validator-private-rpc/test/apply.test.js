@@ -536,6 +536,10 @@ test("with --acme-staging, apply uses every configured path, address and timeout
     options: { acmeStaging: true },
   });
   assert.equal(code, 0, lines.join("\n"));
+  const telegramApi = "https://api.telegram.org/";
+  const alerts = host.posts.filter((post) => post.url.startsWith(telegramApi));
+  assert.equal(alerts.length, 1);
+  assert.ok(alerts[0].body.text.includes(HOSTNAME), alerts[0].body.text);
   assert.ok(urls.includes(changed.acmeStagingDirectoryUrl), urls.join("\n"));
   assert.ok(!urls.includes(shipped.acmeStagingDirectoryUrl));
   assert.deepEqual(wrongPaths(host.calls, shipped, changed, HOME, written), {
