@@ -24,5 +24,4 @@ export default {
     "eslint-security.config.js",
   ],
   project: ["**/*.js"],
-  ignore: ["project-kickoff-documents/**"],
 };

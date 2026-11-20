@@ -98,7 +98,7 @@ const SHARED_RULES = {
 
 export default [
   {
-    ignores: ["node_modules/**", "tmp/**", "project-kickoff-documents/**"],
+    ignores: ["node_modules/**", "tmp/**"],
   },
   {
     files: JS_TARGETS,

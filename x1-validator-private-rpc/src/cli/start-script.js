@@ -35,7 +35,8 @@ export const RESTART_HOW = `Restart it from x1console: ${RESTART_STEPS}`;
 /** What a command that takes the flag out says about the running validator. */
 export const RPC_KEPT_UNTIL_RESTART =
   "The running validator keeps its rpc as it is until its next start. " +
-  `From then on, the rpc listens on every interface. ${RESTART_HOW}`;
+  "From then on, the rpc listens on every interface. " +
+  `Restart the validator from x1console: ${RESTART_STEPS}`;
 
 /**
  * What a command says when the start script still carries a flag it
@@ -47,8 +48,8 @@ export const RPC_KEPT_UNTIL_RESTART =
 export function flagStaysNote(scriptPath, adder) {
   return (
     `--private-rpc stays in ${scriptPath}, since ${adder} didn't add it. ` +
-    "The validator's rpc stays on 127.0.0.1 after its next start too. " +
-    "To change that, take --private-rpc out of that file by hand."
+    "So the validator's rpc listens only on 127.0.0.1 after its next " +
+    "start. To change that, take --private-rpc out of that file by hand."
   );
 }
 

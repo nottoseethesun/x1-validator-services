@@ -12,9 +12,11 @@ worker_processes 1;
 worker_priority 10;
 pid /run/nginx.pid;
 
-# Notice and above. At info or debug, nginx would also write here the
-# request line, key and all, of a client that stalls, hangs up or sends a
-# header nginx can't read.
+# Notice and above. nginx writes here the errors from before it has read
+# a request's header and picked its location, so the keyed location's
+# /dev/null doesn't catch them. At info or debug, this log would hold the
+# request line, key and all, of a client that stalls or hangs up partway
+# through its header, or sends a header line nginx can't read.
 error_log /var/log/nginx/error.log notice;
 
 # After a reload, the old worker closes what it still holds open within

@@ -6,7 +6,7 @@ This file guides Claude Code, and anyone else working in this repository.
 
 X1 Validator Services is a home for features whose code runs on an X1 validator itself. Each feature lives in a sub-directory of its own.
 
-The first feature is `x1-validator-private-rpc`. It's a command-line tool that makes the validator's rpc private and puts it behind an https url that carries an api key. Its design is in its `docs/architecture.md` and `docs/engineering.md`. The hand-off it started from is `project-kickoff-documents/x1-validator-private-rpc-handoff.md`, with the tested reference files beside it.
+The first feature is `x1-validator-private-rpc`. It's a command-line tool that makes the validator's rpc private and puts it behind an https url that carries an api key. Its design is in its `docs/architecture.md` and `docs/engineering.md`.
 
 ## Conventions
 
@@ -30,7 +30,7 @@ Skip what belongs to LP Ranger's own domain: EVM, chains, pools and positions, i
 - **The lockfile.** `npm` 11 writes it on the development machine, and the validator installs it with `npm` 9, which comes with Node.js 20.0.0. So `npm ci` must accept it under both. [docs/security.md](docs/security.md) says what that means for the `minimatch` override.
 - **Installs come from `main`.** There are no releases: a validator installs and updates with `git pull` on `main`. So LP Ranger's release steps, its release notes, tags and release audit, don't apply.
 - **The gate.** Its reports go to `tmp/check/`. Besides LP Ranger's coverage rules, it fails a source module that no test loads, since Node.js reports coverage only for the files a test loaded. The list of files held to 95% coverage is in `scripts/check.js`.
-- **Program names in backticks.** Every Markdown doc writes a program's name in backticks, as it's typed on the command line: `nginx`, `systemd`, `apt`, `ufw`, `git`, `cron`, `x1console`, `npm`. That holds in headings, tables and link text too, and inside terms such as the `cron` job or the tool's `git` hook. A product's name in its own spelling, such as Node.js, ESLint, LXD or Ubuntu, stays plain, and so does a site or a service, such as nginx.org or Let's Encrypt. A feature's own name stays plain, except as a command. The kickoff documents in `project-kickoff-documents/` keep their original text.
+- **Program names in backticks.** Every Markdown doc writes a program's name in backticks, as it's typed on the command line: `nginx`, `systemd`, `apt`, `ufw`, `git`, `cron`, `x1console`, `npm`. That holds in headings, tables and link text too, and inside terms such as the `cron` job or the tool's `git` hook. A product's name in its own spelling, such as Node.js, ESLint, LXD or Ubuntu, stays plain, and so does a site or a service, such as nginx.org or Let's Encrypt. A feature's own name stays plain, except as a command.
 - **The security pass.** `security/detect-non-literal-fs-filename` is off for the whole project. Its reason is beside it in `eslint-security.config.js`. [docs/security.md](docs/security.md) lists every exception and every dependency override.
 
 ## Layout

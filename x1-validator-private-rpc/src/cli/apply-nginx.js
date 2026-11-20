@@ -16,9 +16,10 @@
  * match what both run. Without that, a later apply would find the files
  * in place and take them as done. It would never test the configuration
  * again, so each key command's reload would fail without a word, leaving
- * a removed key working. Nor would it restart nginx for the drop-in. What
- * the run wrote, and why nginx refused it, go into the tool's error log
- * for the operator.
+ * a removed key working. Nor would it restart nginx for the drop-in. The
+ * next start, often a reboot, would then load the refused configuration,
+ * so nginx wouldn't start. What the run wrote, and why nginx refused it,
+ * go into the tool's error log for the operator.
  *
  * nginx then starts when it's stopped. A running nginx reloads when a
  * file changed, which keeps it answering throughout. It restarts instead

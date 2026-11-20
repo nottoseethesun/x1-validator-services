@@ -14,11 +14,13 @@
  * holds no setup. A later apply records the setup again at its fifth
  * stage, which starts nginx, and from then on ensure acts on the choice.
  * But apply adds the flag only at its sixth stage, and installs the cron
- * job and the git hook that run ensure only at its seventh. So after an
- * apply that stopped between its fifth and sixth stages, a choice left on
- * would have an ensure run by hand add the flag. A later apply would find
- * that flag and record it as found, not as its own change. undo-apply
- * takes back only apply's changes, so it would leave the flag.
+ * job and the git hook that run ensure only at its seventh. So had
+ * undo-apply left the choice on, an ensure run by hand after an apply
+ * that stopped between its fifth and sixth stages would add the flag. A
+ * later apply would find that flag and record it as found, not as its
+ * own change. undo-apply takes back only apply's changes, so it would
+ * leave the flag, and the rpc would stay private after the validator's
+ * next start.
  *
  * The state also holds whether a saved password is left from an
  * earlier api keys' file, so apply treats it as no saved password until

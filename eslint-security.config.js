@@ -45,7 +45,7 @@ const ALL_SECURITY_RULES = Object.fromEntries(
 
 export default [
   {
-    ignores: ["node_modules/**", "tmp/**", "project-kickoff-documents/**"],
+    ignores: ["node_modules/**", "tmp/**"],
   },
   {
     files: SECURITY_TARGETS,

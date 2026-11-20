@@ -8,11 +8,14 @@
  *   once startScriptQuietSeconds has passed and when the git hook runs
  *   it, and stops checking that the rpc is private, but still alerts
  *   when nginx is down or its certificate needs attention
- * - off, and undo-apply once it has taken the flag out, say what the
- *   validator's next start changes, unless the running validator lacks
- *   the flag already
+ * - off, and undo-apply once it has taken the flag out, say that the rpc
+ *   listens on every interface from the validator's next start, unless
+ *   the running validator lacks the flag already
  * - off leaves a flag on a line of its own, which the tool didn't add,
  *   and says so, with no restart line
+ * - after off, a flag added by hand on a line of its own stays, and off
+ *   run again and undo-apply each say so, with no restart line, wherever
+ *   the settings put the start script
  * - off takes out a flag that ensure put back while its question waited,
  *   and keeps an update's change made meanwhile, and refuses while
  *   another command holds the start script's lock
@@ -26,7 +29,7 @@
  *   alone, until turn-on turns private rpc on, and so it does in a
  *   reinstall after an undo-apply that left nginx installed
  * - undo-apply leaves a flag turn-on added before apply's flag stage, and
- *   says so
+ *   says so, with the start script where the settings put it
  * - neither runs before apply
  * - ensure asks nothing and uses no sudo, with private rpc on or off
  */
@@ -133,6 +136,21 @@ function choice(host) {
 }
 
 /**
+ * Adds `--private-rpc \` by hand, on a line of its own after the port
+ * line, as each of the other flags has one.
+ * @param {string} text  The start script, its port line without the flag.
+ * @returns {string} The script with the flag.
+ */
+function withOwnLineFlag(text) {
+  const edited = text.replace(
+    /^( *)(--rpc-port 8899 \\)$/m,
+    "$1$2\n$1--private-rpc \\",
+  );
+  assert.notEqual(edited, text);
+  return edited;
+}
+
+/**
  * Makes the fake validator restart without the flag: its rpc listens on
  * every interface, and its command lacks the flag.
  * @param {object} host  The fake host.
@@ -157,7 +175,10 @@ test("turn-off takes the flag out after asking, and ensure leaves it out, but st
   assert.match(off.asked[0], /Turn off private rpc\?$/);
   assert.doesNotMatch(host.files.get(scriptPath), FLAG);
   assert.equal(choice(host), "off");
-  assert.ok(off.lines.at(-1).endsWith(RESTART_HOW));
+  assert.equal(
+    off.lines.at(-1),
+    `[turn-off-private-rpc] ${RPC_KEPT_UNTIL_RESTART}`,
+  );
   restartPublic(host, state);
   // Past the wait after a change, so only the choice keeps the flag out.
   await host.sleep(settings.startScriptQuietSeconds * 1000);
@@ -187,7 +208,7 @@ test("turn-off takes the flag out after asking, and ensure leaves it out, but st
   );
 });
 
-test("turn-off says what the validator's next start changes, unless the running validator lacks the flag already", async () => {
+test("turn-off says the rpc listens on every interface from the validator's next start, unless the running validator lacks the flag already", async () => {
   for (const { found, state, restartSaid } of RUNNING_VALIDATORS) {
     const { host, settings } = await appliedValidator({ state });
     const off = await turn(runTurnOffPrivateRpc, host, settings);
@@ -203,10 +224,8 @@ test("turn-off leaves a flag on a line of its own, which it didn't add, and says
   const override = JSON.stringify({ hostname: HOSTNAME });
   const settings = loadSettings(copyShippedConfig(override).configDir);
   const { host, scriptPath } = fakeX1Validator({ settings, state: PRIVATE });
-  // Added by hand before apply, on a line of its own like the other flags.
-  const handEdited = host.files
-    .get(scriptPath)
-    .replace(/^( *)(--rpc-port 8899 \\)$/m, "$1$2\n$1--private-rpc \\");
+  // Added by hand before apply.
+  const handEdited = withOwnLineFlag(host.files.get(scriptPath));
   host.files.set(scriptPath, handEdited);
   const applied = commandRun(host, settings, {
     prompts: scriptedPrompts({ passwords: [PASSWORD, PASSWORD] }),
@@ -218,13 +237,13 @@ test("turn-off leaves a flag on a line of its own, which it didn't add, and says
   assert.equal(off.code, 0, off.lines.join("\n"));
   const note = flagStaysNote(scriptPath, "the tool");
   assert.deepEqual(off.lines, [
-    `[turn-off-private-rpc] Private rpc is off, but ${note}`,
+    `[turn-off-private-rpc] Private rpc is off: ensure no longer puts --private-rpc back. But ${note}`,
   ]);
   assert.equal(host.files.get(scriptPath), handEdited);
   assert.equal(choice(host), "off");
 });
 
-test("once it has taken the flag out, undo-apply says what the validator's next start changes, unless the running validator lacks the flag already", async () => {
+test("once it has taken the flag out, undo-apply says the rpc listens on every interface from the validator's next start, unless the running validator lacks the flag already", async () => {
   for (const { found, state, restartSaid } of RUNNING_VALIDATORS) {
     const { host, settings } = await appliedValidator({ state });
     const undo = commandRun(host, settings, {
@@ -244,6 +263,40 @@ test("once it has taken the flag out, undo-apply says what the validator's next 
       `The running validator ${found}.`,
     );
   }
+});
+
+test("after turn-off, a flag added by hand on a line of its own stays, and turn-off run again and undo-apply each say so, with no restart line", async () => {
+  const { changed } = shippedAndChangedSettings();
+  const { host, settings, scriptPath } = await appliedValidator({
+    state: PRIVATE,
+    settings: { ...changed, hostname: HOSTNAME },
+  });
+  await turn(runTurnOffPrivateRpc, host, settings);
+  // Private rpc back by hand, not with turn-on, so the choice stays off.
+  const handEdited = withOwnLineFlag(host.files.get(scriptPath));
+  host.files.set(scriptPath, handEdited);
+  const again = await turn(runTurnOffPrivateRpc, host, settings);
+  assert.equal(again.code, 0, again.lines.join("\n"));
+  assert.deepEqual(again.asked, []);
+  const offNote = flagStaysNote(scriptPath, "the tool");
+  assert.deepEqual(again.lines, [
+    `[turn-off-private-rpc] Private rpc is off already, but ${offNote}`,
+  ]);
+  const undo = commandRun(host, settings, {
+    prompts: scriptedPrompts({ ask: () => true }),
+  });
+  assert.equal(await runUndoApply(undo), 0, undo.lines.join("\n"));
+  const flagOut = undo.lines.findIndex((line) =>
+    line.startsWith("[undo-apply] Done: take --private-rpc out of"),
+  );
+  assert.ok(flagOut >= 0, undo.lines.join("\n"));
+  // The note follows the flag step, once, and the restart line never comes.
+  const note = `[undo-apply] ${flagStaysNote(scriptPath, "apply")}`;
+  assert.equal(undo.lines[flagOut + 1], note);
+  assert.equal(undo.lines.filter((line) => line === note).length, 1);
+  const restart = `[undo-apply] ${RPC_KEPT_UNTIL_RESTART}`;
+  assert.equal(undo.lines.includes(restart), false);
+  assert.equal(host.files.get(scriptPath), handEdited);
 });
 
 test("with every setting changed, turn-off and turn-on edit the start script where the settings put it", async () => {
@@ -426,8 +479,14 @@ test("after an undo-apply that left nginx installed, a later apply stopped befor
   assert.equal(host.files.get(scriptPath), unflagged);
 });
 
-test("undo-apply leaves a flag turn-on added before apply's flag stage, and says so", async () => {
-  const override = JSON.stringify({ hostname: HOSTNAME });
+test("undo-apply leaves a flag turn-on added before apply's flag stage, and says so, with the start script where the settings put it", async () => {
+  const { changed } = shippedAndChangedSettings();
+  // x1console away from its shipped folder, so undo-apply must look for
+  // the flag where the settings put the start script.
+  const override = JSON.stringify({
+    hostname: HOSTNAME,
+    x1consoleDir: changed.x1consoleDir,
+  });
   const settings = loadSettings(copyShippedConfig(override).configDir);
   const { host, scriptPath } = fakeX1Validator({ settings });
   const stopped = commandRun(host, settings, {

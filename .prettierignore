@@ -6,6 +6,3 @@ package-lock.json
 
 # Disposable output of the gate and other tools; never committed.
 tmp/
-
-# The hand-off and its reference files, kept as they were delivered.
-project-kickoff-documents/
