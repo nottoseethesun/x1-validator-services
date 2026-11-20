@@ -15,14 +15,14 @@
  * and email, "" when none was given. Every value in a record is encrypted
  * with the x1-validator-services password, as LP Ranger's key store
  * encrypts a private key: AES-256-GCM, with its key from PBKDF2-SHA-512 at
- * 600,000 rounds. The file has one salt, so one opening derives one
- * encryption key, which opens every record, and each value has its own
- * iv. An encrypted value is one string, the iv, GCM's tag and the
- * ciphertext in base64url, joined by dots, and its plain text is the
- * value's json. passwordCheck, a known text encrypted the same way, lets
- * a typed password be checked even when the file holds no record. The
- * file has mode 0600, in a folder with mode 0700, and is written whole to
- * a new file that then replaces the old one.
+ * 600,000 rounds. The file has one salt. So a command that opens the file
+ * derives one encryption key from the password, and that key opens every
+ * record. Each value has its own iv. An encrypted value is one string, the
+ * iv, GCM's tag and the ciphertext in base64url, joined by dots, and its
+ * plain text is the value's json. passwordCheck, a known text encrypted
+ * the same way, lets a typed password be checked even when the file holds
+ * no record. The file has mode 0600, in a folder with mode 0700, and is
+ * written whole to a new file that then replaces the old one.
  *
  * nginx's list, which the hashedApiKeysMapPath setting names, has the
  * form src/lib/key-hash-map.js gives. The tool writes it from the file's

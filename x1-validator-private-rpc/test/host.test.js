@@ -330,7 +330,7 @@ test("posts json and reads the answer; a slow server times out by its origin alo
   }
 });
 
-test("asks an https server under a hostname, and reads its certificate", async (t) => {
+test("asks an https server under a hostname, and reads its certificate; posts json to an https url over https", async (t) => {
   const folder = makeTestTempFolder("host-tls");
   const keyPath = path.join(folder, "key.pem");
   const certPath = path.join(folder, "cert.pem");
@@ -380,6 +380,12 @@ test("asks an https server under a hostname, and reads its certificate", async (
     await assert.rejects(testHost().tlsGet(target), {
       code: "DEPTH_ZERO_SELF_SIGNED_CERT",
     });
+    // postJson trusts only Node.js's own authorities, so refusing this
+    // certificate shows it spoke https to an https url, as Telegram's is.
+    await assert.rejects(
+      testHost().postJson(`https://127.0.0.1:${target.port}/`, {}, 2000),
+      { code: "DEPTH_ZERO_SELF_SIGNED_CERT" },
+    );
   } finally {
     server.close();
   }
