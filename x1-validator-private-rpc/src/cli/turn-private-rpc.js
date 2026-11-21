@@ -76,8 +76,9 @@ function writeScript(host, scriptPath, text) {
  * @param {object} run  The run: host, settings, paths, log, prompts.
  * @returns {Promise<number>} The exit code: 1 when the operator said no.
  * @throws {Error} When ensure or undo-apply holds the start script's
- *   lock, before anything changes, since it could put the flag back
- *   after this command took it out.
+ *   lock, before anything changes. Each of them writes the start script
+ *   while it holds the lock, and ensure could put the flag back after
+ *   this command took it out.
  */
 export async function runTurnOffPrivateRpc(run) {
   const { host, paths, log, prompts } = run;

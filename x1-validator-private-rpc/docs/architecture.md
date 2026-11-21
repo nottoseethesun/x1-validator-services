@@ -1,6 +1,8 @@
 # x1-validator-private-rpc — System Architecture
 
-x1-validator-private-rpc turns an X1 validator's public rpc into a private one, and puts it behind an https url that carries an api key. It does that by arranging programs on the validator. `x1console`'s start script, the validator itself, `systemd` and `cron` are there already, and `apply` adds `nginx`, from nginx.org. The tool is a command-line program that sets those parts up, keeps them that way, and takes them back down. It never runs as a server of its own.
+x1-validator-private-rpc turns an X1 validator's public rpc into a private one, and puts it behind an https url that carries an api key. It's a command-line tool that sets up programs on the validator to do that, keeps them that way, and takes them back down. It never runs as a server of its own. The validator's software, `systemd` and `cron` are there already, and so is `x1console`, which installed the validator and starts it with its start script. The tool's `apply` command adds `nginx`, from nginx.org.
+
+This doc is the feature's design, for those who maintain or review it. It covers the parts, the paths a request and a key take through them, and how the tool sets the parts up, keeps them that way and takes them down. It also says why, with the races the tool guards against and the risks it accepts.
 
 Companion references:
 
@@ -20,6 +22,8 @@ Companion references:
   - [The Watchers](#the-watchers)
   - [Services Outside the Machine](#services-outside-the-machine)
 - [The Request Path](#the-request-path)
+  - [Keys in `nginx`'s Logs](#keys-in-nginxs-logs)
+  - [Filling `nginx`'s Connections](#filling-nginxs-connections)
 - [The Keys' Path](#the-keys-path)
 - [Setting Up and Taking Down](#setting-up-and-taking-down)
 - [Switching](#switching)
@@ -47,7 +51,7 @@ One flag changes that: `--private-rpc`. With it, the validator's rpc listens on 
 - **The njs module** runs the tool's key check, `src/njs/x1-validator-private-rpc.js`, on every request, under QuickJS, the engine njs 1.0 recommends. It hashes the key at the start of the request's path. Then `nginx`'s `map`, a lookup table in its configuration, looks the hash up in `nginx`'s list of the keys' hashes, which [The Keys' Path](#the-keys-path) describes.
 - **The ACME module** gets and renews the certificate from Let's Encrypt through the tls-alpn-01 challenge, which runs on port 443 itself. So port 80 stays closed.
 
-`nginx` runs under `systemd`. A drop-in replaces the start command of `nginx`'s own unit with one that starts `nginx` with the tool's configuration. It also gives `nginx` its own read-only `/dev`, as [The Request Path](#the-request-path) explains, and makes `nginx`'s log folder before each start when it's missing, as [Setting Up and Taking Down](#setting-up-and-taking-down) says. The package's own configuration, `/etc/nginx/nginx.conf`, stays untouched and unused. `nginx` needs nothing else at a start: no key, and no password.
+`nginx` runs under `systemd`. A drop-in replaces the start command of `nginx`'s own unit with one that starts `nginx` with the tool's configuration. It also gives `nginx` its own read-only `/dev`, as [Keys in `nginx`'s Logs](#keys-in-nginxs-logs) explains, and makes `nginx`'s log folder before each start when it's missing, as [Setting Up and Taking Down](#setting-up-and-taking-down) says. The package's own configuration, `/etc/nginx/nginx.conf`, stays untouched and unused. `nginx` needs nothing else at a start, so it starts on its own after a reboot. Its list holds the api keys' hashes, never the keys themselves, and nothing it reads needs a password.
 
 ### The Tool
 
@@ -57,6 +61,8 @@ The tool is `src/cli.js`, run as the validator's account. Its commands fall into
 - **Keeping it running.** `ensure` puts the flag back after an update, checks every part, and sends alerts. `ensure-there-is-at-least-one-rpc-api-key` checks that `nginx`'s list holds a key.
 - **The api keys.** `add-api-key` makes keys and shows each one once. `remove-api-key` takes a key away. `url` shows the url's two forms, for https and for websockets, with `KEY` in place of a key, and how many keys there are.
 - **Switching.** `turn-off-private-rpc` and `turn-on-private-rpc` switch the rpc between public and private.
+
+The tool's settings are in `app-config/`: the shipped settings, and the operator's own file, merged over them. The operator's file holds the url's `hostname`, and any setting the operator changes. Each command reads the settings when it starts.
 
 ### The Watchers
 
@@ -85,17 +91,21 @@ A client's request travels like this:
 
 1. The client connects to the hostname on port 443. dns points the hostname at the validator's public address.
 2. `nginx` completes the tls handshake with its Let's Encrypt certificate.
-3. The key check hashes the key at the start of the request's path, and `nginx`'s map looks the hash up in `nginx`'s list. A path that doesn't start with a well-formed key, followed by a slash or nothing, or whose key's hash isn't in the list, gets 403, and the request goes no further. That happens in `nginx`'s rewrite phase, before the rate limit, so such requests never use up the limit. Each costs one SHA-256 hash, about a microsecond, as [Technology Choices](#technology-choices) measures.
+3. The key check hashes the key at the start of the request's path, and `nginx`'s map looks the hash up in `nginx`'s list. The request gets 403, and goes no further, unless its path starts with a well-formed key, followed by a slash or by nothing, whose hash is in the list. That happens in `nginx`'s rewrite phase, before the rate limit, so such requests never use up the limit. Each costs one SHA-256 hash, about a microsecond, as [Technology Choices](#technology-choices) measures.
 4. A keyed request counts against one rate limit, shared by every key. Over the limit, `nginx` answers 429.
 5. `nginx` strips the key from the path and forwards the request to the rpc on 127.0.0.1. A request that asks for a websocket upgrade goes to the websocket port instead.
 
 One more path exists, for the tool alone. The gate page, `/x1-rpc-gate`, answers only requests from the machine's own public address. It says `ok`, which tells `apply` and `ensure` that `nginx` answers with its certificate.
 
-The location that forwards keyed requests, the part of `nginx`'s configuration that handles them, writes no error log. Each of `nginx`'s error lines carries the request line, key and all. And anyone can set some of them off without a key. `nginx` holds at most 1024 connections at once, and its own connections to the rpc count among them, beside the clients'. Once someone fills them, by holding open handshakes or websockets, `nginx` has none left to forward a client's keyed request, and logs an alert for it, request line and all. So anyone could have clients' keys written into the error log. What `nginx` logs, and who can read it, is in the README's [Api Key Security](../README.md#api-key-security) section.
+### Keys in `nginx`'s Logs
 
-That location sends its error lines to `/dev/null`, so the drop-in has to give `nginx` a read-only `/dev` of its own. Otherwise the nightly log rotation would hand the machine's `/dev/null` to the `nginx` account. Each night `logrotate` has `nginx` reopen its logs. `nginx`'s master then gives each log file to the `nginx` account, unless that account owns it already, so the workers can reopen it too. It makes no exception for a device, so at the first reopen the machine's `/dev/null` would become the `nginx` account's. It would keep that account's number after `undo-apply` removed the account, until a reboot. The next system account made, given that free number, would then own the machine's `/dev/null`. Code that a flaw let run as the `nginx` account could also stop every other account from writing to it, and the validator's start script writes to it. `systemd`'s `PrivateDevices=yes` gives `nginx` that `/dev` of its own. The change of owner then fails there, and the machine's `/dev/null` stays root's. `nginx` logs each failure, about once a night, as `[emerg] chown("/dev/null", …) failed (30: Read-only file system)`, which is expected.
+The location that forwards keyed requests, the part of `nginx`'s configuration that handles them, writes no error log. Each of `nginx`'s error lines carries the request line, key and all. And anyone can set some of them off without a key. `nginx` holds at most 1024 connections at once, and its own connections to the rpc count among them, beside the clients'. Once someone fills them, by holding open handshakes or websockets, `nginx` has none left to forward a client's keyed request, and logs an alert for it, request line and all. So, if that location wrote an error log, anyone could have clients' keys written into it. What `nginx` logs, and who can read it, is in the README's [Api Key Security](../README.md#api-key-security) section.
+
+That location sends its error lines to `/dev/null`, so the drop-in has to give `nginx` a read-only `/dev` of its own. Otherwise the nightly log rotation would hand the machine's `/dev/null` to the `nginx` account. Each night `logrotate` has `nginx` reopen its logs. `nginx`'s master then gives each log file to the `nginx` account, unless that account owns it already, so the workers can reopen it too. It makes no exception for a device, so at the first reopen the machine's `/dev/null` would become the `nginx` account's. Once the operator purged `nginx`, a later `undo-apply` would remove the account, but `/dev/null` would keep the account's number until a reboot. The next system account made, given that free number, would then own the machine's `/dev/null`. Code that a flaw let run as the `nginx` account could also stop every other account from writing to it, and the validator's start script writes to it. `systemd`'s `PrivateDevices=yes` gives `nginx` that `/dev` of its own. The change of owner then fails there, and the machine's `/dev/null` stays root's. `nginx` logs each failure, about once a night, as `[emerg] chown("/dev/null", …) failed (30: Read-only file system)`, which is expected.
 
 The keyed location's `error_log /dev/null;` doesn't cover every error that carries a key. It applies only once `nginx` has read a request's header, and picked the location that handles it. Until then, `nginx` writes its errors to the main error log. A client sets off such an error when it stalls partway through its header until `nginx` gives up on it, closes the connection partway through, or sends a header line `nginx` can't read. The error's line carries the request line as far as the client sent it, with the key at the start of its path. `nginx` writes these lines at its info level. The tool's configuration sets the main error log to notice, so it keeps only notice and above, and these lines never reach it. At info or debug, it would hold clients' keys.
+
+### Filling `nginx`'s Connections
 
 Anyone can take every client's url down, with no key, by filling `nginx`'s 1024 connections. They open connections and send each one its tls handshake and request header a few bytes at a time. While all 1024 are busy, `nginx` turns new connections away. The validator itself keeps running. By default, `nginx` gives a connection's first request 60 seconds to finish its handshake and header, so about 17 new connections a second could keep it full. The tool's configuration gives 5 seconds instead, so the same attack needs about 205 new connections a second, twelve times as many. That raises its cost, but one machine can still open that many. A real client needs one round trip for the handshake with tls 1.3, or two with tls 1.2. The slowest real case, a satellite link with tls 1.2 and one lost packet, takes about 3 seconds. So 5 seconds turns away no real client.
 
@@ -109,7 +119,7 @@ Such an attack also floods `nginx`'s error log, but it can't fill the disk. Whil
 
 `apply` makes the first key, when there's none, and `add-api-key` makes more: 32 random bytes each, written as 64 hex characters. The tool shows each key once, as its two urls, as soon as its hash is written to `hashed-api-keys.json`, and never keeps the key itself. It keeps the key's SHA-256 hash, in two places:
 
-- **`hashed-api-keys.json`**, the file the `hashedApiKeysPath` setting names, which holds each hash, unencrypted, with the key's record: when the key was made, and its email. Every value of a record is encrypted with the x1-validator-services password, which is used for nothing else. `add-api-key` asks for the email at a prompt, never as an option. The shell's history would keep an option, and `ps` would show it to every account on the machine.
+- **`hashed-api-keys.json`**, the file the `hashedApiKeysPath` setting names, which holds each hash, unencrypted, with the key's record: when the key was made, and its email. Every value of a record is encrypted with the x1-validator-services password, which the operator chooses during `apply`, and which is used for nothing else. `add-api-key` asks for the email at a prompt, never as an option. The shell's history would keep an option, and `ps` would show it to every account on the machine.
 - **`nginx`'s list**, the file the `hashedApiKeysMapPath` setting names, which `nginx`'s map includes, with one line per hash. The tool writes it from the first file's hashes, with no password.
 
 `nginx` reads its list at each start and each reload. `add-api-key` and `remove-api-key` write both files, and reload a running `nginx`, which keeps answering throughout. A reload takes a moment, longer with more keys, as [Technology Choices](#technology-choices) measures. Until it's done, `nginx` checks against its old list. So for that moment a new key still gets 403, and a removed one still works. After its own reload, `apply` sends test requests through `nginx`, and repeats them until they pass, for up to `certificateWaitSeconds`.
@@ -138,7 +148,7 @@ Each key command writes two files: `hashed-api-keys.json`, which the validator's
 
 `remove-api-key` needs the key itself, pasted, so a key nobody has any more stays valid until `undo-apply` deletes every key.
 
-The password can be saved with `systemd`'s encrypted credentials. Nothing reads a saved password yet. It's there so that features to come can read the records unattended: billing, and rotation notices, which will email a key's client when the key is due to be replaced. `nginx` never uses it.
+`apply` offers to save the password with `systemd`'s encrypted credentials. Nothing reads a saved password yet. It's there so that features to come can read the records unattended: billing, and rotation notices, which will email a key's client when the key is due to be replaced. `nginx` never uses it.
 
 With no hash in its list, `nginx` refuses every request. Only `remove-api-key` can empty the list, and it asks before it removes the last key. `ensure-there-is-at-least-one-rpc-api-key` counts the list's lines every `apiKeyCountCheckHours` hours, and alerts on every run while it's empty. The commands that write the list count its lines the same way, and say at once when it's empty.
 
@@ -146,7 +156,18 @@ With no hash in its list, `nginx` refuses every request. Only `remove-api-key` c
 
 ## Setting Up and Taking Down
 
-`apply` works in eight stages, and asks before each one that changes something. The engineering reference's [Sequence View](engineering.md#sequence-view) lists them.
+`apply` works in eight stages, and asks before each one that changes something:
+
+1. It checks the machine, changing nothing.
+2. It installs `nginx` from nginx.org.
+3. It opens port 443 in `ufw`.
+4. It asks for the password and makes the first key, when there's none.
+5. It writes `nginx`'s configuration, then starts `nginx` and checks it.
+6. It adds the flag.
+7. It installs the `git` hook and the `cron` jobs.
+8. It says whether to restart the validator, and prints the url.
+
+So nothing changes the validator's start script before stage 6, and a run that stops before then leaves the script, and so the validator's rpc, as they were. `nginx` can serve the keyed url before the flag, since until the validator's next start the rpc listens on every interface, 127.0.0.1 among them. The engineering reference's [Sequence View](engineering.md#sequence-view) gives each stage in full.
 
 Every setting `apply` changes on the machine is recorded the moment it changes, with its old value, in `app-data/what-apply-changed.json`, apply's record. Such a setting is, for example, whether a file, folder, package or firewall rule is there. A stage first checks whether its work is done, so running `apply` again changes nothing that's in place, and picks up where a stopped run ended.
 
@@ -180,7 +201,7 @@ It also leaves `nginx`'s packages on record. `apply`'s first check refuses a mac
 
 `turn-off-private-rpc` and `ensure` could undo each other. Say an Update X1 Console has just taken the flag out, and the operator runs `turn-off-private-rpc`. It reads the script before its question, finds no flag, and so has none to take out. While its question waits, the `cron` job's `ensure` puts the flag back, since private rpc is still on. `turn-off-private-rpc` would then record off and leave that flag in. The validator's next start would keep the rpc private, though the operator turned it off, and `ensure`, which follows off, would leave the flag there.
 
-To prevent that, both hold the start script's lock, which is `flock`'s lock on the state's folder, `app-data/`. `ensure` holds it from its read of the choice until it has put the flag back or left it. `turn-off-private-rpc` takes it after its question, then reads the state and the script again and writes both. A run of `ensure` that finds the lock held changes nothing, and its next run does the work. A `turn-off-private-rpc` that finds it held refuses, changes nothing, and says to run it again. `undo-apply` holds it for its step that takes the flag out, which a running `ensure` could race the same way. `turn-on-private-rpc` and `apply` need no lock, since they only add the flag, as `ensure` does. The kernel lets go of `flock`'s lock when its holder exits, however it exits. A lock file instead could be left behind by a killed command, and would stop `ensure` for good, without a word.
+To prevent that, both hold the start script's lock, which is `flock`'s lock on the state's folder, `app-data/`. `ensure` holds it from its read of the choice until it has put the flag back or left it. `turn-off-private-rpc` takes it after its question, then reads the state and the script again and writes both. A run of `ensure` that finds the lock held stops there, with no checks, alerts or Cronitor check-in, and its next run does the work. A `turn-off-private-rpc` that finds it held refuses, changes nothing, and says to run it again. `undo-apply` holds it for its step that takes the flag out, which a running `ensure` could race the same way. `turn-on-private-rpc` and `apply` need no lock, since they only add the flag, as `ensure` does. The kernel lets go of `flock`'s lock when its holder exits, however it exits. A lock file instead could be left behind by a killed command, and would stop `ensure` for good, without a word.
 
 ---
 
@@ -188,7 +209,7 @@ To prevent that, both hold the start script's lock, which is `flock`'s lock on t
 
 `ensure` runs from the watchers, and on demand. Each run:
 
-1. Puts `--private-rpc` back into the start script when it's missing, while private rpc is on. It never edits the script in the middle of an `x1console` update, which a run can tell from `git`'s lock file and from the script's last change.
+1. Puts `--private-rpc` back into the start script when it's missing, while private rpc is on. A run from `cron` or by hand never edits the script while an `x1console` update may be under way, which it tells from `git`'s lock file and from the script's last change. The `git` hook's run doesn't wait, since `git` runs the hook once the merge is done.
 2. Checks every part: the flag in the script and in the running validator, where the rpc listens, `nginx`'s state and address, the gate page, and the certificate.
 3. Sends the alerts its checks call for, on Telegram, and remembers what it sent, so a lasting problem doesn't alert every minute.
 4. Checks in with Cronitor, when a check-in url is set.
@@ -198,6 +219,8 @@ Before `apply` has set `nginx` up, `ensure` does nothing. The engineering refere
 ---
 
 ## `x1console`'s Updates and Autopilot's Restarts
+
+Two parts of `x1console` bear on the flag. One, Update X1 Console, takes it out. The other, Autopilot, which `x1console` can install, is four `cron` jobs that look after the validator, and two of them restart it. This section shows when the start script lacks the flag, and what happens if the validator restarts meanwhile.
 
 These facts come from `x1console`'s source at commit `c1ef91b`, its latest when this was written.
 
@@ -213,7 +236,7 @@ So when Update X1 Console finishes, the start script holds the flag again.
 **Autopilot never takes the flag out.** Its four `cron` jobs ([`setautopilot.sh`, lines 4–8](https://github.com/BlackBeard085/x1console/blob/c1ef91b5a499f6922166008638ad558a0c2a9b25/setautopilot.sh#L4-L8)) never touch `~/x1console`. Two of them restart the validator:
 
 - the check every 30 minutes, which restarts a delinquent validator
-- the hourly updater, which updates Tachyon, then restarts the validator through `restart.js` ([`update.sh`, lines 35–74](https://github.com/BlackBeard085/x1console/blob/c1ef91b5a499f6922166008638ad558a0c2a9b25/update.sh#L35-L74))
+- the hourly updater, which updates Tachyon, the validator's software, then restarts the validator through `restart.js` ([`update.sh`, lines 35–74](https://github.com/BlackBeard085/x1console/blob/c1ef91b5a499f6922166008638ad558a0c2a9b25/update.sh#L35-L74))
 
 Each restart reads the start script as it stands.
 
@@ -255,10 +278,10 @@ The Telegram bot's token and the chat's id are `x1console`'s, in `telegram_token
 ## Technology Choices
 
 - **Node.js 20.0.0**, the version `x1console` installs, so the tool needs nothing new on the validator.
-- **`nginx` from nginx.org**, for its njs and ACME modules. The key check and the certificate then live inside `nginx`, with no other program to run. nginx.org's packages also upgrade `nginx` in place. That's a binary upgrade, after which the new `nginx` reads its configuration and its list of hashes again. `util/validate-nginx-upgrade/index.js` proves that on each machine before the install.
-- **Not Caddy, a proxy in Node.js, or Certbot.** Caddy or a proxy in Node.js could stand in front of the rpc in `nginx`'s place, and Certbot could get the certificate in place of `nginx`'s ACME module. Caddy listens on every address by default, and runs an admin api on `localhost:2019` that any program on the machine can use to change its configuration. Both would have to be switched off. A proxy in Node.js would run on `x1console`'s Node.js 20.0.0, as the tool does, and so put it on the internet. Node.js 20 reached the [end of its life](https://github.com/nodejs/Release) on 2026-04-30, and 20.0.0 has known request-smuggling flaws, such as [CVE-2024-27982](https://security.snyk.io/vuln/SNYK-UPSTREAM-NODE-6564550). Certbot adds its own timer, and usually needs port 80, while `nginx`'s ACME module needs neither.
+- **`nginx` from nginx.org**, for its njs and ACME modules. The key check and the certificate then live inside `nginx`, with no other program to run. nginx.org's packages also upgrade `nginx` in place. That's a binary upgrade, after which the new `nginx` reads its configuration and its list of hashes again. The upgrade check, `util/validate-nginx-upgrade/index.js`, proves that on each machine, as the first step of installing the tool: it installs nginx.org's previous release with a throwaway key, upgrades it with `apt`, and checks that the key still gets through.
+- **Not Caddy, a proxy in Node.js, or Certbot.** Caddy or a proxy in Node.js could stand in front of the rpc in `nginx`'s place, and Certbot could get the certificate in place of `nginx`'s ACME module. Caddy listens on every address by default, and runs an admin api on `localhost:2019` that any program on the machine can use to change its configuration. Both defaults would have to be switched off. A proxy in Node.js would run on `x1console`'s Node.js 20.0.0, as the tool does, and so put it on the internet. Node.js 20 reached the [end of its life](https://github.com/nodejs/Release) on 2026-04-30, and 20.0.0 has known request-smuggling flaws, such as [CVE-2024-27982](https://security.snyk.io/vuln/SNYK-UPSTREAM-NODE-6564550). Certbot adds its own timer, and usually needs port 80, while `nginx`'s ACME module needs neither.
 - **Hashes in `nginx`'s map** for the keys, as a GitHub token is kept: the key is shown once, and only its hash stays. Measured with `nginx` 1.30.6 and njs 1.0.2, a hash takes about a microsecond, and a lookup among 10,000 hashes a fiftieth of that. The map's hash table, sized as `src/lib/key-hash-map.js` says, builds at once for up to 500,000 keys, the `maxApiKeys` limit: 500,000 started in 0.66 seconds and reloaded in 1.4. With `nginx`'s usual table size, 10,000 keys took 20 seconds to start.
 - **`systemd`'s encrypted credentials** for a saved password, so the tool keeps no secret of its own on disk in the clear.
 - **No program of the tool's own runs all the time.** `nginx` serves, `systemd` starts it, and `cron` runs `ensure` and the key count check.
 - **No database.** apply's record, the dictionary of the settings `apply` can change, the tool's state, `ensure`'s alert state and `hashed-api-keys.json` are json files.
-- **Small, common packages** for the generic parts: commander for the command line, Ajv for the settings' schema, dotenv for `.env`, and ora for the upgrade check's spinner. [CLAUDE.md](../../CLAUDE.md) says which versions, and why.
+- **Small, common packages** for the generic parts: commander for the command line, Ajv for the settings' schema, dotenv for `.env`, which holds the Cronitor check-in url, and ora for the upgrade check's spinner. [CLAUDE.md](../../CLAUDE.md) says which versions, and why.

@@ -8,11 +8,11 @@
 
 ## Overview
 
-X1 Validator Services holds features whose code runs on an X1 validator itself. The first, x1-validator-private-rpc, makes the validator's rpc private and puts it behind an https url that carries an api key.
+X1 Validator Services holds features: tools whose code runs on an X1 validator itself, each in a folder of its own, with a README that gives its install steps and use. The first, x1-validator-private-rpc, is a command-line tool that makes the validator's rpc private and puts it behind an https url that carries an api key.
 
 ## Install
 
-Run every `npm` command from this directory, the project root. All features share its single `node_modules`.
+Install the code once, then each feature you want. Run every `npm` command from the project root, the folder the clone below makes: all features share its single `node_modules`.
 
 ### Get the Code
 
@@ -34,7 +34,7 @@ Each feature's own steps are in its README:
 
 ### Credentials
 
-Credentials that belong to your install go in `.env`, in the project root, which `git` ignores. Start from the example, and keep the file readable only by you:
+Some features take a credential, which their README names. Credentials go in `.env`, a file in the project root that `git` ignores. Start from the example, and keep the file readable only by you:
 
 ```bash
 cp .env.example .env && chmod 600 .env
@@ -44,16 +44,16 @@ Fill it in with an editor rather than with `echo`, which would leave the secret 
 
 ### Cronitor Alerts
 
-Some features check in with [Cronitor](https://cronitor.io), which alerts you when the check-ins stop. One account serves every feature. Set it up once:
+Some features check in with [Cronitor](https://cronitor.io), which alerts you when the check-ins stop. Cronitor watches each feature's check-ins with a monitor, which that feature's README says how to create. One account serves every feature. Set it up once:
 
 1. Create a Cronitor account.
 2. In Cronitor, open Settings → Alerts, and edit the notification list your monitors use, usually the default one. Add a Telegram notification, and follow Cronitor's prompts to link your chat.
 
-Cronitor uses its own Telegram bot, so its alerts arrive in a different chat from `x1console`'s. Each feature's README says which monitor to create.
+Cronitor uses its own Telegram bot, so its alerts arrive in a different chat from `x1console`'s.
 
 ## Development
 
-For how the project is checked and tested, see **[`docs/engineering.md`](docs/engineering.md)**: the gate, the file lists, the tests' rules, the LXD system test and CI.
+For how the project is checked and tested, see **[`docs/engineering.md`](docs/engineering.md)**: the checks that must pass before every commit, the lists of files they read, the tests' rules, CI, and the system test, which runs a feature in an LXD container.
 
 For every `npm` command, what it does, which flags it takes, and a line you can copy, see **[`docs/npm-project-commands.md`](docs/npm-project-commands.md)**.
 

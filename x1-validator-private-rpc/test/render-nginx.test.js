@@ -5,7 +5,8 @@
  * examples.test.js pins:
  *
  * - every setting it reads shows in it, never the shipped value in its
- *   place
+ *   place, and the hostname and address it's given show in their lines,
+ *   never the example's
  * - each request's key hash is looked up in the list it includes, in a
  *   table sized for every key the tool allows, and a request whose hash
  *   isn't there gets a 403 before the rate limit
@@ -44,6 +45,10 @@ import {
 import { GATE_PAGE_PATH } from "../src/lib/gate-page.js";
 import { NGINX_LOG_DIR } from "../src/lib/nginx-org.js";
 import { shippedAndChangedSettings } from "./helpers/config-copies.js";
+import { ANOTHER_HOSTNAME } from "./helpers/fake-x1-validator.js";
+
+/** A public address other than the example's. */
+const ANOTHER_ADDRESS = "198.51.100.20";
 
 /** The settings the configuration reads. */
 const USED = [
@@ -73,15 +78,17 @@ const KEYLESS_LOG_FIELDS = [
 
 /**
  * Renders the configuration with each setting changed from its shipped
- * value.
+ * value, and a hostname and address other than the example's. So code
+ * that wrote a shipped value, or the example's, in place of the value
+ * given would fail.
  * @param {object} [extra]  More values, such as `staging`.
  * @returns {{text: string, shipped: object, changed: object}}
  */
 function renderChanged(extra = {}) {
   const { shipped, changed } = shippedAndChangedSettings();
   const text = renderNginxConfig({
-    hostname: "x1-rpc.example.com",
-    publicIp: "203.0.113.10",
+    hostname: ANOTHER_HOSTNAME,
+    publicIp: ANOTHER_ADDRESS,
     rpcPort: 9100,
     resolver: "127.0.0.53",
     staging: false,
@@ -91,7 +98,7 @@ function renderChanged(extra = {}) {
   return { text, shipped, changed };
 }
 
-test("uses every setting it reads, never the shipped value", () => {
+test("uses every setting it reads, never the shipped value or the example's", () => {
   const { text, shipped, changed } = renderChanged();
   for (const name of USED) {
     assert.ok(text.includes(String(changed[name])), `${name} is used`);
@@ -99,6 +106,10 @@ test("uses every setting it reads, never the shipped value", () => {
       assert.equal(text.includes(shipped[name]), false, `${name} shipped`);
     }
   }
+  const lines = text.split("\n");
+  assert.ok(lines.includes(`        server_name ${ANOTHER_HOSTNAME};`), text);
+  assert.ok(lines.includes(`        listen ${ANOTHER_ADDRESS}:443 ssl;`), text);
+  assert.ok(lines.includes(`            allow ${ANOTHER_ADDRESS};`), text);
   assert.match(text, /^ {8}websocket 127\.0\.0\.1:9101;$/m);
   assert.match(text, /^ {8}default {3}127\.0\.0\.1:9100;$/m);
   assert.doesNotMatch(text, /contact|letsencrypt-staging/);

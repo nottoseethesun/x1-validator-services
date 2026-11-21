@@ -2,7 +2,7 @@
 
 Every command defined in `package.json`, what it does, and what to type. Run each one from the project root.
 
-Companion to [`docs/engineering.md`](engineering.md), which covers how the gate and the scripts work. This file covers how to drive them.
+Companion to [`docs/engineering.md`](engineering.md), which covers how the scripts and the gate work. The gate, `npm run check`, runs the checks that must pass before every commit. This file covers how to drive them.
 
 The programs the features ship, such as x1-validator-private-rpc's commands and its `nginx` upgrade check, aren't `npm` commands. The feature's README covers them, in [Usage](../x1-validator-private-rpc/README.md#usage) and [Install](../x1-validator-private-rpc/README.md#install).
 
