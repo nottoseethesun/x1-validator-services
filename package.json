@@ -15,6 +15,7 @@
     "test:coverage": "node scripts/run-tests.js --coverage",
     "test:watch": "node scripts/run-tests.js --watch",
     "test:system": "node scripts/test-in-lxd.js",
+    "test:mistakes": "node scripts/check-deliberate-mistakes.js",
     "knip:files": "knip --include files",
     "audit:deps": "npm audit --audit-level=high --omit=dev",
     "audit:deps:all": "npm audit --audit-level=high",

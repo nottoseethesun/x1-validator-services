@@ -13,6 +13,8 @@
  * - a saved audit report of every dependency, dev tools included
  * - the shipped-settings tests, then the rest of the suite with coverage
  * - the coverage verdict of scripts/_coverage.js
+ * - once the tests pass, the deliberate mistakes of
+ *   scripts/_deliberate-mistakes.js, which prove the tests catch mistakes
  *
  * On older versions, down to Node.js 20.0.0, it runs the features' tests
  * alone. The lint, coverage and audit tools need Node.js 22.13 or newer,
@@ -99,6 +101,9 @@ const HIGH_RISK_FILES = [
 /** Where the gate writes its reports, relative to the project's root. */
 const REPORT_DIR = path.join("tmp", "check");
 
+/** The coverage verdict's stage, which isn't a run of the tests. */
+const COVERAGE_STAGE = "Coverage";
+
 /**
  * Tells whether the Node.js running the gate is new enough for the
  * whole gate.
@@ -159,7 +164,7 @@ function coverageOptions(lcovPath) {
  * @returns {import("./_run-stages.js").StageResult}
  */
 function judgeCoverage(root, lcovPath) {
-  const name = "Coverage";
+  const name = COVERAGE_STAGE;
   console.log(`\n── ${name} ──`);
   if (!fs.existsSync(lcovPath)) {
     console.error("The test run wrote no coverage report.");
@@ -209,6 +214,31 @@ function runTests(root, { coverage }) {
 }
 
 /**
+ * Runs the deliberate mistakes, once the tests have passed: with a test
+ * failing already, every mistake would look caught.
+ * @param {import("./_run-stages.js").StageResult[]} testResults  The
+ *   tests' results, with coverage's verdict.
+ * @returns {import("./_run-stages.js").StageResult[]}
+ */
+function runDeliberateMistakes(testResults) {
+  const name = "Deliberate mistakes";
+  const testsPassed = testResults
+    .filter((result) => result.name !== COVERAGE_STAGE)
+    .every((result) => result.passed === true);
+  if (testsPassed === false) {
+    console.log(`\n── ${name} ──\nNot run, since a test failed.`);
+    return [];
+  }
+  return runStages([
+    {
+      name,
+      command: process.execPath,
+      args: ["scripts/check-deliberate-mistakes.js"],
+    },
+  ]);
+}
+
+/**
  * Audits every dependency, dev tools included, and saves the json report
  * without failing on it: only the shipped dependencies decide the gate.
  * @param {string} root  The project's root.
@@ -232,8 +262,8 @@ function main() {
   scriptProgram(
     "scripts/check.js",
     "Runs the gate. On Node.js 22.13 or newer it runs every lint, format, " +
-      "security, audit, test and coverage check. On older versions it runs " +
-      "the features' tests.",
+      "security, audit, test and coverage check, then the deliberate " +
+      "mistakes. On older versions it runs the features' tests.",
     ["0  every check passed", "1  at least one check failed"],
   ).parse();
   const root = projectRoot();
@@ -246,7 +276,7 @@ function main() {
     results = runStages([...lintStages({ fix: false }), auditShippedStage()]);
     results.push(saveFullAudit(root));
     const testResults = runTests(root, { coverage: true });
-    results.push(...testResults);
+    results.push(...testResults, ...runDeliberateMistakes(testResults));
   } else {
     console.log(
       `Node.js ${process.versions.node}: running the features' tests ` +

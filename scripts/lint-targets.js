@@ -103,6 +103,18 @@ export const FULL_GATE_ONLY_TARGETS = [
 ];
 
 /**
+ * The scripts of the gate's deliberate mistakes, which also only ever run
+ * in the full gate. They need Node.js 22.15 or newer, for its
+ * module.registerHooks, which Node.js still marks experimental.
+ * @type {string[]}
+ */
+export const DELIBERATE_MISTAKE_TARGETS = [
+  "scripts/_deliberate-mistakes.js",
+  "scripts/check-deliberate-mistakes.js",
+  "scripts/try-deliberate-mistake.js",
+];
+
+/**
  * Every JavaScript file under ESLint and Prettier, as globs.
  * @type {string[]}
  */

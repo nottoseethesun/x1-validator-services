@@ -468,6 +468,7 @@ Their helpers and fixtures, in `test/`:
 - `helpers/reload-probe.js`: for the system test, holds each kind of connection open with a key while that key is removed.
 - `fixtures/start_validator.sh`: a start script in `x1console`'s shape.
 - `fixtures/crontab`: one of Autopilot's jobs, as `x1console`'s `setautopilot.sh` writes it, which `apply` and `undo-apply` must keep.
+- `deliberate-mistakes.json`: the deliberate mistakes the gate makes in the feature's code, each with the test file that must catch it. The project's [`docs/engineering.md`](../../docs/engineering.md#deliberate-mistakes) describes them.
 
 ---
 

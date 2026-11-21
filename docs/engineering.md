@@ -23,6 +23,7 @@ Other references:
 - [Coverage](#coverage)
 - [Dead Code](#dead-code)
 - [Tests](#tests)
+- [Deliberate Mistakes](#deliberate-mistakes)
 - [The System Test](#the-system-test)
 - [The Scripts' Command Lines](#the-scripts-command-lines)
 - [The Pre-Commit Hook and CI](#the-pre-commit-hook-and-ci)
@@ -60,6 +61,7 @@ Then, on Node.js 22.13 or newer, it runs these, in this order:
 | Tests (shipped settings) | Node.js's test runner | A shipped value its tests refuse |
 | Tests | Node.js's test runner, with coverage | Any failing test |
 | Coverage | `scripts/_coverage.js` | See [Coverage](#coverage) |
+| Deliberate mistakes, once the tests pass | `scripts/check-deliberate-mistakes.js` | A mistake its test doesn't catch. See [Deliberate Mistakes](#deliberate-mistakes) |
 
 Every stage but the tests and the coverage verdict is written down once, as data, in `scripts/_gate-stages.js`. `scripts/_run-stages.js` runs them, except the audit of every dependency, which `scripts/check.js` runs itself to save its report. `npm run lint` runs the stages from the JavaScript lint through the secret scan, and `scripts/format.js` and `scripts/audit.js` run one stage each. Two `npm` scripts spell out a stage's command again: `knip:files`, and `audit:deps`, which the Security Audit workflow runs. So a change to either stage's command in `scripts/_gate-stages.js` needs the same change in `package.json`.
 
@@ -118,6 +120,32 @@ Every test follows the same rules:
 - **No test reads the operator's settings.** A feature's `app-config/` folder holds its shipped settings and, in a folder of its own, the operator's. Tests load a temporary copy that leaves the operator's folder out.
 - **Tests take the app's values from the app.** A test imports a constant, or loads a setting, rather than typing out its value, so it can't pass after the value moves. A test that shows a setting is used runs with every setting changed from its shipped value.
 - **A test works in a temporary folder of its own.** `scripts/_test-temp-folders.js` makes it in the system's temporary folder, named with the test's purpose and its process id. The test process removes it on exit, and the gate removes, before its tests, the folders of processes that are gone.
+
+---
+
+## Deliberate Mistakes
+
+Tests can all pass and still miss the mistakes they're meant to catch. The gate's last stage checks that they don't, with deliberate mistakes: small changes to a feature's code, of the kind a slip in an edit would make, each paired with the test file that must fail when the change is made. A mistake its test passes means that test has a hole, and fails the gate.
+
+Each feature lists its mistakes in its `test/deliberate-mistakes.json`. Each entry has:
+
+- `name`: what the mistake does, in a few words
+- `file`: the file it changes, from the feature's folder
+- `edits`: the text to change, `from`, and what to change it `to`. Each `from` must be in the file exactly once, so the entry can't change the wrong place.
+- `test`: the test file that must fail, from the feature's folder
+
+`scripts/check-deliberate-mistakes.js`, which `npm run test:mistakes` runs too, makes each mistake in turn, and never changes a file on disk. For each one, `scripts/try-deliberate-mistake.js` runs the entry's test file in a process of its own, with a load hook: Node.js hands the hook each file's text after reading it, and runs the text the hook returns, so the hook makes the edits in memory. A run stops at the first failing test, since one is enough. The runs go side by side, one per processor.
+
+The stage fails when:
+
+- a mistake's test passes
+- the test never loads the file the mistake changes, so the mistake isn't made
+- an entry is wrong, such as when a change to the code leaves an entry's text other than once in its file. `test/deliberate-mistakes.test.js` checks the entries too, so `npm test` shows this at once.
+- a test file the entries name fails with no mistake made. The stage runs each one first, since a test that fails already would make every mistake look caught. For the same reason, the gate runs the stage only once every test has passed.
+
+The load hook needs `module.registerHooks`, from Node.js 22.15 or newer. So the stage runs in the full gate, on Node.js 22 and 24, and not on 20.0.0.
+
+When a new test is written to catch a mistake, add that mistake as an entry. The gate then fails if the test ever stops catching it.
 
 ---
 
