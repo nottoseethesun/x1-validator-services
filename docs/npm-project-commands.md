@@ -2,7 +2,7 @@
 
 Every command defined in `package.json`, what it does, and what to type. Run each one from the project root.
 
-Companion to [`docs/engineering.md`](engineering.md), which covers how the gate and the scripts work. This file covers how to drive them.
+Companion to [`docs/engineering.md`](engineering.md), which covers how the scripts and the gate work. The gate, `npm run check`, runs the checks that must pass before every commit. This file covers how to drive them.
 
 The programs the features ship, such as x1-validator-private-rpc's commands and its `nginx` upgrade check, aren't `npm` commands. The feature's README covers them, in [Usage](../x1-validator-private-rpc/README.md#usage) and [Install](../x1-validator-private-rpc/README.md#install).
 
@@ -73,6 +73,7 @@ The checks and tests. `check` runs all of them but the system test.
 | `format:check` | — | Prettier in check mode: lists the JavaScript files it would change, and changes none. | `npm run format:check` |
 | `test` | — | Every test once, for quick runs while working. Only `check` counts before a commit. | `npm test` |
 | `test:coverage` | — | Every test once, with a coverage summary. | `npm run test:coverage` |
+| `test:mistakes` | — | The deliberate mistakes alone, which `check` runs last: each makes one change to a feature's code, in memory, and the test file it names must fail. Needs Node.js 22.15 or newer. [Deliberate Mistakes](engineering.md#deliberate-mistakes) says more. | `npm run test:mistakes` |
 | `test:system` | `--keep` | x1-validator-private-rpc end to end, in a throwaway LXD container, never on a validator. Not part of `check`. `--keep` leaves the container for a look inside. Its feature's README says what it needs, in [Test](../x1-validator-private-rpc/README.md#test). | `npm run test:system` · `npm run test:system -- --keep` |
 | `test:watch` | — | Runs the tests again on every change. | `npm run test:watch` |
 

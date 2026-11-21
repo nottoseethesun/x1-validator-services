@@ -1,12 +1,12 @@
 # Manual Domain Setup
 
-x1-validator-private-rpc needs one dns record, which you add by hand at your dns provider before you run `apply`. This guide shows how, for form-based and raw zone-file editors alike.
+x1-validator-private-rpc makes an X1 validator's rpc private, and puts it behind an https url with an api key in its path, such as `https://x1-rpc.example.com/KEY`. Its `apply` command sets that up. Before you run `apply`, the url's hostname needs one dns record, which points it at the validator, and which you add by hand at your dns provider. This guide shows how, for form-based and raw zone-file editors alike, and how to check the record. It details an install step of the feature's [README](../README.md), [Point the Hostname at the Validator](../README.md#point-the-hostname-at-the-validator), so read the README first.
 
 ## What You Are Setting Up
 
 You are adding one dns record. It is an `A` record that points a new name under a domain you own, such as `x1-rpc.example.com`, at the validator's public ipv4 address. `nginx` on the validator uses that name to get a tls certificate, and your clients use it in the rpc url.
 
-dns maps names to addresses. It never sees url paths. So a path such as `https://example.com/x1-rpc` cannot point at the validator. Whatever web server answers for `example.com` today would have to forward that path to the validator. Most shared hosting cannot do that, and it would put that host in the middle of every rpc request. A subdomain is a separate name instead. Adding it changes nothing about the domain's website, its mail or any other record.
+The record needs a new name, a subdomain, rather than a path on the domain's website, such as `https://example.com/x1-rpc`. dns maps names to addresses, and never sees url paths. So for a path, whatever web server answers for `example.com` today would have to forward it to the validator. Most shared hosting cannot do that, and it would put that host in the middle of every rpc request. A subdomain is a name of its own, so adding it changes nothing about the domain's website, its mail or any other record.
 
 ## Before You Start
 
@@ -18,9 +18,9 @@ dns maps names to addresses. It never sees url paths. So a path such as `https:/
 
 ### Find the Server's Public Address
 
-- Your data center's control panel shows the server's public ipv4 address.
+- Your data center's control panel shows the server's public ipv4 address. This guide writes the server's address as `203.0.113.10`.
 - On the server, `ip -4 addr` shows the same address on its main network interface. If it shows only a private address, the server sits behind address translation, which the tool doesn't support.
-- `apply` checks the record against the `publicIp` setting when you set it, and otherwise against the address the X1 network sees for the validator. It stops when the record names another address.
+- Before it changes anything, `apply` checks that the record names this address, and stops if it names another. It takes the address from the tool's `publicIp` setting, which you can set at the README's next step, [Set the Hostname](../README.md#set-the-hostname). If you leave that setting out, it uses the address the X1 network sees for the validator.
 - Use only the ipv4 address. Do not add an `AAAA` (ipv6) record: `nginx` listens on the ipv4 address alone.
 
 ### Find Who Hosts Your Dns
@@ -48,7 +48,7 @@ Save the whole zone before changing anything:
 
 - If the panel can export the zone file, export it.
 - Otherwise copy every record's text into a file. A screenshot helps, but panels cut off long values on screen, such as domain-verification records. Copy those fields' full text.
-- Note the zone's `SOA` serial number if the panel shows it.
+- Note the zone's serial number, in its `SOA` record, if the panel shows it. The provider's secondary name servers copy the zone only when that number goes up, so after saving you'll check that it did.
 
 ## Form-Based Dns Editors
 
@@ -125,7 +125,7 @@ The fields are the name, the TTL in seconds, the class `IN`, the type and the ad
 
 ### The SOA Serial
 
-The `SOA` record near the top of the file carries a serial number. A provider's secondary name servers copy the zone only when the serial goes up. A change made without a higher serial may never reach them, so some lookups keep the old answer.
+The `SOA` record near the top of the file carries a serial number. A change made without a higher serial may never reach the secondary name servers, so some lookups keep the old answer.
 
 - A common format is the date followed by a two-digit counter, such as `2026010101` for the first change on 2026-01-01.
 - Whatever the format, the new serial must be higher than the old one. Adding one always works.
@@ -163,13 +163,13 @@ dig +short x1-rpc.example.com @ns1.dns-provider.example
 
 ## Certificates and the New Hostname
 
-Once the name resolves to the server and port 443 is open, `nginx`'s ACME module gets a certificate by itself, within seconds of `nginx`'s first start. It proves control of the name through port 443 alone, so port 80 stays closed. It renews the certificate before it expires. For that:
+Fix the dns before you run `apply`. `apply` starts `nginx`, and within seconds `nginx`'s ACME module asks Let's Encrypt for the name's certificate. With a wrong record that request fails, and certificate authorities limit failed attempts. The module proves control of the name through port 443 alone, so port 80 stays closed, and it renews the certificate before it expires. To get and renew it:
 
 - The name must resolve to this server, with no stray `AAAA` record.
 - Port 443 must reach `nginx` from the internet.
 - `CAA` records, if any, must allow the certificate authority.
 
-Fix the dns before you run `apply`, which starts `nginx`. Certificate authorities limit failed attempts. `nginx` writes the module's failures, such as a refusal from Let's Encrypt, to `/var/log/nginx/error.log`.
+`nginx` writes the module's failures, such as a refusal from Let's Encrypt, to `/var/log/nginx/error.log`.
 
 ## Changing or Removing the Record
 

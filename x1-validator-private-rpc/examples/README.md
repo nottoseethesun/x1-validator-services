@@ -1,14 +1,6 @@
 # Examples
 
-`apply` writes each of these files for you, with your own values. They're here to read. Each but the list of hashes opens with a short header that says what it is. The list has none, since `apply` writes it as hash lines alone. The commands below show where each one goes, for a set-up by hand. Don't leave such a copy on a machine where you'll run `apply`. If `apply` finds an `nginx` configuration, a `systemd` drop-in or a key check that it didn't write, it stops, and says to move the file away. The key check is the njs file `nginx` runs on each request.
-
-Replace the placeholders with your own values:
-
-- `x1-rpc.example.com`: your rpc's hostname
-- `203.0.113.10`: the validator's public ipv4 address
-- `HASH`: an api key's SHA-256 hash, in hex
-
-For a set-up by hand, run the copy commands from this feature's folder, `~/x1-validator-services/x1-validator-private-rpc`.
+x1-validator-private-rpc's `apply` command, which the feature's [README](../README.md) describes, writes each of the files below on the validator, with your own values. This folder holds an example of each, written for placeholder values, for you to read:
 
 | Example | What it is |
 | --- | --- |
@@ -20,6 +12,16 @@ For a set-up by hand, run the copy commands from this feature's folder, `~/x1-va
 | `cron/x1-validator-private-rpc-ensure.cron.example` | The `crontab` line that runs `ensure` every minute |
 | `cron/x1-validator-private-rpc-api-key-count.cron.example` | The `crontab` line that checks every few hours that `nginx` holds an api key |
 | `git-hooks/post-merge.example` | The tool's `git` hook in `x1console`'s checkout, which runs `ensure` after an update |
+
+The placeholders:
+
+- `x1-rpc.example.com`: your rpc's hostname
+- `203.0.113.10`: the validator's public ipv4 address
+- `HASH`: an api key's SHA-256 hash, in hex
+
+Each example but `nginx`'s list of hashes opens with a short header that says what it is. The list has none, since `apply` writes it as hash lines alone.
+
+The sections below show where each file goes, for a set-up by hand. Replace the placeholders with your own values, and run the copy commands from this feature's folder, `~/x1-validator-services/x1-validator-private-rpc`. `apply` also installs the key check, the njs file `nginx` runs on each request. It has no example here, since the tool ships it as is. If `apply` finds an `nginx` configuration, a `systemd` drop-in or a key check that it didn't write, it stops, and says to move the file away. So don't leave such a copy on a machine where you'll run `apply`.
 
 ## `nginx`
 

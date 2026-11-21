@@ -1,0 +1,1753 @@
+[
+  {
+    "name": "the mask replaces only the first run",
+    "file": "src/njs/x1-validator-private-rpc.js",
+    "edits": [
+      {
+        "from": ", \"g\");",
+        "to": ", \"\");"
+      }
+    ],
+    "test": "test/njs-key-check.test.js"
+  },
+  {
+    "name": "the mask looks only at the path's start again",
+    "file": "src/njs/x1-validator-private-rpc.js",
+    "edits": [
+      {
+        "from": "new RegExp(`[0-9A-Fa-f]",
+        "to": "new RegExp(`^/+[0-9A-Fa-f]"
+      }
+    ],
+    "test": "test/njs-key-check.test.js"
+  },
+  {
+    "name": "the access log shows the url as sent",
+    "file": "src/cli/render-nginx.js",
+    "edits": [
+      {
+        "from": "'\"$x1_rpc_logged_uri\" $status",
+        "to": "'\"$request_uri\" $status"
+      }
+    ],
+    "test": "test/examples.test.js"
+  },
+  {
+    "name": "a request with no url breaks the log's handler",
+    "file": "src/njs/x1-validator-private-rpc.js",
+    "edits": [
+      {
+        "from": "  if (uri === undefined || uri === null) {\n    return \"\";\n  }\n",
+        "to": ""
+      }
+    ],
+    "test": "test/njs-key-check.test.js"
+  },
+  {
+    "name": "the mask takes only a whole key's run",
+    "file": "src/njs/x1-validator-private-rpc.js",
+    "edits": [
+      {
+        "from": "{${KEY_LENGTH / 2},}",
+        "to": "{${KEY_LENGTH},}"
+      }
+    ],
+    "test": "test/njs-key-check.test.js"
+  },
+  {
+    "name": "the configuration never sets the logged url",
+    "file": "src/cli/render-nginx.js",
+    "edits": [
+      {
+        "from": "    js_set $x1_rpc_logged_uri x1rpc.loggedUri;\n",
+        "to": ""
+      }
+    ],
+    "test": "test/examples.test.js"
+  },
+  {
+    "name": "the log's handler checks undefined but not null",
+    "file": "src/njs/x1-validator-private-rpc.js",
+    "edits": [
+      {
+        "from": "uri === undefined || uri === null",
+        "to": "uri === undefined"
+      }
+    ],
+    "test": "test/njs-key-check.test.js"
+  },
+  {
+    "name": "the drop-in leaves out nginx's own read-only /dev",
+    "file": "src/lib/render-host-files.js",
+    "edits": [
+      {
+        "from": "    \"PrivateDevices=yes\",\n",
+        "to": ""
+      }
+    ],
+    "test": "test/render-host-files.test.js"
+  },
+  {
+    "name": "a refusal puts no file back",
+    "file": "src/cli/apply-nginx.js",
+    "edits": [
+      {
+        "from": "      host.removeRootFile(file.path);\n",
+        "to": ""
+      },
+      {
+        "from": "      host.writeRootFile(file.path, old, file.mode);\n",
+        "to": ""
+      }
+    ],
+    "test": "test/apply-fails-part-way.test.js"
+  },
+  {
+    "name": "the error log leaves out the refused text",
+    "file": "src/cli/apply-nginx.js",
+    "edits": [
+      {
+        "from": "      file.text,\n",
+        "to": ""
+      }
+    ],
+    "test": "test/apply-nginx-start.test.js"
+  },
+  {
+    "name": "the logs folder made for the error log stays off the record",
+    "file": "src/cli/apply-nginx.js",
+    "edits": [
+      {
+        "from": "    record(made(`toolLogsFolder:${paths.logsDir}`));\n",
+        "to": ""
+      }
+    ],
+    "test": "test/apply-fails-part-way.test.js"
+  },
+  {
+    "name": "the key count check asks a question",
+    "file": "src/cli/ensure-there-is-at-least-one-rpc-api-key.js",
+    "edits": [
+      {
+        "from": "const { host, settings, paths, log, options } = run;",
+        "to": "const { host, settings, paths, log, options } = run;\n  await run.prompts.confirm(\"Count the keys?\");"
+      }
+    ],
+    "test": "test/key-commands.test.js"
+  },
+  {
+    "name": "ensure asks a question",
+    "file": "src/cli/ensure.js",
+    "edits": [
+      {
+        "from": "const { host, settings, paths, log, options } = run;",
+        "to": "const { host, settings, paths, log, options } = run;\n  await run.prompts.confirm(\"Check now?\");"
+      }
+    ],
+    "test": "test/ensure.test.js"
+  },
+  {
+    "name": "apply skips nginx -t before it starts nginx",
+    "file": "src/cli/apply-nginx.js",
+    "edits": [
+      {
+        "from": "  const tested = host.sudo(\"nginx\", [\"-t\", \"-c\", settings.nginxConfigPath]);\n  if (tested.status !== 0) {\n    takeBackRefused(context, tested, written);\n  }\n",
+        "to": ""
+      }
+    ],
+    "test": "test/apply-fails-part-way.test.js"
+  },
+  {
+    "name": "apply's password for a file with no record takes 3 tries",
+    "file": "src/cli/apply-key.js",
+    "edits": [
+      {
+        "from": "askKnownPassword(prompts, keys, settings.passwordTries)",
+        "to": "askKnownPassword(prompts, keys, 3)"
+      }
+    ],
+    "test": "test/apply-new-key.test.js"
+  },
+  {
+    "name": "apply's password for a stale saved password takes 3 tries",
+    "file": "src/cli/apply-key.js",
+    "edits": [
+      {
+        "from": "      const tries = settings.passwordTries;",
+        "to": "      const tries = 3;"
+      }
+    ],
+    "test": "test/apply-new-key.test.js"
+  },
+  {
+    "name": "the preflight quotes the solana cli's url again",
+    "file": "src/cli/apply-preflight.js",
+    "edits": [
+      {
+        "from": "\"The solana cli's url names this validator's address or hostname, \" +",
+        "to": "`The solana cli's url, ${url}, names this validator's address or hostname, ` +"
+      }
+    ],
+    "test": "test/apply.test.js"
+  },
+  {
+    "name": "ensure puts the flag back as root",
+    "file": "src/cli/ensure.js",
+    "edits": [
+      {
+        "from": "host.writeUserFile(scriptPath, edit.text, mode);",
+        "to": "host.writeRootFile(scriptPath, edit.text, mode);"
+      }
+    ],
+    "test": "test/ensure.test.js"
+  },
+  {
+    "name": "ensure makes the alert state's folder as root",
+    "file": "src/cli/ensure.js",
+    "edits": [
+      {
+        "from": "host.makeUserDir(path.dirname(paths.alertStatePath), 0o755);",
+        "to": "host.makeRootDir(path.dirname(paths.alertStatePath), \"0755\");"
+      }
+    ],
+    "test": "test/ensure.test.js"
+  },
+  {
+    "name": "add-api-key shows the new keys after nginx's list",
+    "file": "src/cli/add-api-key.js",
+    "edits": [
+      {
+        "from": "  log.info(\"add-api-key\", `Made ${apiKeysCount(count)}. The urls, shown once:`);\n  for (const apiKey of made) {\n    for (const url of apiKeyUrls(hostname, apiKey)) {\n      out(url);\n    }\n  }\n  log.info(\n    \"add-api-key\",\n    \"Save them now: the tool keeps only their hashes, and can't show them again.\",\n  );\n  const total = handListToNginx(run, keys, \"add-api-key\");\n",
+        "to": "  const total = handListToNginx(run, keys, \"add-api-key\");\n  log.info(\"add-api-key\", `Made ${apiKeysCount(count)}. The urls, shown once:`);\n  for (const apiKey of made) {\n    for (const url of apiKeyUrls(hostname, apiKey)) {\n      out(url);\n    }\n  }\n  log.info(\n    \"add-api-key\",\n    \"Save them now: the tool keeps only their hashes, and can't show them again.\",\n  );\n"
+      }
+    ],
+    "test": "test/key-commands.test.js"
+  },
+  {
+    "name": "apply shows the first key after nginx's list",
+    "file": "src/cli/apply-key.js",
+    "edits": [
+      {
+        "from": "  writeHashedApiKeys(host, filePath, opened.keys);\n  log.info(\"keys\", \"Made the first api key. Its urls, shown this once:\");",
+        "to": "  writeHashedApiKeys(host, filePath, opened.keys);\n  publishHashes(context, opened.keys);\n  log.info(\"keys\", \"Made the first api key. Its urls, shown this once:\");"
+      },
+      {
+        "from": "  log.info(\"keys\", SAVE_THE_KEY);\n  publishHashes(context, opened.keys);\n",
+        "to": "  log.info(\"keys\", SAVE_THE_KEY);\n"
+      }
+    ],
+    "test": "test/apply-new-key.test.js"
+  },
+  {
+    "name": "undo-apply deletes the api keys' file before it has sudo again",
+    "file": "src/cli/undo-apply.js",
+    "edits": [
+      {
+        "from": "  askSudoFirst(host);\n  host.removeUserFile(filePath);",
+        "to": "  host.removeUserFile(filePath);"
+      }
+    ],
+    "test": "test/undo-apply-api-keys.test.js"
+  },
+  {
+    "name": "apply makes the saved password's folder even when it was there",
+    "file": "src/cli/apply-key.js",
+    "edits": [
+      {
+        "from": "  if (missing.length > 0) {\n    host.makeRootDir(folder, \"0700\");",
+        "to": "  if (true) {\n    host.makeRootDir(folder, \"0700\");"
+      }
+    ],
+    "test": "test/undo-apply.test.js"
+  },
+  {
+    "name": "whether nginx runs is asked through sudo",
+    "file": "src/lib/systemd.js",
+    "edits": [
+      {
+        "from": "const answered = host.run(\"systemctl\", [\"is-active\", unit]);",
+        "to": "const answered = host.sudo(\"systemctl\", [\"is-active\", unit]);"
+      }
+    ],
+    "test": "test/ensure.test.js"
+  },
+  {
+    "name": "ensure checks the certificate against the settings' hostname",
+    "file": "src/cli/checks.js",
+    "edits": [
+      {
+        "from": "          hostname: setup.hostname,",
+        "to": "          hostname: settings.hostname,"
+      }
+    ],
+    "test": "test/ensure.test.js"
+  },
+  {
+    "name": "url prints the settings' hostname",
+    "file": "src/cli/key-commands.js",
+    "edits": [
+      {
+        "from": "for (const url of apiKeyUrls(setup.hostname, \"KEY\")) {",
+        "to": "for (const url of apiKeyUrls(settings.hostname, \"KEY\")) {"
+      }
+    ],
+    "test": "test/key-commands.test.js"
+  },
+  {
+    "name": "ensure's alerts name the settings' hostname",
+    "file": "src/cli/ensure.js",
+    "edits": [
+      {
+        "from": "    hostname: state.setup.hostname,",
+        "to": "    hostname: settings.hostname,"
+      }
+    ],
+    "test": "test/ensure.test.js"
+  },
+  {
+    "name": "the key count check's alert names the settings' hostname",
+    "file": "src/cli/ensure-there-is-at-least-one-rpc-api-key.js",
+    "edits": [
+      {
+        "from": "on ${state.setup.hostname}: ${problem}",
+        "to": "on ${settings.hostname}: ${problem}"
+      }
+    ],
+    "test": "test/key-commands.test.js"
+  },
+  {
+    "name": "undo-apply looks for root's folders as the account again",
+    "file": "src/cli/undo-apply.js",
+    "edits": [
+      {
+        "from": "removeFolder(asRoot, target, (empty) => host.removeRootDirIfEmpty(empty))",
+        "to": "removeFolder(host, target, (empty) => host.removeRootDirIfEmpty(empty))"
+      }
+    ],
+    "test": "test/undo-apply.test.js"
+  },
+  {
+    "name": "apply records only the saved password's own folder, not the parents install makes",
+    "file": "src/cli/apply-key.js",
+    "edits": [
+      {
+        "from": "const missing = foldersToMake(asRoot, folder);",
+        "to": "const missing = asRoot.exists(folder) ? [] : [folder];"
+      }
+    ],
+    "test": "test/undo-apply.test.js"
+  },
+  {
+    "name": "apply looks for the saved password's folders as the account",
+    "file": "src/cli/apply-key.js",
+    "edits": [
+      {
+        "from": "const missing = foldersToMake(asRoot, folder);",
+        "to": "const missing = foldersToMake(host, folder);"
+      }
+    ],
+    "test": "test/undo-apply.test.js"
+  },
+  {
+    "name": "a bad email is taken, not asked again",
+    "file": "src/cli/add-api-key.js",
+    "edits": [
+      {
+        "from": "if (email === \"\" || isEmail(email)) {",
+        "to": "if (true) {"
+      }
+    ],
+    "test": "test/key-commands.test.js"
+  },
+  {
+    "name": "the typed email is never recorded",
+    "file": "src/cli/hashed-api-keys.js",
+    "edits": [
+      {
+        "from": "const record = { createdAtTimestampMS: host.now(), email };",
+        "to": "const record = { createdAtTimestampMS: host.now(), email: \"\" };"
+      }
+    ],
+    "test": "test/key-commands.test.js"
+  },
+  {
+    "name": "the email is asked before the password",
+    "file": "src/cli/add-api-key.js",
+    "edits": [
+      {
+        "from": "  const { cipherKey } = await askKnownPassword(prompts, keys, tries);\n  const email = await askEmail(prompts);",
+        "to": "  const email = await askEmail(prompts);\n  const { cipherKey } = await askKnownPassword(prompts, keys, tries);"
+      }
+    ],
+    "test": "test/key-commands.test.js"
+  },
+  {
+    "name": "the email isn't trimmed",
+    "file": "src/cli/add-api-key.js",
+    "edits": [
+      {
+        "from": "const email = answer.trim();",
+        "to": "const email = answer;"
+      }
+    ],
+    "test": "test/key-commands.test.js"
+  },
+  {
+    "name": "nothing said before asking again",
+    "file": "src/cli/add-api-key.js",
+    "edits": [
+      {
+        "from": "  prompts.say(NOT_AN_EMAIL);\n",
+        "to": ""
+      }
+    ],
+    "test": "test/key-commands.test.js"
+  },
+  {
+    "name": "sudo is asked before the email",
+    "file": "src/cli/add-api-key.js",
+    "edits": [
+      {
+        "from": "  const email = await askEmail(prompts);",
+        "to": "  askSudoFirst(host);\n  const email = await askEmail(prompts);"
+      },
+      {
+        "from": "  askSudoFirst(host);\n  writeHashedApiKeys",
+        "to": "  writeHashedApiKeys"
+      }
+    ],
+    "test": "test/key-commands.test.js"
+  },
+  {
+    "name": "the real line prompt answers nothing",
+    "file": "src/cli/prompts.js",
+    "edits": [
+      {
+        "from": "line: (prompt) => askLine(prompt, streams),",
+        "to": "line: async () => \"\","
+      }
+    ],
+    "test": "test/small-modules.test.js"
+  },
+  {
+    "name": "the keyed location logs critical errors again",
+    "file": "src/cli/render-nginx.js",
+    "edits": [
+      {
+        "from": "            error_log /dev/null;",
+        "to": "            error_log ${NGINX_LOG_DIR}/nginx-error-keyed.log crit;"
+      }
+    ],
+    "test": "test/examples.test.js"
+  },
+  {
+    "name": "nginx keeps its 60-second default for the request header",
+    "file": "src/cli/render-nginx.js",
+    "edits": [
+      {
+        "from": "    client_header_timeout ${REQUEST_HEADER_TIMEOUT_SECONDS}s;\n",
+        "to": ""
+      }
+    ],
+    "test": "test/examples.test.js"
+  },
+  {
+    "name": "remove-api-key writes the api keys file at the shipped place",
+    "file": "src/cli/remove-api-key.js",
+    "edits": [
+      {
+        "from": "    writeHashedApiKeys(host, filePath, keys);",
+        "to": "    writeHashedApiKeys(host, path.join(host.homeDir(), \".config/x1-validator-services/hashed-api-keys.json\"), keys);"
+      }
+    ],
+    "test": "test/key-commands.test.js"
+  },
+  {
+    "name": "the drop-in starts nginx with the shipped nginx.conf",
+    "file": "src/cli/apply-nginx.js",
+    "edits": [
+      {
+        "from": "      text: renderDropIn({ nginxConfigPath: settings.nginxConfigPath }),",
+        "to": "      text: renderDropIn({ nginxConfigPath: \"/etc/nginx/x1-validator-private-rpc/nginx.conf\" }),"
+      }
+    ],
+    "test": "test/apply-nginx-start.test.js"
+  },
+  {
+    "name": "nginx.conf includes the shipped list of hashes",
+    "file": "src/cli/apply-nginx.js",
+    "edits": [
+      {
+        "from": "        staging,\n        settings,\n",
+        "to": "        staging,\n        settings: { ...settings, hashedApiKeysMapPath: \"/etc/nginx/x1-validator-private-rpc/hashed-api-keys.map\" },\n"
+      }
+    ],
+    "test": "test/apply.test.js"
+  },
+  {
+    "name": "a refusal puts back only the files nginx -t reads",
+    "file": "src/cli/apply-nginx.js",
+    "edits": [
+      {
+        "from": "  const takenBack = written.files.filter((file) =>\n    written.wrote.has(file.name),\n  );",
+        "to": "  const takenBack = written.files.filter((file) =>\n    written.wrote.has(file.name) && [\"nginxConfigFile\", \"njsModuleFile\"].includes(file.name),\n  );"
+      }
+    ],
+    "test": "test/apply-fails-part-way.test.js"
+  },
+  {
+    "name": "systemd reads the drop-in before nginx -t",
+    "file": "src/cli/apply-nginx.js",
+    "edits": [
+      {
+        "from": "  const tested = host.sudo(\"nginx\", [\"-t\", \"-c\", settings.nginxConfigPath]);",
+        "to": "  systemctl(host, [\"daemon-reload\"]);\n  const tested = host.sudo(\"nginx\", [\"-t\", \"-c\", settings.nginxConfigPath]);"
+      },
+      {
+        "from": "   * then puts back.\n   */\n  systemctl(host, [\"daemon-reload\"]);\n",
+        "to": "   * then puts back.\n   */\n"
+      }
+    ],
+    "test": "test/apply-nginx-start.test.js"
+  },
+  {
+    "name": "nginx -t tests nginx's own default configuration",
+    "file": "src/cli/apply-nginx.js",
+    "edits": [
+      {
+        "from": "host.sudo(\"nginx\", [\"-t\", \"-c\", settings.nginxConfigPath]);",
+        "to": "host.sudo(\"nginx\", [\"-t\"]);"
+      }
+    ],
+    "test": "test/apply-fails-part-way.test.js"
+  },
+  {
+    "name": "nginx -t tests the packaged /etc/nginx/nginx.conf",
+    "file": "src/cli/apply-nginx.js",
+    "edits": [
+      {
+        "from": "host.sudo(\"nginx\", [\"-t\", \"-c\", settings.nginxConfigPath]);",
+        "to": "host.sudo(\"nginx\", [\"-t\", \"-c\", \"/etc/nginx/nginx.conf\"]);"
+      }
+    ],
+    "test": "test/apply-fails-part-way.test.js"
+  },
+  {
+    "name": "apply writes the start script 0644",
+    "file": "src/cli/apply-watchers.js",
+    "edits": [
+      {
+        "from": "      host.writeUserFile(scriptPath, text, mode);",
+        "to": "      host.writeUserFile(scriptPath, text, 0o644);"
+      }
+    ],
+    "test": "test/ensure.test.js"
+  },
+  {
+    "name": "ensure writes the start script 0644",
+    "file": "src/cli/ensure.js",
+    "edits": [
+      {
+        "from": "  host.writeUserFile(scriptPath, edit.text, mode);",
+        "to": "  host.writeUserFile(scriptPath, edit.text, 0o644);"
+      }
+    ],
+    "test": "test/ensure.test.js"
+  },
+  {
+    "name": "turn-off and turn-on write the start script 0644",
+    "file": "src/cli/turn-private-rpc.js",
+    "edits": [
+      {
+        "from": "  host.writeUserFile(scriptPath, text, mode);",
+        "to": "  host.writeUserFile(scriptPath, text, 0o644);"
+      }
+    ],
+    "test": "test/turn-private-rpc.test.js"
+  },
+  {
+    "name": "undo-apply writes the start script 0644",
+    "file": "src/cli/undo-apply.js",
+    "edits": [
+      {
+        "from": "    host.writeUserFile(scriptPath, text, mode);",
+        "to": "    host.writeUserFile(scriptPath, text, 0o644);"
+      }
+    ],
+    "test": "test/undo-apply.test.js"
+  },
+  {
+    "name": "apply writes only its own lines to the crontab",
+    "file": "src/cli/apply-watchers.js",
+    "edits": [
+      {
+        "from": "  const rest = kept.join(\"\\n\");",
+        "to": "  const rest = \"\";"
+      }
+    ],
+    "test": "test/apply.test.js"
+  },
+  {
+    "name": "undo-apply writes an empty crontab",
+    "file": "src/cli/undo-apply.js",
+    "edits": [
+      {
+        "from": "  const written = host.run(\"crontab\", [\"-\"], { input: kept.join(\"\\n\") });",
+        "to": "  const written = host.run(\"crontab\", [\"-\"], { input: \"\" });"
+      }
+    ],
+    "test": "test/undo-apply.test.js"
+  },
+  {
+    "name": "the certificate check compares the hostname with case",
+    "file": "src/cli/checks.js",
+    "edits": [
+      {
+        "from": "  const wanted = `dns:${hostname.toLowerCase()}`;",
+        "to": "  const wanted = `dns:${hostname}`;"
+      }
+    ],
+    "test": "test/checks.test.js"
+  },
+  {
+    "name": "ensure ignores the start script's lock",
+    "file": "src/cli/ensure.js",
+    "edits": [
+      {
+        "from": "  const release = lockStartScript(host, paths.statePath);",
+        "to": "  const release = () => {};"
+      }
+    ],
+    "test": "test/ensure.test.js"
+  },
+  {
+    "name": "turn-off-private-rpc goes by its read from before the question",
+    "file": "src/cli/turn-private-rpc.js",
+    "edits": [
+      {
+        "from": "    const current = readSwitch(run);",
+        "to": "    const current = { state, scriptPath, text };"
+      }
+    ],
+    "test": "test/turn-private-rpc.test.js"
+  },
+  {
+    "name": "turn-off-private-rpc ignores the start script's lock",
+    "file": "src/cli/turn-private-rpc.js",
+    "edits": [
+      {
+        "from": "  await withStartScriptLock(host, paths.statePath, () => {",
+        "to": "  await ((change) => change())(() => {"
+      }
+    ],
+    "test": "test/turn-private-rpc.test.js"
+  },
+  {
+    "name": "undo-apply's flag step ignores the start script's lock",
+    "file": "src/cli/undo-apply.js",
+    "edits": [
+      {
+        "from": "      run: () =>\n        withStartScriptLock(host, paths.statePath, () =>\n          removeFlag(host, target),\n        ),",
+        "to": "      run: () => removeFlag(host, target),"
+      }
+    ],
+    "test": "test/undo-apply.test.js"
+  },
+  {
+    "name": "ensure's line for a run made too early drops the configured wait",
+    "file": "src/cli/ensure.js",
+    "edits": [
+      {
+        "from": "        `for ${seconds} seconds.`,",
+        "to": "        \"for a while.\","
+      }
+    ],
+    "test": "test/ensure.test.js"
+  },
+  {
+    "name": "the TPM2 message promises a second chance again",
+    "file": "src/cli/apply-key.js",
+    "edits": [
+      {
+        "from": "      \"in another terminal before you answer, since apply asks this only \" +\n      \"once.\"",
+        "to": "      \"then run apply again before saving.\""
+      }
+    ],
+    "test": "test/small-modules.test.js"
+  },
+  {
+    "name": "ensure puts the flag back from the git hook while private rpc is off",
+    "file": "src/cli/ensure.js",
+    "edits": [
+      {
+        "from": "    if (privateRpc !== \"on\") {",
+        "to": "    if (privateRpc !== \"on\" && options.fromGitHook !== true) {"
+      }
+    ],
+    "test": "test/turn-private-rpc.test.js"
+  },
+  {
+    "name": "undo-apply copies apply's backup over the start script",
+    "file": "src/cli/undo-apply.js",
+    "edits": [
+      {
+        "from": "        withStartScriptLock(host, paths.statePath, () =>\n          removeFlag(host, target),\n        ),",
+        "to": "        withStartScriptLock(host, paths.statePath, () => {\n          const keys = [...readRecord(host, paths.whatApplyChangedPath).keys()];\n          const backupKey = keys.find((k) => k.startsWith(\"startScriptBackup:\"));\n          const backup = partsOf(backupKey).target;\n          host.writeUserFile(target, host.readText(backup), host.fileMode(target));\n        }),"
+      }
+    ],
+    "test": "test/undo-apply.test.js"
+  },
+  {
+    "name": "turn-off writes back its copy from before the question",
+    "file": "src/cli/turn-private-rpc.js",
+    "edits": [
+      {
+        "from": "    const current = readSwitch(run);\n    const removed = removePrivateRpc(current.text, current.scriptPath);\n    current.state.privateRpc = \"off\";\n    writeState(host, paths.statePath, current.state);\n    if (removed.changed === true) {\n      writeScript(host, current.scriptPath, removed.text);\n    }",
+        "to": "    state.privateRpc = \"off\";\n    writeState(host, paths.statePath, state);\n    writeScript(host, scriptPath, edit.text);"
+      }
+    ],
+    "test": "test/turn-private-rpc.test.js"
+  },
+  {
+    "name": "the git hook runs another file than the tool's command",
+    "file": "src/cli/apply-watchers.js",
+    "edits": [
+      {
+        "from": "  const hook = renderGitHook({ nodeBin, toolCli: paths.toolCli });",
+        "to": "  const hook = renderGitHook({ nodeBin, toolCli: `${paths.toolCli}.old` });"
+      }
+    ],
+    "test": "test/apply.test.js"
+  },
+  {
+    "name": "ensure's cron line runs another file than the tool's command",
+    "file": "src/cli/apply-watchers.js",
+    "edits": [
+      {
+        "from": "    renderCronLine({\n      nodeBin,\n      toolCli: paths.toolCli,",
+        "to": "    renderCronLine({\n      nodeBin,\n      toolCli: `${paths.toolCli}.old`,"
+      }
+    ],
+    "test": "test/apply.test.js"
+  },
+  {
+    "name": "the key count check's cron line names a command the tool lacks",
+    "file": "src/cli/render-watchers.js",
+    "edits": [
+      {
+        "from": "    `${shellQuote(toolCli)} ensure-there-is-at-least-one-rpc-api-key ` +",
+        "to": "    `${shellQuote(toolCli)} ensure-there-is-at-least-one-api-key ` +"
+      }
+    ],
+    "test": "test/render-watchers.test.js"
+  },
+  {
+    "name": "the key count check's cron line runs another file than the tool's command",
+    "file": "src/cli/render-watchers.js",
+    "edits": [
+      {
+        "from": "    `${shellQuote(toolCli)} ensure-there-is-at-least-one-rpc-api-key ` +",
+        "to": "    `${shellQuote(logPath)} ensure-there-is-at-least-one-rpc-api-key ` +"
+      }
+    ],
+    "test": "test/render-watchers.test.js"
+  },
+  {
+    "name": "ensure's cron line doesn't make its folders",
+    "file": "src/cli/render-watchers.js",
+    "edits": [
+      {
+        "from": "    `* * * * * ${makeFoldersOf([lockPath, logPath])}flock -n ` +",
+        "to": "    `* * * * * flock -n ` +"
+      }
+    ],
+    "test": "test/render-watchers.test.js"
+  },
+  {
+    "name": "ensure's cron line makes only its log's folder, not tmp/",
+    "file": "src/cli/render-watchers.js",
+    "edits": [
+      {
+        "from": "    `* * * * * ${makeFoldersOf([lockPath, logPath])}flock -n ` +",
+        "to": "    `* * * * * ${makeFoldersOf([logPath])}flock -n ` +"
+      }
+    ],
+    "test": "test/render-watchers.test.js"
+  },
+  {
+    "name": "the key count line doesn't make logs/",
+    "file": "src/cli/render-watchers.js",
+    "edits": [
+      {
+        "from": "    `0 */${hours} * * * ${makeFoldersOf([logPath])}${shellQuote(nodeBin)} ` +",
+        "to": "    `0 */${hours} * * * ${shellQuote(nodeBin)} ` +"
+      }
+    ],
+    "test": "test/render-watchers.test.js"
+  },
+  {
+    "name": "the cron lines make the folders with the umask's mode, not apply's",
+    "file": "src/cli/render-watchers.js",
+    "edits": [
+      {
+        "from": "  return `mkdir -m 755 ${folders.join(\" \")} 2>/dev/null; `;",
+        "to": "  return `mkdir ${folders.join(\" \")} 2>/dev/null; `;"
+      }
+    ],
+    "test": "test/render-watchers.test.js"
+  },
+  {
+    "name": "the cron lines make the folders above theirs too, at the old place after a move",
+    "file": "src/cli/render-watchers.js",
+    "edits": [
+      {
+        "from": "  return `mkdir -m 755 ${folders.join(\" \")} 2>/dev/null; `;",
+        "to": "  return `mkdir -p -m 755 ${folders.join(\" \")} 2>/dev/null; `;"
+      }
+    ],
+    "test": "test/render-watchers.test.js"
+  },
+  {
+    "name": "the cron lines stop whenever a folder is there already",
+    "file": "src/cli/render-watchers.js",
+    "edits": [
+      {
+        "from": "  return `mkdir -m 755 ${folders.join(\" \")} 2>/dev/null; `;",
+        "to": "  return `mkdir -m 755 ${folders.join(\" \")} && `;"
+      }
+    ],
+    "test": "test/render-watchers.test.js"
+  },
+  {
+    "name": "mkdir's complaint about a folder that's there goes to cron every minute",
+    "file": "src/cli/render-watchers.js",
+    "edits": [
+      {
+        "from": "  return `mkdir -m 755 ${folders.join(\" \")} 2>/dev/null; `;",
+        "to": "  return `mkdir -m 755 ${folders.join(\" \")}; `;"
+      }
+    ],
+    "test": "test/render-watchers.test.js"
+  },
+  {
+    "name": "the cron lines make their files as folders, not the files' folders",
+    "file": "src/cli/render-watchers.js",
+    "edits": [
+      {
+        "from": "  const folders = files.map((file) => shellQuote(path.dirname(file)));",
+        "to": "  const folders = files.map((file) => shellQuote(file));"
+      }
+    ],
+    "test": "test/render-watchers.test.js"
+  },
+  {
+    "name": "the key commands reload without making nginx's log folder",
+    "file": "src/cli/hashed-api-keys.js",
+    "edits": [
+      {
+        "from": "    host.makeRootDir(NGINX_LOG_DIR, NGINX_LOG_DIR_MODE);",
+        "to": ""
+      }
+    ],
+    "test": "test/hashed-api-keys.test.js"
+  },
+  {
+    "name": "the key commands make nginx's log folder even when nginx is stopped",
+    "file": "src/cli/hashed-api-keys.js",
+    "edits": [
+      {
+        "from": "  const running = unitActiveState(host, NGINX_UNIT);\n  if (running !== \"active\") {\n    return false;\n  }\n  if (!host.exists(NGINX_LOG_DIR)) {",
+        "to": "  if (!host.exists(NGINX_LOG_DIR)) {\n    host.makeRootDir(NGINX_LOG_DIR, NGINX_LOG_DIR_MODE);\n  }\n  const running = unitActiveState(host, NGINX_UNIT);\n  if (running !== \"active\") {\n    return false;\n  }\n  if (!host.exists(NGINX_LOG_DIR)) {"
+      }
+    ],
+    "test": "test/hashed-api-keys.test.js"
+  },
+  {
+    "name": "the key commands make nginx's log folder after the reload, too late",
+    "file": "src/cli/hashed-api-keys.js",
+    "edits": [
+      {
+        "from": "  if (!host.exists(NGINX_LOG_DIR)) {\n    host.makeRootDir(NGINX_LOG_DIR, NGINX_LOG_DIR_MODE);\n  }\n  systemctl(host, [\"reload\", NGINX_UNIT]);",
+        "to": "  systemctl(host, [\"reload\", NGINX_UNIT]);\n  if (!host.exists(NGINX_LOG_DIR)) {\n    host.makeRootDir(NGINX_LOG_DIR, NGINX_LOG_DIR_MODE);\n  }"
+      }
+    ],
+    "test": "test/hashed-api-keys.test.js"
+  },
+  {
+    "name": "the key commands make nginx's log folder with a mode other than the package's",
+    "file": "src/cli/hashed-api-keys.js",
+    "edits": [
+      {
+        "from": "    host.makeRootDir(NGINX_LOG_DIR, NGINX_LOG_DIR_MODE);",
+        "to": "    host.makeRootDir(NGINX_LOG_DIR, \"0750\", \"nginx\");"
+      }
+    ],
+    "test": "test/hashed-api-keys.test.js"
+  },
+  {
+    "name": "the drop-in doesn't make nginx's log folder before a start",
+    "file": "src/lib/render-host-files.js",
+    "edits": [
+      {
+        "from": "    `ExecStartPre=/bin/sh -c '${makeLogFolder}'`,\n",
+        "to": ""
+      }
+    ],
+    "test": "test/render-host-files.test.js"
+  },
+  {
+    "name": "the drop-in resets the mode of a log folder that's there",
+    "file": "src/lib/render-host-files.js",
+    "edits": [
+      {
+        "from": "    `test -d ${NGINX_LOG_DIR} || ` +\n",
+        "to": "    \"\" +\n"
+      }
+    ],
+    "test": "test/render-host-files.test.js"
+  },
+  {
+    "name": "the preflight misses a cli url naming the public address",
+    "file": "src/cli/apply-preflight.js",
+    "edits": [
+      {
+        "from": "(url.includes(publicIp) || url.includes(hostname))",
+        "to": "url.includes(hostname)"
+      }
+    ],
+    "test": "test/apply.test.js"
+  },
+  {
+    "name": "the preflight misses a cli url naming the hostname",
+    "file": "src/cli/apply-preflight.js",
+    "edits": [
+      {
+        "from": "(url.includes(publicIp) || url.includes(hostname))",
+        "to": "url.includes(publicIp)"
+      }
+    ],
+    "test": "test/apply.test.js"
+  },
+  {
+    "name": "apply records a flag it found as one it added",
+    "file": "src/cli/apply-watchers.js",
+    "edits": [
+      {
+        "from": "    record(found(flagKey));",
+        "to": "    record(made(flagKey));"
+      }
+    ],
+    "test": "test/undo-apply-later-changes.test.js"
+  },
+  {
+    "name": "apply records an nginx account it found as one it made",
+    "file": "src/cli/apply-install.js",
+    "edits": [
+      {
+        "from": "accountExisted === true ? found(\"nginxAccount\") : made(\"nginxAccount\")",
+        "to": "made(\"nginxAccount\")"
+      }
+    ],
+    "test": "test/undo-apply-later-changes.test.js"
+  },
+  {
+    "name": "while private rpc is off, ensure drops every check, nginx and the certificate included",
+    "file": "src/cli/ensure.js",
+    "edits": [
+      {
+        "from": "      : found.filter((check) => !PRIVACY_CHECKS.includes(check.name));",
+        "to": "      : [];"
+      }
+    ],
+    "test": "test/turn-private-rpc.test.js"
+  },
+  {
+    "name": "while private rpc is off, ensure skips nginx and the certificate too",
+    "file": "src/cli/ensure.js",
+    "edits": [
+      {
+        "from": "const PRIVACY_CHECKS = [\"flag-in-script\", \"flag-running\", \"rpc-private\"];",
+        "to": "const PRIVACY_CHECKS = [\"flag-in-script\", \"flag-running\", \"rpc-private\", \"nginx-active\", \"certificate\"];"
+      }
+    ],
+    "test": "test/turn-private-rpc.test.js"
+  },
+  {
+    "name": "while private rpc is off, ensure skips the certificate too",
+    "file": "src/cli/ensure.js",
+    "edits": [
+      {
+        "from": "const PRIVACY_CHECKS = [\"flag-in-script\", \"flag-running\", \"rpc-private\"];",
+        "to": "const PRIVACY_CHECKS = [\"flag-in-script\", \"flag-running\", \"rpc-private\", \"certificate\"];"
+      }
+    ],
+    "test": "test/turn-private-rpc.test.js"
+  },
+  {
+    "name": "while private rpc is off, ensure skips nginx-active too",
+    "file": "src/cli/ensure.js",
+    "edits": [
+      {
+        "from": "const PRIVACY_CHECKS = [\"flag-in-script\", \"flag-running\", \"rpc-private\"];",
+        "to": "const PRIVACY_CHECKS = [\"flag-in-script\", \"flag-running\", \"rpc-private\", \"nginx-active\"];"
+      }
+    ],
+    "test": "test/turn-private-rpc.test.js"
+  },
+  {
+    "name": "the settings keep the shipped file's notes",
+    "file": "src/lib/settings.js",
+    "edits": [
+      {
+        "from": "name !== \"$schema\" && !name.startsWith(\"_\")",
+        "to": "name !== \"$schema\""
+      }
+    ],
+    "test": "test/settings.test.js"
+  },
+  {
+    "name": "the settings drop every key but $schema's that starts with a letter after _ (notes kept as settings)",
+    "file": "src/lib/settings.js",
+    "edits": [
+      {
+        "from": "!name.startsWith(\"_\")",
+        "to": "!name.startsWith(\"__\")"
+      }
+    ],
+    "test": "test/settings.test.js"
+  },
+  {
+    "name": "ensure's gate line goes back to the gate page's old name",
+    "file": "src/cli/checks.js",
+    "edits": [
+      {
+        "from": "detail: `${GATE_PAGE_NAME} says ${gate}.`",
+        "to": "detail: `The gate page says ${gate}.`"
+      }
+    ],
+    "test": "test/ensure.test.js"
+  },
+  {
+    "name": "apply's no-certificate message goes back to the gate page's old name",
+    "file": "src/cli/apply-nginx.js",
+    "edits": [
+      {
+        "from": "`No certificate in time: ${GATE_PAGE_NAME} says ${gate}.`",
+        "to": "`No certificate in time: the gate page says ${gate}.`"
+      }
+    ],
+    "test": "test/apply.test.js"
+  },
+  {
+    "name": "apply's last nginx line goes back to vague wording",
+    "file": "src/cli/apply-nginx.js",
+    "edits": [
+      {
+        "from": "requests without a key or with a random one got 403.`",
+        "to": "requests got the answers they should.`"
+      }
+    ],
+    "test": "test/apply-new-key.test.js"
+  },
+  {
+    "name": "ensure never sends the flag-is-back alert",
+    "file": "src/cli/ensure.js",
+    "edits": [
+      {
+        "from": "flagRestored: flag?.status === \"restored\",",
+        "to": "flagRestored: false,"
+      }
+    ],
+    "test": "test/ensure.test.js"
+  },
+  {
+    "name": "ensure sends the flag-is-back alert when it couldn't put the flag back too",
+    "file": "src/cli/ensure.js",
+    "edits": [
+      {
+        "from": "flagRestored: flag?.status === \"restored\",",
+        "to": "flagRestored: flag?.status !== \"present\","
+      }
+    ],
+    "test": "test/ensure.test.js"
+  },
+  {
+    "name": "undo-apply's line for a folder kept by what stays goes back to the old wording",
+    "file": "src/cli/undo-apply.js",
+    "edits": [
+      {
+        "from": "`Skipped, since ${holder} stays: ${step.what}.`",
+        "to": "`Kept, since ${holder} stays: the change behind \"${step.what}\".`"
+      }
+    ],
+    "test": "test/undo-apply-api-keys.test.js"
+  },
+  {
+    "name": "undo-apply's line for a step a no keeps goes back to the old wording",
+    "file": "src/cli/undo-apply.js",
+    "edits": [
+      {
+        "from": "`Skipped, as asked: ${step.what}.`",
+        "to": "`Kept, as asked: the change behind \"${step.what}\".`"
+      }
+    ],
+    "test": "test/undo-apply-api-keys.test.js"
+  },
+  {
+    "name": "apply's last nginx line leaves out the new key",
+    "file": "src/cli/apply-nginx.js",
+    "edits": [
+      {
+        "from": "const keyed = key === \"\" ? \"\" : \"the new api key got through, and \";",
+        "to": "const keyed = \"\";"
+      }
+    ],
+    "test": "test/apply-new-key.test.js"
+  },
+  {
+    "name": "the tool's purpose line goes back to leaving out private",
+    "file": "src/cli/program.js",
+    "edits": [
+      {
+        "from": "\"Makes an X1 validator's rpc private, puts it behind an https url that \" +",
+        "to": "\"Puts an X1 validator's rpc behind an https url that \" +"
+      }
+    ],
+    "test": "test/cli.test.js"
+  },
+  {
+    "name": "apply's install stage doesn't mask nginx.service",
+    "file": "src/cli/apply-install.js",
+    "edits": [
+      {
+        "from": "      systemctl(host, [\"mask\", NGINX_UNIT]);\n",
+        "to": ""
+      }
+    ],
+    "test": "test/apply.test.js"
+  },
+  {
+    "name": "apply's install stage unmasks nginx.service in place of masking it",
+    "file": "src/cli/apply-install.js",
+    "edits": [
+      {
+        "from": "systemctl(host, [\"mask\", NGINX_UNIT]);",
+        "to": "systemctl(host, [\"unmask\", NGINX_UNIT]);"
+      }
+    ],
+    "test": "test/apply.test.js"
+  },
+  {
+    "name": "the settings check refuses every other file again, editors' leftovers included",
+    "file": "src/lib/settings.js",
+    "edits": [
+      {
+        "from": "        name !== SETTINGS_FILE &&\n        name.endsWith(\".json\") &&\n        !name.startsWith(\".\"),",
+        "to": "        name !== SETTINGS_FILE,"
+      }
+    ],
+    "test": "test/settings.test.js"
+  },
+  {
+    "name": "the settings check refuses no file, a misnamed settings file included",
+    "file": "src/lib/settings.js",
+    "edits": [
+      {
+        "from": "        name !== SETTINGS_FILE &&\n        name.endsWith(\".json\") &&\n        !name.startsWith(\".\"),",
+        "to": "        false,"
+      }
+    ],
+    "test": "test/settings.test.js"
+  },
+  {
+    "name": "undo-apply's dry run doesn't say a yes deletes the keys' file first",
+    "file": "src/cli/undo-apply.js",
+    "edits": [
+      {
+        "from": "`After a yes, it would first delete every api key, with ${filePath}. ` +",
+        "to": "`` +"
+      }
+    ],
+    "test": "test/undo-apply.test.js"
+  },
+  {
+    "name": "undo-apply ends with no closing line when anything stays",
+    "file": "src/cli/undo-apply.js",
+    "edits": [
+      {
+        "from": "`The steps above that failed, were skipped or were kept stay in ${recordPath}. ` +\n      \"Running undo-apply again retries those that failed or were skipped. \" +\n      \"Any kept while nginx is installed go at the first run after you \" +\n      \"purge nginx.\",",
+        "to": "\"\","
+      }
+    ],
+    "test": "test/undo-apply.test.js"
+  },
+  {
+    "name": "undo-apply stops, disables and masks nginx even once its package is gone",
+    "file": "src/cli/undo-apply.js",
+    "edits": [
+      {
+        "from": "  if (!isInstalled(host, \"nginx\")) {\n    return \"nginx isn't installed, so there's nothing to stop, disable or mask.\";\n  }\n",
+        "to": ""
+      }
+    ],
+    "test": "test/undo-apply-api-keys.test.js"
+  },
+  {
+    "name": "the settings check refuses a hidden json file, such as Emacs's lock",
+    "file": "src/lib/settings.js",
+    "edits": [
+      {
+        "from": " &&\n        !name.startsWith(\".\"),",
+        "to": ","
+      }
+    ],
+    "test": "test/settings.test.js"
+  },
+  {
+    "name": "nginx's error log goes outside nginx's own folder, where nothing rotates it",
+    "file": "src/cli/render-nginx.js",
+    "edits": [
+      {
+        "from": "error_log ${NGINX_LOG_DIR}/error.log notice;",
+        "to": "error_log /var/log/x1-validator-private-rpc/error.log notice;"
+      }
+    ],
+    "test": "test/examples.test.js"
+  },
+  {
+    "name": "nginx's access log isn't a .log file, so nginx.org's rule skips it",
+    "file": "src/cli/render-nginx.js",
+    "edits": [
+      {
+        "from": "access_log ${NGINX_LOG_DIR}/access.log x1_rpc;",
+        "to": "access_log ${NGINX_LOG_DIR}/access.txt x1_rpc;"
+      }
+    ],
+    "test": "test/examples.test.js"
+  },
+  {
+    "name": "apply doesn't make nginx's log folder again when it's gone",
+    "file": "src/cli/apply-nginx.js",
+    "edits": [
+      {
+        "from": "  if (host.exists(NGINX_LOG_DIR)) {\n    return;\n  }",
+        "to": "  if (true) {\n    return;\n  }"
+      }
+    ],
+    "test": "test/apply-nginx-start.test.js"
+  },
+  {
+    "name": "apply makes nginx's log folder with a mode other than the package's",
+    "file": "src/cli/apply-nginx.js",
+    "edits": [
+      {
+        "from": "    host.makeRootDir(NGINX_LOG_DIR, NGINX_LOG_DIR_MODE),",
+        "to": "    host.makeRootDir(NGINX_LOG_DIR, \"0750\"),"
+      }
+    ],
+    "test": "test/apply-nginx-start.test.js"
+  },
+  {
+    "name": "the drop-in makes nginx's log folder with a mode other than the package's",
+    "file": "src/lib/render-host-files.js",
+    "edits": [
+      {
+        "from": "`install -d -m ${NGINX_LOG_DIR_MODE} ${NGINX_LOG_DIR}`",
+        "to": "`install -d -m 0750 ${NGINX_LOG_DIR}`"
+      }
+    ],
+    "test": "test/render-host-files.test.js"
+  },
+  {
+    "name": "the upgrade check's gate message drops what the gate page is",
+    "file": "util/validate-nginx-upgrade/judge.js",
+    "edits": [
+      {
+        "from": "`${when} ${GATE_PAGE_NAME} never said ok.",
+        "to": "`${when} the gate page never said ok."
+      }
+    ],
+    "test": "test/validate-nginx-upgrade.test.js"
+  },
+  {
+    "name": "the flag-is-missing alert never repeats",
+    "file": "src/cli/alerts.js",
+    "edits": [
+      {
+        "from": "\"--private-rpc is missing from the start script, and ensure couldn't put it back\",\n        repeatMs: reminderMs,",
+        "to": "\"--private-rpc is missing from the start script, and ensure couldn't put it back\",\n        repeatMs: null,"
+      }
+    ],
+    "test": "test/alerts.test.js"
+  },
+  {
+    "name": "the flag-is-missing alert repeats at the certificate alert's interval",
+    "file": "src/cli/alerts.js",
+    "edits": [
+      {
+        "from": "\"--private-rpc is missing from the start script, and ensure couldn't put it back\",\n        repeatMs: reminderMs,",
+        "to": "\"--private-rpc is missing from the start script, and ensure couldn't put it back\",\n        repeatMs: certificateReminderMs,"
+      }
+    ],
+    "test": "test/alerts.test.js"
+  },
+  {
+    "name": "a held package counts as not installed again",
+    "file": "src/lib/apt.js",
+    "edits": [
+      {
+        "from": "/^\\S+ ok installed (\\S+)$/",
+        "to": "/^install ok installed (\\S+)$/"
+      }
+    ],
+    "test": "test/parsers.test.js"
+  },
+  {
+    "name": "undo-apply says nothing of a purge by hand once nginx is gone",
+    "file": "src/cli/undo-apply.js",
+    "edits": [
+      {
+        "from": "  return name === \"nginx\" ? NGINX_GONE_ALREADY : `${name} isn't installed.`;",
+        "to": "  return `${name} isn't installed.`;"
+      }
+    ],
+    "test": "test/apply-fails-part-way.test.js"
+  },
+  {
+    "name": "a refused setting no longer says what it must be",
+    "file": "src/lib/settings.js",
+    "edits": [
+      {
+        "from": "    descriptions.get(name) ?? \"\",\n",
+        "to": ""
+      }
+    ],
+    "test": "test/settings.test.js"
+  },
+  {
+    "name": "installedVersion takes the status line's last word, so a removed package reads as installed",
+    "file": "src/lib/apt.js",
+    "edits": [
+      {
+        "from": "  return result.status === 0 ? parseDpkgQuery(result.stdout) : null;",
+        "to": "  return result.status === 0 ? result.stdout.trim().split(\" \").at(-1) : null;"
+      }
+    ],
+    "test": "test/undo-apply-later-changes.test.js"
+  },
+  {
+    "name": "undo-apply never keeps nginx's packages on record",
+    "file": "src/cli/undo-apply.js",
+    "edits": [
+      {
+        "from": "    nginxPackage: () =>\n      isInstalled(host, target)\n",
+        "to": "    nginxPackage: () =>\n      false\n"
+      }
+    ],
+    "test": "test/undo-apply-api-keys.test.js"
+  },
+  {
+    "name": "undo-apply takes nginx's account, repository and mask while nginx is installed",
+    "file": "src/cli/undo-apply.js",
+    "edits": [
+      {
+        "from": "    isInstalled(host, \"nginx\") ? { what, keep: true, note } : make();",
+        "to": "    make();"
+      }
+    ],
+    "test": "test/undo-apply-api-keys.test.js"
+  },
+  {
+    "name": "undo-apply keeps nginx without saying what stays and how to purge it",
+    "file": "src/cli/undo-apply.js",
+    "edits": [
+      {
+        "from": "                ? NGINX_STAYS\n",
+        "to": "                ? undefined\n"
+      }
+    ],
+    "test": "test/undo-apply.test.js"
+  },
+  {
+    "name": "undo-apply's kept steps say only Kept",
+    "file": "src/cli/undo-apply.js",
+    "edits": [
+      {
+        "from": "step.note ?? `Kept: ${step.what}.`",
+        "to": "`Kept: ${step.what}.`"
+      }
+    ],
+    "test": "test/undo-apply.test.js"
+  },
+  {
+    "name": "a refused setting quotes a key pasted into it",
+    "file": "src/lib/settings.js",
+    "edits": [
+      {
+        "from": "  const shown = maskKeyLikeRuns(JSON.stringify(value));",
+        "to": "  const shown = JSON.stringify(value);"
+      }
+    ],
+    "test": "test/settings.test.js"
+  },
+  {
+    "name": "a refused path setting leaves out its shared definition",
+    "file": "src/lib/settings.js",
+    "edits": [
+      {
+        "from": "[rule.description, shared?.description]",
+        "to": "[rule.description]"
+      }
+    ],
+    "test": "test/settings.test.js"
+  },
+  {
+    "name": "undo-apply leaves the on/off choice on",
+    "file": "src/cli/undo-apply.js",
+    "edits": [
+      {
+        "from": "    state.privateRpc = \"\";\n",
+        "to": ""
+      }
+    ],
+    "test": "test/turn-private-rpc.test.js"
+  },
+  {
+    "name": "the preflight skips the port check whenever nginx is on record, running or not",
+    "file": "src/cli/apply-preflight.js",
+    "edits": [
+      {
+        "from": "    ours === true && unitActiveState(host, NGINX_UNIT) === \"active\";",
+        "to": "    ours === true;"
+      }
+    ],
+    "test": "test/undo-apply-later-changes.test.js"
+  },
+  {
+    "name": "apply records nginx certificate folders as made, so undo-apply deletes the certificates",
+    "file": "src/cli/apply-nginx.js",
+    "edits": [
+      {
+        "from": "    record(there === true ? found(key) : made(key));",
+        "to": "    record(made(key));"
+      }
+    ],
+    "test": "test/undo-apply.test.js"
+  },
+  {
+    "name": "apply records the certificate folders before nginx -t makes them",
+    "file": "src/cli/apply-nginx.js",
+    "edits": [
+      {
+        "from": "  const tested = host.sudo(\"nginx\", [\"-t\", \"-c\", settings.nginxConfigPath]);",
+        "to": "  recordCertificateFolders(context);\n  const tested = host.sudo(\"nginx\", [\"-t\", \"-c\", settings.nginxConfigPath]);"
+      },
+      {
+        "from": "  systemctl(host, [\"daemon-reload\"]);\n  recordCertificateFolders(context);\n",
+        "to": "  systemctl(host, [\"daemon-reload\"]);\n"
+      }
+    ],
+    "test": "test/undo-apply.test.js"
+  },
+  {
+    "name": "undo-apply asks dpkg about the repository file, so it removes nginx.org repository while nginx stays",
+    "file": "src/cli/undo-apply.js",
+    "edits": [
+      {
+        "from": "  const repositoryFile = whileNginx(\n    target,\n    `${target} stays while nginx is installed, for nginx's updates.`,\n    rootFile,\n  );",
+        "to": "  const repositoryFile = () =>\n    isInstalled(host, target)\n      ? { what: target, keep: true, note: `${target} stays while nginx is installed, for nginx's updates.` }\n      : rootFile();"
+      }
+    ],
+    "test": "test/undo-apply-api-keys.test.js"
+  },
+  {
+    "name": "every while-nginx step asks dpkg about its own name",
+    "file": "src/cli/undo-apply.js",
+    "edits": [
+      {
+        "from": "    isInstalled(host, \"nginx\") ? { what, keep: true, note } : make();",
+        "to": "    isInstalled(host, what) ? { what, keep: true, note } : make();"
+      }
+    ],
+    "test": "test/undo-apply-api-keys.test.js"
+  },
+  {
+    "name": "the access log names no format",
+    "file": "src/cli/render-nginx.js",
+    "edits": [
+      {
+        "from": "        access_log ${NGINX_LOG_DIR}/access.log x1_rpc;",
+        "to": "        access_log ${NGINX_LOG_DIR}/access.log;"
+      }
+    ],
+    "test": "test/render-nginx.test.js"
+  },
+  {
+    "name": "the log format adds the request line",
+    "file": "src/cli/render-nginx.js",
+    "edits": [
+      {
+        "from": "'\"$x1_rpc_logged_uri\" $status $body_bytes_sent $request_time';",
+        "to": "'\"$x1_rpc_logged_uri\" \"$request\" $status $body_bytes_sent $request_time';"
+      }
+    ],
+    "test": "test/render-nginx.test.js"
+  },
+  {
+    "name": "the server's access log line is gone",
+    "file": "src/cli/render-nginx.js",
+    "edits": [
+      {
+        "from": "        access_log ${NGINX_LOG_DIR}/access.log x1_rpc;\n",
+        "to": ""
+      }
+    ],
+    "test": "test/render-nginx.test.js"
+  },
+  {
+    "name": "undo-apply prints no restart line after taking the flag out",
+    "file": "src/cli/undo-apply.js",
+    "edits": [
+      {
+        "from": "      after: () => afterFlagOut(host, target),\n",
+        "to": ""
+      }
+    ],
+    "test": "test/turn-private-rpc.test.js"
+  },
+  {
+    "name": "nginx's main error log keeps info lines",
+    "file": "src/cli/render-nginx.js",
+    "edits": [
+      {
+        "from": "error_log ${NGINX_LOG_DIR}/error.log notice;",
+        "to": "error_log ${NGINX_LOG_DIR}/error.log info;"
+      }
+    ],
+    "test": "test/render-nginx.test.js"
+  },
+  {
+    "name": "the log format adds the request line after a semicolon",
+    "file": "src/cli/render-nginx.js",
+    "edits": [
+      {
+        "from": "$body_bytes_sent $request_time';",
+        "to": "$body_bytes_sent $request_time;$request';"
+      }
+    ],
+    "test": "test/render-nginx.test.js"
+  },
+  {
+    "name": "the restart line shows even when the running validator lacks the flag",
+    "file": "src/cli/checks.js",
+    "edits": [
+      {
+        "from": "  return lacksFlag === true ? null : RPC_KEPT_UNTIL_RESTART;",
+        "to": "  return RPC_KEPT_UNTIL_RESTART;"
+      }
+    ],
+    "test": "test/turn-private-rpc.test.js"
+  },
+  {
+    "name": "the restart line shows only when the running validator carries the flag, never when it can't tell",
+    "file": "src/cli/checks.js",
+    "edits": [
+      {
+        "from": "lacksFlag = runningFlag(host, rpcPort).status === \"problem\";",
+        "to": "lacksFlag = runningFlag(host, rpcPort).status !== \"ok\";"
+      }
+    ],
+    "test": "test/turn-private-rpc.test.js"
+  },
+  {
+    "name": "turn-off prints no restart line",
+    "file": "src/cli/turn-private-rpc.js",
+    "edits": [
+      {
+        "from": "    log.info(name, restart);\n",
+        "to": ""
+      }
+    ],
+    "test": "test/turn-private-rpc.test.js"
+  },
+  {
+    "name": "undo-apply's step prints no line after it's done",
+    "file": "src/cli/undo-apply.js",
+    "edits": [
+      {
+        "from": "    const after = step.after?.();",
+        "to": "    const after = null;"
+      }
+    ],
+    "test": "test/turn-private-rpc.test.js"
+  },
+  {
+    "name": "undo-apply says nothing of a flag it leaves",
+    "file": "src/cli/undo-apply.js",
+    "edits": [
+      {
+        "from": "    log.info(\"undo-apply\", flagNote);\n",
+        "to": ""
+      }
+    ],
+    "test": "test/turn-private-rpc.test.js"
+  },
+  {
+    "name": "undo-apply calls a flag apply added, which a failed step left, one apply didn't add",
+    "file": "src/cli/undo-apply.js",
+    "edits": [
+      {
+        "from": "  if (names.has(\"privateRpcFlag\")) {\n    return null;\n  }\n",
+        "to": ""
+      }
+    ],
+    "test": "test/undo-apply.test.js"
+  },
+  {
+    "name": "a second server block, on port 80, with no access_log of its own",
+    "file": "src/cli/render-nginx.js",
+    "edits": [
+      {
+        "from": "    server {\n        listen ${publicIp}:443 ssl;",
+        "to": "    server {\n        listen ${publicIp}:80;\n        return 301 https://$host;\n    }\n\n    server {\n        listen ${publicIp}:443 ssl;"
+      }
+    ],
+    "test": "test/render-nginx.test.js"
+  },
+  {
+    "name": "a keyed location after location /, with no error_log /dev/null",
+    "file": "src/cli/render-nginx.js",
+    "edits": [
+      {
+        "from": "            proxy_pass http://$x1_rpc_backend;\n        }\n    }\n}",
+        "to": "            proxy_pass http://$x1_rpc_backend;\n        }\n\n        location ~ ^/[0-9a-fA-F]{64}/ws$ {\n            limit_req zone=x1_rpc burst=${rate} nodelay;\n            proxy_pass http://127.0.0.1:8900;\n        }\n    }\n}"
+      }
+    ],
+    "test": "test/render-nginx.test.js"
+  },
+  {
+    "name": "turn-off prints the lacks line, and the restart line, while a flag it didn't add stays",
+    "file": "src/cli/turn-private-rpc.js",
+    "edits": [
+      {
+        "from": "  });\n  if (scriptCarriesFlag(host, scriptPath)) {",
+        "to": "  });\n  if (false) {"
+      }
+    ],
+    "test": "test/turn-private-rpc.test.js"
+  },
+  {
+    "name": "turn-off prints the restart line while a flag it didn't add stays",
+    "file": "src/cli/turn-private-rpc.js",
+    "edits": [
+      {
+        "from": "`Private rpc is off: ensure no longer puts --private-rpc back. But ${note}`,\n    );\n    return 0;",
+        "to": "`Private rpc is off: ensure no longer puts --private-rpc back. But ${note}`,\n    );\n    log.info(name, restartAfterFlagOut(host, scriptPath));\n    return 0;"
+      }
+    ],
+    "test": "test/turn-private-rpc.test.js"
+  },
+  {
+    "name": "undo-apply prints the restart line while a flag it didn't add stays",
+    "file": "src/cli/undo-apply.js",
+    "edits": [
+      {
+        "from": "  if (scriptCarriesFlag(host, scriptPath)) {\n    return flagStaysNote(scriptPath, \"apply\");",
+        "to": "  if (false) {\n    return flagStaysNote(scriptPath, \"apply\");"
+      }
+    ],
+    "test": "test/turn-private-rpc.test.js"
+  },
+  {
+    "name": "turn-off's early stop leaves out the note while a flag stays",
+    "file": "src/cli/turn-private-rpc.js",
+    "edits": [
+      {
+        "from": "    if (scriptCarriesFlag(host, scriptPath)) {\n      const note = flagStaysNote(scriptPath, \"the tool\");\n      log.info(\n        name,\n        `Private rpc is off already: ensure doesn't put --private-rpc back. But ${note}`,",
+        "to": "    if (false) {\n      const note = flagStaysNote(scriptPath, \"the tool\");\n      log.info(\n        name,\n        `Private rpc is off already: ensure doesn't put --private-rpc back. But ${note}`,"
+      }
+    ],
+    "test": "test/turn-private-rpc.test.js"
+  },
+  {
+    "name": "flagStays reads the start script at the shipped place",
+    "file": "src/cli/undo-apply.js",
+    "edits": [
+      {
+        "from": "  const scriptPath = startScriptPathOf(settings, homeDir);\n  return scriptCarriesFlag(",
+        "to": "  const scriptPath = startScriptPathOf({ ...settings, x1consoleDir: \"~/x1console\" }, homeDir);\n  return scriptCarriesFlag("
+      }
+    ],
+    "test": "test/turn-private-rpc.test.js"
+  },
+  {
+    "name": "apply never sends its Telegram test alert",
+    "file": "src/cli/apply-watchers.js",
+    "edits": [
+      {
+        "from": "  if (telegram === undefined || telegram === null) {\n",
+        "to": "  if (true) {\n"
+      }
+    ],
+    "test": "test/apply.test.js"
+  },
+  {
+    "name": "apply reads x1console's Telegram files at the shipped folder",
+    "file": "src/cli/apply-watchers.js",
+    "edits": [
+      {
+        "from": "  const telegram = readTelegram(host, settings);\n",
+        "to": "  const telegram = readTelegram(host, { ...settings, x1consoleDir: \"~/x1console\" });\n"
+      }
+    ],
+    "test": "test/apply.test.js"
+  },
+  {
+    "name": "the real host's postJson uses http for an https url",
+    "file": "src/lib/host.js",
+    "edits": [
+      {
+        "from": "  const client = url.startsWith(\"https:\") ? https : http;\n",
+        "to": "  const client = http;\n"
+      }
+    ],
+    "test": "test/host.test.js"
+  },
+  {
+    "name": "the secret prompt leaves the terminal's echo on",
+    "file": "src/lib/ask-password.js",
+    "edits": [
+      {
+        "from": "      output: showsNothing(),\n      terminal: true,\n",
+        "to": "      output: showsNothing(),\n"
+      }
+    ],
+    "test": "test/ask-password.test.js"
+  },
+  {
+    "name": "nginx's server_name names the example's hostname",
+    "file": "src/cli/render-nginx.js",
+    "edits": [
+      {
+        "from": "        server_name ${hostname};\n",
+        "to": "        server_name x1-rpc.example.com;\n"
+      }
+    ],
+    "test": "test/render-nginx.test.js"
+  },
+  {
+    "name": "nginx's listen and allow lines name the example's address",
+    "file": "src/cli/render-nginx.js",
+    "edits": [
+      {
+        "from": "        listen ${publicIp}:443 ssl;\n",
+        "to": "        listen 203.0.113.10:443 ssl;\n"
+      },
+      {
+        "from": "            allow ${publicIp};\n",
+        "to": "            allow 203.0.113.10;\n"
+      }
+    ],
+    "test": "test/render-nginx.test.js"
+  }
+]

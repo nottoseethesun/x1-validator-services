@@ -6,7 +6,7 @@ This file guides Claude Code, and anyone else working in this repository.
 
 X1 Validator Services is a home for features whose code runs on an X1 validator itself. Each feature lives in a sub-directory of its own.
 
-The first feature is `x1-validator-private-rpc`. It's a command-line tool that makes the validator's rpc private and puts it behind an https url that carries an api key. Its design is in its `docs/architecture.md` and `docs/engineering.md`.
+The first feature is x1-validator-private-rpc. It's a command-line tool that makes the validator's rpc private and puts it behind an https url that carries an api key. Its `apply` command sets all of that up on the validator. Its design is in its `docs/architecture.md` and `docs/engineering.md`.
 
 ## Conventions
 
@@ -25,7 +25,7 @@ Skip what belongs to LP Ranger's own domain: EVM, chains, pools and positions, i
 - **Runtime dependencies.** They are commander 14, Ajv 8, dotenv 18, and ora 8, which draws the terminal spinner. commander 14 and ora 8 are the newest majors that load on Node.js 20.0.0. Every other package is a dev dependency.
 - **Only the entry point runs at load.** Every module other than a program's entry point only declares imports, constants, functions and exports. Two LP Ranger rules exist only because its modules read settings as they load, so they don't apply here: setting overrides before a module loads, and keeping diagnostic tools from importing shared modules.
 - **One repository, several features.** One `package.json` and one `node_modules` at the root serve every feature. Run every `npm` command from the root. Each feature's details go in its own `README.md`. The root `README.md` holds only what applies to the whole project.
-- **System tests.** A test that configures a system, with packages, `systemd`, `nginx`, `ufw` or `cron`, runs in an LXD container on the development machine, through `npm run test:system`. No test runs on a validator. Every effect on the system goes through the host in `src/lib/host.js`, so unit tests pass the fake host instead.
+- **System tests.** A test that configures a system, with packages, `systemd`, `nginx`, `ufw` or `cron`, runs in an LXD container on the development machine, through `npm run test:system`. No test runs on a validator. Every effect on the system goes through the host, an object that `src/lib/host.js` makes and the code receives as an argument. So unit tests pass a fake host, from `test/helpers/`, instead.
 - **`apt`, never `apt-get`.** Code, tests and docs call `apt`, as `x1console` and nginx.org's instructions do, and never `apt-get` or `apt-cache`. Each call from code passes `-o Apt::Cmd::Disable-Script-Warning=true`, which stops `apt` warning that a program runs it.
 - **The lockfile.** `npm` 11 writes it on the development machine, and the validator installs it with `npm` 9, which comes with Node.js 20.0.0. So `npm ci` must accept it under both. [docs/security.md](docs/security.md) says what that means for the `minimatch` override.
 - **Installs come from `main`.** There are no releases: a validator installs and updates with `git pull` on `main`. So LP Ranger's release steps, its release notes, tags and release audit, don't apply.
@@ -47,7 +47,7 @@ eslint-rules/            this project's lint rules
 docs/                    project-wide docs, the engineering reference among them
 x1-validator-private-rpc/
   README.md              the feature's install steps and use
-  app-config/            shipped settings, their schema and apply's settings dictionary; per-install overrides
+  app-config/            shipped settings, their schema and apply's dictionary of the changes it can make on the machine; per-install overrides
   docs/                  its architecture, its engineering reference, and the manual domain setup
   examples/              a copyable example of each file apply renders
   certs/                 Let's Encrypt's staging roots, for apply --acme-staging

@@ -1,12 +1,12 @@
 # X1 Validator Services — Engineering Reference
 
-This is the reference for the engineering every feature shares. It covers the gate and each of its checks, the lists of files the checks read, and the rules every test follows. It also covers the LXD system test, the scripts behind the `npm` commands, and CI.
+X1 Validator Services holds features, tools whose code runs on an X1 validator, each in a folder of its own. This is the reference for the engineering they share. The gate, `npm run check`, runs the checks that must pass before every commit. This doc covers the gate and each of its checks, the lists of files the checks read, and the rules every test follows. It also covers the scripts behind the `npm` commands, CI, and the system test, which runs a feature on a real system in an LXD container.
 
 Each feature's own design is in its folder. For x1-validator-private-rpc, read [`architecture.md`](../x1-validator-private-rpc/docs/architecture.md), then [`engineering.md`](../x1-validator-private-rpc/docs/engineering.md).
 
 Other references:
 
-- [`CLAUDE.md`](../CLAUDE.md): the conventions, where this project differs from LP Ranger's, and the repository's layout.
+- [`CLAUDE.md`](../CLAUDE.md): the repository's layout, and its conventions. They're the conventions of LP Ranger, another project by the same owner, and `CLAUDE.md` lists where this project differs.
 - [`docs/npm-project-commands.md`](npm-project-commands.md): every `npm` command, and what to type.
 - [`docs/security.md`](security.md): the security checks' exceptions, and the dependency overrides.
 
@@ -23,6 +23,7 @@ Other references:
 - [Coverage](#coverage)
 - [Dead Code](#dead-code)
 - [Tests](#tests)
+- [Deliberate Mistakes](#deliberate-mistakes)
 - [The System Test](#the-system-test)
 - [The Scripts' Command Lines](#the-scripts-command-lines)
 - [The Pre-Commit Hook and CI](#the-pre-commit-hook-and-ci)
@@ -60,12 +61,13 @@ Then, on Node.js 22.13 or newer, it runs these, in this order:
 | Tests (shipped settings) | Node.js's test runner | A shipped value its tests refuse |
 | Tests | Node.js's test runner, with coverage | Any failing test |
 | Coverage | `scripts/_coverage.js` | See [Coverage](#coverage) |
+| Deliberate mistakes, once the tests pass | `scripts/check-deliberate-mistakes.js` | A mistake its test doesn't catch. See [Deliberate Mistakes](#deliberate-mistakes) |
 
 Every stage but the tests and the coverage verdict is written down once, as data, in `scripts/_gate-stages.js`. `scripts/_run-stages.js` runs them, except the audit of every dependency, which `scripts/check.js` runs itself to save its report. `npm run lint` runs the stages from the JavaScript lint through the secret scan, and `scripts/format.js` and `scripts/audit.js` run one stage each. Two `npm` scripts spell out a stage's command again: `knip:files`, and `audit:deps`, which the Security Audit workflow runs. So a change to either stage's command in `scripts/_gate-stages.js` needs the same change in `package.json`.
 
 ### On Older Node.js Versions
 
-On Node.js 20.0.0, the gate runs the features' tests alone. The lint, coverage and audit tools need Node.js 22.13 or newer, and so do the tests of the project's own tooling, which load those tools. The features' tests are the ones that matter on older versions: the validator runs Node.js 20.0.0.
+Only the features' code runs on the validator, which has Node.js 20.0.0, so on that version only the features' tests matter, and the gate runs them alone. The lint, coverage and audit tools need Node.js 22.13 or newer, and so do the tests of the project's own tooling, which load those tools.
 
 ### Reports
 
@@ -87,13 +89,11 @@ Every list is built from `FEATURES`, the names of the feature folders, so a new 
 
 ## Coverage
 
-`scripts/_coverage.js` judges the lcov report the tests write, with three rules:
+`scripts/_coverage.js` judges the lcov report the tests write. It applies three rules to the code that runs on the validator, each feature's `src/` and `util/`:
 
 1. The lines of all measured files together must be at least 80% covered.
 2. Each file in `HIGH_RISK_FILES`, in `scripts/check.js`, must reach 95% of its lines and of its branches on its own. These are the files whose failure would hurt the validator or leak an api key.
 3. Every module and installed file must appear in the report at all. Node.js reports only the files a test loaded, so a file no test loads would otherwise escape the measure.
-
-The measured files are each feature's `src/` and `util/`: the code that runs on the validator.
 
 ---
 
@@ -116,16 +116,42 @@ Tests of the shipped settings end in `.config-values.test.js`, and the gate runs
 
 Every test follows the same rules:
 
-- **No test touches the machine.** A feature's code reaches the system only through its host, and tests pass a stand-in host instead. A test that must configure a real system belongs in [the system test](#the-system-test).
-- **No test reads the operator's settings.** Tests load the settings from a temporary copy of `app-config/`.
+- **No test touches the machine.** A feature's code reaches the system only through its host, an object whose functions run commands, change files and make requests. The code receives the host as an argument, so tests pass a stand-in instead. A test that must configure a real system belongs in [the system test](#the-system-test).
+- **No test reads the operator's settings.** A feature's `app-config/` folder holds its shipped settings and, in a folder of its own, the operator's. Tests load a temporary copy that leaves the operator's folder out.
 - **Tests take the app's values from the app.** A test imports a constant, or loads a setting, rather than typing out its value, so it can't pass after the value moves. A test that shows a setting is used runs with every setting changed from its shipped value.
 - **A test works in a temporary folder of its own.** `scripts/_test-temp-folders.js` makes it in the system's temporary folder, named with the test's purpose and its process id. The test process removes it on exit, and the gate removes, before its tests, the folders of processes that are gone.
 
 ---
 
+## Deliberate Mistakes
+
+Tests can all pass and still miss the mistakes they're meant to catch. The gate's last stage checks that they don't, with deliberate mistakes: small changes to a feature's code, of the kind a slip in an edit would make, each paired with the test file that must fail when the change is made. A mistake its test passes means that test has a hole, and fails the gate.
+
+Each feature lists its mistakes in its `test/deliberate-mistakes.json`. Each entry has:
+
+- `name`: what the mistake does, in a few words
+- `file`: the file it changes, from the feature's folder
+- `edits`: the text to change, `from`, and what to change it `to`. Each `from` must be in the file exactly once, so the entry can't change the wrong place.
+- `test`: the test file that must fail, from the feature's folder
+
+`scripts/check-deliberate-mistakes.js`, which `npm run test:mistakes` runs too, makes each mistake in turn, and never changes a file on disk. For each one, `scripts/try-deliberate-mistake.js` runs the entry's test file in a process of its own, with a load hook: Node.js hands the hook each file's text after reading it, and runs the text the hook returns, so the hook makes the edits in memory. A run stops at the first failing test, since one is enough. The runs go side by side, one per processor.
+
+The stage fails when:
+
+- a mistake's test passes
+- the test never loads the file the mistake changes, so the mistake isn't made
+- an entry is wrong, such as when a change to the code leaves an entry's text other than once in its file. `test/deliberate-mistakes.test.js` checks the entries too, so `npm test` shows this at once.
+- a test file the entries name fails with no mistake made. The stage runs each one first, since a test that fails already would make every mistake look caught. For the same reason, the gate runs the stage only once every test has passed.
+
+The load hook needs `module.registerHooks`, from Node.js 22.15 or newer. So the stage runs in the full gate, on Node.js 22 and 24, and not on 20.0.0.
+
+When a new test is written to catch a mistake, add that mistake as an entry. The gate then fails if the test ever stops catching it.
+
+---
+
 ## The System Test
 
-`npm run test:system` runs x1-validator-private-rpc end to end on a real Ubuntu 24.04 system, with `systemd`, in a throwaway LXD container. It runs on the development machine, or on GitHub's runner when someone starts the System Test workflow, which [The Pre-Commit Hook and CI](#the-pre-commit-hook-and-ci) describes. It never runs on a validator, and it isn't part of the gate. What it needs before it runs is in the feature README's [Test](../x1-validator-private-rpc/README.md#test) section.
+`npm run test:system` runs x1-validator-private-rpc end to end on a real Ubuntu 24.04 system, with `systemd`, in a throwaway LXD container. It runs on the development machine, or on GitHub's runner when someone starts the System Test workflow, which [The Pre-Commit Hook and CI](#the-pre-commit-hook-and-ci) describes. It never runs on a validator, and it isn't part of the gate. What it needs before it runs is in the feature README's [Test](../x1-validator-private-rpc/README.md#test) section. Its checks use the feature's own terms, which its [README](../x1-validator-private-rpc/README.md) and [architecture](../x1-validator-private-rpc/docs/architecture.md) explain: read those first.
 
 `scripts/test-in-lxd.js` sets the container up the way a validator is set up:
 
@@ -134,12 +160,12 @@ Every test follows the same rules:
 3. It copies in `package.json`, the lockfile and the feature's folder, without the operator's own settings, and installs the runtime dependencies, as a validator's install does.
 4. It runs the tool's commands as the container's ordinary user, who has `sudo`, as a validator's account does.
 
-A command that asks anything runs in a real terminal, which the `script` program makes, and its prompts are answered as they appear. The disclaimer's dialog is one of them. Decline has the focus at first, and Affirm sits to its left. So once `whiptail` draws the Decline button, the test presses the left arrow and Enter.
+A command that asks anything runs in a real terminal, which the `script` program makes, and its prompts are answered as they appear. One is the disclaimer: every run that can change the system shows it first, in a dialog `whiptail` draws, and goes on only once Affirm is chosen. Decline has the focus at first, and Affirm sits to its left. So once `whiptail` draws the Decline button, the test presses the left arrow and Enter.
 
 Then it runs two phases:
 
 - **The `nginx` upgrade check.** It runs `util/validate-nginx-upgrade/index.js`, which must pass, and must leave the container as it found it.
-- **apply and the commands after it**, in `scripts/_lxd-apply-phase.js`. Pebble, Let's Encrypt's test server, stands in for Let's Encrypt, and a stand-in rpc plays the validator's. A `git` checkout plays `x1console`, where the settings put it, cloned from a local repository that plays `x1console`'s on GitHub. It checks:
+- **`apply`, which sets the feature up, and the commands after it**, in `scripts/_lxd-apply-phase.js`. Pebble, Let's Encrypt's test server, stands in for Let's Encrypt, and a stand-in rpc plays the validator's. `x1console`, which starts the validator, is a `git` checkout that holds the start script the tool edits. In the test, a checkout stands in for it, at the path the settings give, cloned from a local repository that stands in for `x1console`'s on GitHub. It checks:
   - the first key `apply` shows, the saved password `systemd-creds` holds, the request path, a random key's 403, the firewall rule, the rate limit, and that `nginx`'s logs hold no key, show `<key>` in its place, and keep the mode nginx.org's package gives them: 640, owner `nginx`, group `adm`
   - that `nginx`'s main process has its own read-only `/dev`, and still serves after a log reopen
   - `ensure`'s failure while the rpc is still public, and every one of its verdicts after the validator's restart
