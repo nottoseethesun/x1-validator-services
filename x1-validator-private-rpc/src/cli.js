@@ -17,7 +17,7 @@ const problem = nodeVersionProblem(process.versions.node, {
   note:
     "To type the tool's name instead, link its launcher, " +
     "x1-validator-private-rpc/bin/x1-validator-private-rpc, into " +
-    "~/.local/bin, as the README's Usage section shows. The launcher is a " +
+    "~/.local/bin, as the README's Run section shows. The launcher is a " +
     `script that runs the tool on Node.js ${oldestNode().major}.`,
 });
 if (problem === "") {

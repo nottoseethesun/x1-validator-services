@@ -83,7 +83,7 @@ Each run that can change the system first shows a disclaimer, and goes on only o
 
 ### System View
 
-The entry point, `src/cli.js`, checks the Node.js running it, then hands the command line to the program that `src/cli/program.js` builds. Each command's code sits in `src/cli/`. Two standalone tools sit in `util/`: the `nginx` upgrade check, the first step of installing the tool, and the rpc check, which tries the keyed url as a client would. Code that they and the command-line tool share sits in `src/lib/`. The launcher, `bin/x1-validator-private-rpc`, is a shell script that lets the operator type the tool's name. On a validator, the default `node` is Node.js 20.0.0, which `x1console` installed, and it's too old for the tool. So the launcher starts `src/cli.js` on the newest Node.js 24 that `nvm` holds. The README's Usage section links it into `~/.local/bin`.
+The entry point, `src/cli.js`, checks the Node.js running it, then hands the command line to the program that `src/cli/program.js` builds. Each command's code sits in `src/cli/`. Two standalone tools sit in `util/`: the `nginx` upgrade check, the first step of installing the tool, and the rpc check, which tries the keyed url as a client would. Code that they and the command-line tool share sits in `src/lib/`. The launcher, `bin/x1-validator-private-rpc`, is a shell script that lets the operator type the tool's name. On a validator, the default `node` is Node.js 20.0.0, which `x1console` installed, and it's too old for the tool. So the launcher starts `src/cli.js` on the newest Node.js 24 that `nvm` holds. The README's Run section links it into `~/.local/bin`.
 
 **Major functions.**
 
