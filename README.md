@@ -3,7 +3,7 @@
 ![X1 Validator Services banner: a butler in a black tuxedo beside the X1 logo and the words "Your X1 Validator Services Butler", with panels for api-key access, rate-limited access and encrypted traffic.](./assets/images/x1-validator-services-butler.jpeg "X1 Validator Services Banner")
 
 [![Lint (JS+MD)](https://img.shields.io/github/actions/workflow/status/nottoseethesun/x1-validator-services/ci.yml?branch=main&label=lint)](https://github.com/nottoseethesun/x1-validator-services/actions/workflows/ci.yml)
-[![Tests (Node 20.0.0/22/24)](https://img.shields.io/github/actions/workflow/status/nottoseethesun/x1-validator-services/ci.yml?branch=main&label=tests)](https://github.com/nottoseethesun/x1-validator-services/actions/workflows/ci.yml)
+[![Tests](https://img.shields.io/github/actions/workflow/status/nottoseethesun/x1-validator-services/ci.yml?branch=main&label=tests)](https://github.com/nottoseethesun/x1-validator-services/actions/workflows/ci.yml)
 [![Security Audit](https://img.shields.io/github/actions/workflow/status/nottoseethesun/x1-validator-services/security-audit.yml?branch=main&label=security)](https://github.com/nottoseethesun/x1-validator-services/actions/workflows/security-audit.yml)
 
 ## Overview
@@ -16,15 +16,18 @@ Install the code once, then each feature you want. Run every `npm` command from 
 
 ### Get the Code
 
+The project needs Node.js 24 or newer, while `x1console`'s scripts run on its own Node.js 20.0.0. `x1console` installs that one with `nvm`, the Node.js version manager, which holds several versions side by side. So the steps below add the newest Node.js 24 with `nvm install 24`: of the two long-term-support majors CI tests, 24 and 26, the older one, since a validator can't always move to the newest at once. `nvm install` leaves 20.0.0 the default, the one each new login finds first on its PATH. So the commands these docs give start Node.js and `npm` through `nvm exec 24`, which runs them on Node.js 24. `npm ci` installs the packages the project runs on, into `node_modules`.
+
 On the validator, as the validator's account:
 
 ```bash
 git clone https://github.com/nottoseethesun/x1-validator-services.git ~/x1-validator-services
 cd ~/x1-validator-services
-npm ci --omit=dev --ignore-scripts
+nvm install 24
+nvm exec 24 npm ci --omit=dev --ignore-scripts
 ```
 
-`--omit=dev` leaves out the development tools, and `--ignore-scripts` skips the `prepare` script, which installs the pre-commit hook, a development tool.
+`--omit=dev` leaves out the development tools, and `--ignore-scripts` skips the `prepare` script, which only a development machine needs: it installs a `git` hook that runs the lint, `npm run lint`, before each commit.
 
 ### Each Feature
 
@@ -44,7 +47,7 @@ Fill it in with an editor rather than with `echo`, which would leave the secret 
 
 ### Cronitor Alerts
 
-Some features check in with [Cronitor](https://cronitor.io), which alerts you when the check-ins stop. Cronitor watches each feature's check-ins with a monitor, which that feature's README says how to create. One account serves every feature. Set it up once:
+Some features run on a schedule, and at the end of each run send [Cronitor](https://cronitor.io) a check-in, a short web request. Cronitor alerts you when the check-ins stop, so a schedule that broke doesn't go unnoticed. Cronitor watches each feature's check-ins with a monitor, which that feature's README says how to create. One account serves every feature. Set it up once:
 
 1. Create a Cronitor account.
 2. In Cronitor, open Settings → Alerts, and edit the notification list your monitors use, usually the default one. Add a Telegram notification, and follow Cronitor's prompts to link your chat.
@@ -52,6 +55,10 @@ Some features check in with [Cronitor](https://cronitor.io), which alerts you wh
 Cronitor uses its own Telegram bot, so its alerts arrive in a different chat from `x1console`'s.
 
 ## Development
+
+The whole project, its features and its development tools, supports Node.js 24 or newer, as `engines`, `>=24`, in `package.json` says. CI tests the two long-term-support majors in that range, 24 and 26, and every script behind the `npm` commands checks for at least 24. On a validator, the features run on Node.js 24, beside `x1console`'s own Node.js 20.0.0, as [Get the Code](#get-the-code) sets up.
+
+On a development machine, install with `npm ci`, which also sets up the `git` pre-commit hook.
 
 For how the project is checked and tested, see **[`docs/engineering.md`](docs/engineering.md)**: the checks that must pass before every commit, the lists of files they read, the tests' rules, CI, and the system test, which runs a feature in an LXD container.
 

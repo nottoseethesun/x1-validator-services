@@ -3,10 +3,11 @@
  * @file scripts/check.js
  * @description
  * `npm run check`, the one local gate, which must pass before every
- * commit and every push. Every check runs even after one fails, and a
- * summary at the end lists them all.
- *
- * On Node.js 22.13 or newer it runs the whole gate:
+ * commit and every push. Every check but the deliberate mistakes runs
+ * even after one fails. The deliberate mistakes run last, and only once
+ * every test has passed: with a test failing, the gate fails anyway, and
+ * they're its slowest stage. A summary at the end lists each check that
+ * ran, with its result. It runs:
  *
  * - the lint, format and security checks of scripts/_gate-stages.js
  * - the audit of the shipped dependencies
@@ -16,14 +17,9 @@
  * - once the tests pass, the deliberate mistakes of
  *   scripts/_deliberate-mistakes.js, which prove the tests catch mistakes
  *
- * On older versions, down to Node.js 20.0.0, it runs the features' tests
- * alone. The lint, coverage and audit tools need Node.js 22.13 or newer,
- * and the tests of the project's own tooling load those tools. The
- * features' tests are the full check of what runs on the validator,
- * whose Node.js is 20.0.0.
- *
- * Reports go to tmp/check/, which is disposable. Run it with `--help` for
- * its usage and exit codes.
+ * Like every script, it stops on a Node.js older than the one `engines`
+ * in package.json names. Reports go to tmp/check/, which is disposable.
+ * Run it with `--help` for its usage and exit codes.
  */
 
 import fs from "node:fs";
@@ -37,24 +33,15 @@ import {
 import { installedFiles, moduleFiles } from "./_project-files.js";
 import { printSummary, runStages } from "./_run-stages.js";
 import { removeLeftoverTestTempFolders } from "./_test-temp-folders.js";
-import {
-  listFeatureTestFiles,
-  listTestFiles,
-  splitConfigValueTests,
-} from "./_test-files.js";
+import { listTestFiles, splitConfigValueTests } from "./_test-files.js";
 import {
   projectRoot,
+  requireMinNode,
   runCaptured,
   runInherited,
   scriptProgram,
 } from "./_tools.js";
 import { COVERAGE_TARGETS } from "./lint-targets.js";
-
-/**
- * The oldest Node.js that runs the whole gate, as major and minor: the
- * oldest 22 that ESLint supports, which the other tools accept too.
- */
-const FULL_GATE_NODE = [22, 13];
 
 /** The minimum share of all measured lines the tests must cover. */
 const MIN_LINE_PERCENT = 80;
@@ -103,19 +90,6 @@ const REPORT_DIR = path.join("tmp", "check");
 
 /** The coverage verdict's stage, which isn't a run of the tests. */
 const COVERAGE_STAGE = "Coverage";
-
-/**
- * Tells whether the Node.js running the gate is new enough for the
- * whole gate.
- * @returns {boolean}
- */
-function runsWholeGate() {
-  const [major, minor] = process.versions.node
-    .split(".")
-    .map((part) => Number.parseInt(part, 10));
-  const [oldestMajor, oldestMinor] = FULL_GATE_NODE;
-  return major > oldestMajor || (major === oldestMajor && minor >= oldestMinor);
-}
 
 /**
  * Runs one group of tests as a stage of its own. An empty group passes
@@ -187,35 +161,25 @@ function judgeCoverage(root, lcovPath) {
 }
 
 /**
- * Runs the shipped-settings tests, then the rest of the suite.
+ * Runs the shipped-settings tests, then the rest of the suite with
+ * coverage, then judges the coverage.
  * @param {string} root  The project's root.
- * @param {{coverage: boolean}} options  Whether to measure coverage, and
- *   run the tooling's tests too.
  * @returns {import("./_run-stages.js").StageResult[]}
  */
-function runTests(root, { coverage }) {
-  const files =
-    coverage === true ? listTestFiles(root) : listFeatureTestFiles(root);
-  const { configValues, others } = splitConfigValueTests(files);
+function runTests(root) {
+  const { configValues, others } = splitConfigValueTests(listTestFiles(root));
   const lcovPath = path.join(root, REPORT_DIR, "lcov.info");
   fs.rmSync(lcovPath, { force: true });
-  const results = [
+  return [
     runTestGroup("Tests (shipped settings)", configValues, []),
-    runTestGroup(
-      "Tests",
-      others,
-      coverage === true ? coverageOptions(lcovPath) : [],
-    ),
+    runTestGroup("Tests", others, coverageOptions(lcovPath)),
+    judgeCoverage(root, lcovPath),
   ];
-  if (coverage === true) {
-    results.push(judgeCoverage(root, lcovPath));
-  }
-  return results;
 }
 
 /**
  * Runs the deliberate mistakes, once the tests have passed: with a test
- * failing already, every mistake would look caught.
+ * failing, the gate fails anyway, and they're its slowest stage.
  * @param {import("./_run-stages.js").StageResult[]} testResults  The
  *   tests' results, with coverage's verdict.
  * @returns {import("./_run-stages.js").StageResult[]}
@@ -255,35 +219,33 @@ function saveFullAudit(root) {
 }
 
 /**
- * Runs the gate for the running Node.js version and exits with the
- * verdict.
+ * Runs the gate and exits with the verdict.
  */
 function main() {
   scriptProgram(
     "scripts/check.js",
-    "Runs the gate. On Node.js 22.13 or newer it runs every lint, format, " +
-      "security, audit, test and coverage check, then the deliberate " +
-      "mistakes. On older versions it runs the features' tests.",
-    ["0  every check passed", "1  at least one check failed"],
+    "Runs the gate, the checks that must pass before every commit and " +
+      "every push: every lint, format, security, audit, test and coverage " +
+      "check, then the deliberate mistakes, which change the features' " +
+      "code in memory to check that a test fails for each change.",
+    {
+      examples: ["npm run check", "    Before every commit and every push."],
+      exitCodes: ["0  every check passed", "1  at least one check failed"],
+    },
   ).parse();
+  requireMinNode("scripts/check.js");
   const root = projectRoot();
   fs.mkdirSync(path.join(root, REPORT_DIR), { recursive: true });
   for (const folder of removeLeftoverTestTempFolders()) {
     console.log(`Removed a dead test run's folder: ${folder}`);
   }
-  let results;
-  if (runsWholeGate()) {
-    results = runStages([...lintStages({ fix: false }), auditShippedStage()]);
-    results.push(saveFullAudit(root));
-    const testResults = runTests(root, { coverage: true });
-    results.push(...testResults, ...runDeliberateMistakes(testResults));
-  } else {
-    console.log(
-      `Node.js ${process.versions.node}: running the features' tests ` +
-        `only. The whole gate needs Node.js ${FULL_GATE_NODE.join(".")}.`,
-    );
-    results = runTests(root, { coverage: false });
-  }
+  const results = runStages([
+    ...lintStages({ fix: false }),
+    auditShippedStage(),
+  ]);
+  results.push(saveFullAudit(root));
+  const testResults = runTests(root);
+  results.push(...testResults, ...runDeliberateMistakes(testResults));
   process.exit(printSummary(results) ? 0 : 1);
 }
 

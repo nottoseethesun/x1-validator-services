@@ -17,10 +17,12 @@
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { makeApiKey } from "../src/lib/api-key.js";
 import { maskSecret } from "../src/lib/mask-secret.js";
+import { oldestNode } from "../src/lib/node-version.js";
 import {
   checkingLine,
   inputProblem,
@@ -241,7 +243,16 @@ test("the real entry point prints its help with exit code 0", () => {
     encoding: "utf8",
   });
   assert.equal(help.status, 0);
-  assert.ok(help.stdout.startsWith("Checks a private rpc's keyed url once"));
+  assert.ok(help.stdout.startsWith("Checks once that a private rpc's keyed"));
+  // Typed as the usage line says, from the project's folder, four levels
+  // up, it runs on the Node.js the project needs.
+  const command = `nvm exec ${oldestNode().major} node ${path.relative(path.resolve(entry, "../../../.."), entry)}`;
+  assert.ok(help.stdout.includes(`\nUsage: ${command} [options]\n`));
+  assert.ok(help.stdout.includes(`\n  ${command}\n`));
+  assert.match(
+    help.stdout,
+    /\nExamples:\n {2}\S[^]*check-my-private-rpc\/index\.js[^]*\n\nExit codes:\n {2}\S/,
+  );
   const refused = spawnSync(process.execPath, [entry, "--bogus"], {
     encoding: "utf8",
   });

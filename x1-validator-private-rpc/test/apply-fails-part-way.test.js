@@ -6,7 +6,8 @@
  * just before making it. So a run that dies during apt's install, or
  * fails while writing nginx.org's repository files, leaves every change
  * on record. After a run that failed at either point, or while waiting
- * for the certificate, undo-apply leaves the machine as apply found it,
+ * for the certificate, with a message that says where to look for why,
+ * undo-apply leaves the machine as apply found it,
  * once the operator has purged the nginx it leaves, and skips a package
  * on record that apt never installed. On a first install, a
  * configuration nginx -t refuses leaves none of the files the run wrote
@@ -20,8 +21,8 @@ import { runApply } from "../src/cli/apply.js";
 import { featurePaths } from "../src/cli/feature-paths.js";
 import { NGINX_GONE_ALREADY, runUndoApply } from "../src/cli/undo-apply.js";
 import { partsOf, readRecord } from "../src/cli/what-apply-changed.js";
-import { GATE_PAGE_PATH } from "../src/lib/gate-page.js";
-import { NGINX_APT_PIN_PATH } from "../src/lib/nginx-org.js";
+import { GATE_PAGE_NAME, GATE_PAGE_PATH } from "../src/lib/gate-page.js";
+import { NGINX_APT_PIN_PATH, NGINX_LOG_DIR } from "../src/lib/nginx-org.js";
 import { loadSettings } from "../src/lib/settings.js";
 import {
   commandRun,
@@ -200,7 +201,13 @@ test("after a run that waited in vain for the certificate, and once the operator
     target.path === GATE_PAGE_PATH
       ? { status: 503, body: "", certificate: {} }
       : tlsGet(target);
-  const { names } = await failThenUndo(validator, "No certificate in time");
+  const { names } = await failThenUndo(
+    validator,
+    `No certificate in time: ${GATE_PAGE_NAME} says http 503. ` +
+      `nginx writes why in ${NGINX_LOG_DIR}/error.log, and ` +
+      "x1-validator-private-rpc/docs/manual-domain-setup.md lists the " +
+      "usual causes.",
+  );
   assert.ok(
     names.includes("nginxConfigFile") && names.includes("nginxServiceEnabled"),
     names.join(", "),

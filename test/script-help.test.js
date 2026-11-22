@@ -3,13 +3,18 @@
  * @description
  * Tests that every script the project runs by its path answers `--help`
  * and `-h` with its help on stdout and exit code 0, and refuses an
- * argument it doesn't take with exit code 1. Helper modules, whose names
- * start with an underscore, and the shared file lists are left out: they
- * are never run by their path.
+ * argument it doesn't take with exit code 1. Each help must give usage
+ * examples, then the exit codes. Helper modules, whose names start with
+ * an underscore, and the shared file lists are left out: they are never
+ * run by their path. It also tests that each script stops on a Node.js
+ * older than the one `engines` in package.json names, and that every
+ * `npm run` target runs one of the scripts, so each target's help is the
+ * project's own.
  */
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
 import { listFilesUnder, projectRoot } from "../scripts/_tools.js";
@@ -46,13 +51,40 @@ test("there are scripts to check", () => {
   assert.ok(runnableScripts().includes("scripts/check.js"));
 });
 
+test("every script stops on a Node.js older than the one engines names", () => {
+  for (const script of runnableScripts()) {
+    const text = readFileSync(path.join(projectRoot(), script), "utf8");
+    assert.ok(text.includes(`requireMinNode("${script}")`), script);
+  }
+});
+
+test("every npm run target runs one of the scripts, whose help the tests below check", () => {
+  const packageJson = readFileSync(
+    path.join(projectRoot(), "package.json"),
+    "utf8",
+  );
+  const scripts = runnableScripts();
+  for (const [target, command] of Object.entries(
+    JSON.parse(packageJson).scripts,
+  )) {
+    const match = /^node (scripts\/[\w-]+\.js)(?: |$)/.exec(command);
+    assert.ok(
+      match !== undefined && match !== null && scripts.includes(match[1]),
+      `${target}: ${command}`,
+    );
+  }
+});
+
 for (const script of runnableScripts()) {
   test(`${script} answers --help and -h with its help`, () => {
     for (const flag of ["--help", "-h"]) {
       const result = runScript(script, [flag]);
       assert.equal(result.status, 0, `${flag} exit code`);
       assert.match(result.stdout, /^Usage: node scripts\//);
-      assert.match(result.stdout, /\nExit codes:\n {2}\S/);
+      assert.match(
+        result.stdout,
+        /\nExamples:\n {2}\S[^]*\n\nExit codes:\n {2}\S/,
+      );
     }
   });
 

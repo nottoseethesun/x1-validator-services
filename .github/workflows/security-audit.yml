@@ -8,6 +8,11 @@
 # advisory database changes on its own: a tree nobody touched can start
 # failing tomorrow. Validators install from main, so main is the code
 # operators run. The README's security badge shows the latest result.
+#
+# Each job runs on the newest release of the newest long-term-support
+# major of Node.js: check-latest has setup-node fetch it, not an older one
+# the runner already holds. When a newer major becomes long-term-support,
+# only the version number moves.
 
 name: Security Audit
 run-name: Security Audit on ${{ github.head_ref || github.ref_name }}
@@ -32,10 +37,11 @@ jobs:
       - name: Check out the repository
         uses: actions/checkout@v6
 
-      - name: Set up Node.js 24
+      - name: Set up Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: "24"
+          node-version: "26"
+          check-latest: true
           cache: npm
 
       - name: Install dependencies
@@ -51,10 +57,11 @@ jobs:
       - name: Check out the repository
         uses: actions/checkout@v6
 
-      - name: Set up Node.js 24
+      - name: Set up Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: "24"
+          node-version: "26"
+          check-latest: true
           cache: npm
 
       - name: Install dependencies
@@ -70,10 +77,11 @@ jobs:
       - name: Check out the repository
         uses: actions/checkout@v6
 
-      - name: Set up Node.js 24
+      - name: Set up Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: "24"
+          node-version: "26"
+          check-latest: true
           cache: npm
 
       - name: Install dependencies

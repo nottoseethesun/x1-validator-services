@@ -1,6 +1,6 @@
 # x1-validator-private-rpc — System Architecture
 
-x1-validator-private-rpc turns an X1 validator's public rpc into a private one, and puts it behind an https url that carries an api key. It's a command-line tool that sets up programs on the validator to do that, keeps them that way, and takes them back down. It never runs as a server of its own. The validator's software, `systemd` and `cron` are there already, and so is `x1console`, which installed the validator and starts it with its start script. The tool's `apply` command adds `nginx`, from nginx.org.
+x1-validator-private-rpc turns an X1 validator's public rpc into a private one, and puts it behind an https url that carries an api key. It's a command-line tool that sets up programs on the validator to do that, keeps them that way, and takes them back down. It never runs as a server of its own. The validator's software, `systemd` and `cron` are there already, and so is `x1console`, which installed the validator and starts it with its start script. The tool's `apply` command, which the operator runs to install the tool and again after each update of it, adds `nginx`, from nginx.org, and sets up the rest, as [The Parts](#the-parts) describes.
 
 This doc is the feature's design, for those who maintain or review it. It covers the parts, the paths a request and a key take through them, and how the tool sets the parts up, keeps them that way and takes them down. It also says why, with the races the tool guards against and the risks it accepts.
 
@@ -8,7 +8,7 @@ Companion references:
 
 - [The feature's README](../README.md): how to install it, run it and use it.
 - [`engineering.md`](engineering.md): the modules, the records and files the tool writes, the order things happen in, and the tests.
-- [`docs/engineering.md`](../../docs/engineering.md): the project's gate, scripts and system test.
+- [`docs/engineering.md`](../../docs/engineering.md): the project's gate, `npm run check`, which runs the checks that must pass before every commit and every push. Also its system test, `npm run test:system`, which runs the feature on a real Ubuntu system in an LXD container, and the scripts behind both.
 - [`docs/npm-project-commands.md`](../../docs/npm-project-commands.md): every `npm` command.
 
 ---
@@ -42,25 +42,25 @@ Companion references:
 
 `x1console` installs the validator and starts it with one long command in its start script, `start_validator.sh`. Out of the box that command opens the rpc on port 8899, and its websocket on 8900, on every network interface, and the validator advertises the rpc to the X1 network. So anyone can query it, and each query competes with voting for the machine's cpu and bandwidth.
 
-One flag changes that: `--private-rpc`. With it, the validator's rpc listens on 127.0.0.1 alone, and the validator stops advertising it. The tool adds that one word to the start script, and takes it out again. The flag reaches the validator only at its next start, which the tool never chooses. `x1console`'s Update X1 Console runs `git stash`, which takes the flag back out, so something has to put it back. [Keeping It That Way](#keeping-it-that-way) covers that.
+One flag changes that: `--private-rpc`. With it, the validator's rpc listens on 127.0.0.1 alone, and the validator stops advertising it. The tool adds that one word to the start script, and takes it out again. The flag reaches the validator only at its next start, which the tool never chooses. `x1console`'s folder, `~/x1console`, is a `git` checkout, and the start script is one of its files. The operator updates `x1console` from its menu with Update X1 Console, which runs `git stash`, then `git pull`. The stash takes away every edit nobody committed, the flag included, so something has to put the flag back. [Keeping It That Way](#keeping-it-that-way) covers that.
 
 ### `nginx`
 
 `nginx`, from nginx.org's own `apt` repository, stands in front of the rpc. It listens on the validator's public address and port 443 alone. Two of nginx.org's modules do the work:
 
-- **The njs module** runs the tool's key check, `src/njs/x1-validator-private-rpc.js`, on every request, under QuickJS, the engine njs 1.0 recommends. It hashes the key at the start of the request's path. Then `nginx`'s `map`, a lookup table in its configuration, looks the hash up in `nginx`'s list of the keys' hashes, which [The Keys' Path](#the-keys-path) describes.
+- **The njs module**, which lets `nginx` run JavaScript, runs the tool's key check, `src/njs/x1-validator-private-rpc.js`, on every request, under QuickJS, the engine njs 1.0 recommends. It hashes the key at the start of the request's path. Then `nginx`'s `map`, a lookup table in its configuration, looks the hash up in `nginx`'s list of the keys' hashes, which [The Keys' Path](#the-keys-path) describes.
 - **The ACME module** gets and renews the certificate from Let's Encrypt through the tls-alpn-01 challenge, which runs on port 443 itself. So port 80 stays closed.
 
-`nginx` runs under `systemd`. A drop-in replaces the start command of `nginx`'s own unit with one that starts `nginx` with the tool's configuration. It also gives `nginx` its own read-only `/dev`, as [Keys in `nginx`'s Logs](#keys-in-nginxs-logs) explains, and makes `nginx`'s log folder before each start when it's missing, as [Setting Up and Taking Down](#setting-up-and-taking-down) says. The package's own configuration, `/etc/nginx/nginx.conf`, stays untouched and unused. `nginx` needs nothing else at a start, so it starts on its own after a reboot. Its list holds the api keys' hashes, never the keys themselves, and nothing it reads needs a password.
+`nginx` runs under `systemd`. A drop-in replaces the start command of `nginx`'s own unit with one that starts `nginx` with the tool's configuration. It also gives `nginx` its own read-only `/dev`, as [Keys in `nginx`'s Logs](#keys-in-nginxs-logs) explains, and makes `nginx`'s log folder before each start when it's missing, as [Setting Up and Taking Down](#setting-up-and-taking-down) says. The package's own configuration, `/etc/nginx/nginx.conf`, stays untouched and unused. `nginx` needs nothing at a start but its files. Its list holds the api keys' hashes, never the keys themselves. A hash can't be worked back into its key, so the list is kept unencrypted, and nothing `nginx` reads needs a password. So it starts on its own after a reboot.
 
 ### The Tool
 
 The tool is `src/cli.js`, run as the validator's account. Its commands fall into four groups:
 
-- **Setting up and taking down.** `apply` sets every part up, in stages, and records each setting it changes on the machine, such as whether a file is there, with its old value. `undo-apply` puts those old values back, newest first, and touches nothing else. It leaves `nginx` installed, since something else may need it.
-- **Keeping it running.** `ensure` puts the flag back after an update, checks every part, and sends alerts. `ensure-there-is-at-least-one-rpc-api-key` checks that `nginx`'s list holds a key.
-- **The api keys.** `add-api-key` makes keys and shows each one once. `remove-api-key` takes a key away. `url` shows the url's two forms, for https and for websockets, with `KEY` in place of a key, and how many keys there are.
-- **Switching.** `turn-off-private-rpc` and `turn-on-private-rpc` switch the rpc between public and private.
+- **Setting up and taking down.** `apply`, run to install the tool and after each update of it, sets every part up, in stages. It records each change it makes on the machine, such as a file it adds, with what was there before. To uninstall the tool, `undo-apply` puts back what was there, newest change first, and touches nothing else, except that it leaves `nginx` installed, since something else may need it.
+- **Keeping it running.** `ensure`, which the `git` hook and the `cron` job described below run, puts the flag back after an Update X1 Console took it out, checks every part, and sends alerts. The key count check, `ensure-there-is-at-least-one-rpc-api-key`, alerts while `nginx`'s list holds no key, since `nginx` then refuses every request.
+- **The api keys.** `add-api-key` makes keys, such as one for a new client, and shows each one once. `remove-api-key` takes a key away, such as one that leaked. `url` is for when the operator needs the url again, such as to give a client the url for a key they saved. It shows the url's two forms, for https and for websockets, with `KEY` in place of a key, and how many keys there are.
+- **Switching.** To make the rpc public again without uninstalling the tool, `turn-off-private-rpc` switches it to public, and `turn-on-private-rpc` switches it back to private, each from the validator's next start.
 
 The tool's settings are in `app-config/`: the shipped settings, and the operator's own file, merged over them. The operator's file holds the url's `hostname`, and any setting the operator changes. Each command reads the settings when it starts.
 
@@ -68,7 +68,7 @@ The tool's settings are in `app-config/`: the shipped settings, and the operator
 
 Two watchers run `ensure`, so nobody has to remember to:
 
-- **A `cron` job**, when the operator agrees to it during `apply`, runs it every minute. `flock` skips a run while the last one is still going.
+- **A `cron` job**, when the operator agrees to it during `apply`, runs it every minute. `flock`, which runs a command only while it holds a lock on a file, skips a run while the last one is still going.
 - **The tool's `git` hook**, `.git/hooks/post-merge` in `x1console`'s checkout, runs it right after an Update X1 Console pulls new commits, synchronously, before the update finishes. It always exits 0, so it can never fail the update.
 
 The hook puts the flag back at once, and the `cron` job is the backup for what the hook can't cover. After an update whose pull brought nothing new, `git` runs no hook, but the update's `git stash` still took the flag out.
@@ -160,7 +160,7 @@ With no hash in its list, `nginx` refuses every request. Only `remove-api-key` c
 
 1. It checks the machine, changing nothing.
 2. It installs `nginx` from nginx.org.
-3. It opens port 443 in `ufw`.
+3. It opens port 443 in `ufw`, Ubuntu's firewall.
 4. It asks for the password and makes the first key, when there's none.
 5. It writes `nginx`'s configuration, then starts `nginx` and checks it.
 6. It adds the flag.
@@ -199,7 +199,7 @@ It also leaves `nginx`'s packages on record. `apply`'s first check refuses a mac
 
 `turn-off-private-rpc` and `turn-on-private-rpc` change only the flag in the start script, and the operator's choice of a private or a public rpc, which the tool's state, `app-data/state.json`, keeps. `nginx`, the keys and the watchers stay as they are.
 
-`turn-off-private-rpc` and `ensure` could undo each other. Say an Update X1 Console has just taken the flag out, and the operator runs `turn-off-private-rpc`. It reads the script before its question, finds no flag, and so has none to take out. While its question waits, the `cron` job's `ensure` puts the flag back, since private rpc is still on. `turn-off-private-rpc` would then record off and leave that flag in. The validator's next start would keep the rpc private, though the operator turned it off, and `ensure`, which follows off, would leave the flag there.
+`turn-off-private-rpc` and `ensure` could undo each other. Say an Update X1 Console has just taken the flag out, and the operator runs `turn-off-private-rpc`. It reads the script before its question, finds no flag, and so has none to take out. While its question waits, the `cron` job's `ensure` puts the flag back, since private rpc is still on. `turn-off-private-rpc` would then record private rpc as off and leave that flag in. The validator's next start would keep the rpc private, though the operator turned it off, and `ensure`, which goes by the recorded choice, would leave the flag there.
 
 To prevent that, both hold the start script's lock, which is `flock`'s lock on the state's folder, `app-data/`. `ensure` holds it from its read of the choice until it has put the flag back or left it. `turn-off-private-rpc` takes it after its question, then reads the state and the script again and writes both. A run of `ensure` that finds the lock held stops there, with no checks, alerts or Cronitor check-in, and its next run does the work. A `turn-off-private-rpc` that finds it held refuses, changes nothing, and says to run it again. `undo-apply` holds it for its step that takes the flag out, which a running `ensure` could race the same way. `turn-on-private-rpc` and `apply` need no lock, since they only add the flag, as `ensure` does. The kernel lets go of `flock`'s lock when its holder exits, however it exits. A lock file instead could be left behind by a killed command, and would stop `ensure` for good, without a word.
 
@@ -209,7 +209,7 @@ To prevent that, both hold the start script's lock, which is `flock`'s lock on t
 
 `ensure` runs from the watchers, and on demand. Each run:
 
-1. Puts `--private-rpc` back into the start script when it's missing, while private rpc is on. A run from `cron` or by hand never edits the script while an `x1console` update may be under way, which it tells from `git`'s lock file and from the script's last change. The `git` hook's run doesn't wait, since `git` runs the hook once the merge is done.
+1. Puts `--private-rpc` back into the start script when it's missing, while private rpc is on. A run from `cron` or by hand never edits the script while an `x1console` update may be under way: it leaves the script alone while `.git/index.lock` exists, or while the script changed less than `startScriptQuietSeconds` ago. The `git` hook's run doesn't hold off, since `git` runs the hook once the merge is done.
 2. Checks every part: the flag in the script and in the running validator, where the rpc listens, `nginx`'s state and address, the gate page, and the certificate.
 3. Sends the alerts its checks call for, on Telegram, and remembers what it sent, so a lasting problem doesn't alert every minute.
 4. Checks in with Cronitor, when a check-in url is set.
@@ -243,7 +243,7 @@ Each restart reads the start script as it stands.
 **Two short windows remain**, when the start script lacks the flag:
 
 1. During `git pull` itself, from the stash until the hook. That's the fetch from GitHub and the merge, usually a few seconds.
-2. After a pull that brings no new commits. `git` then runs no hook, but the stash has still taken the flag out. The `cron` job's `ensure` puts it back within a minute after `startScriptQuietSeconds` has passed since the script changed. It waits that long so that it never edits the script between the update's `git stash` and the end of its `git pull`. An edit there would make the pull refuse, as above, when the update changes the start script. Without the `cron` job, which `apply` asks about, this window lasts until the operator runs `ensure`, as the README's After an `x1console` Update says. A restart inside it sends no alert, since no `ensure` runs to see the public rpc.
+2. After a pull that brings no new commits. `git` then runs no hook, but the stash has still taken the flag out. The `cron` job's `ensure` puts it back within a minute after `startScriptQuietSeconds` has passed since the script changed. It holds off that long so that it never edits the script between the update's `git stash` and the end of its `git pull`. An edit there would make the pull refuse, as above, when the update changes the start script. Without the `cron` job, which `apply` asks about, this window lasts until the operator runs `ensure`, as the README's After an `x1console` Update says. A restart inside it sends no alert, since no `ensure` runs to see the public rpc.
 
 Rarely, the hook's `ensure` runs in the few milliseconds that the `cron` job's `ensure` holds the start script's lock, and so skips its run, as [Switching](#switching) says. That `cron` run leaves the script alone too, since the stash changed it only seconds before. So the first window then lasts as long as the second. That happens about once in 10,000 updates.
 
@@ -277,11 +277,11 @@ The Telegram bot's token and the chat's id are `x1console`'s, in `telegram_token
 
 ## Technology Choices
 
-- **Node.js 20.0.0**, the version `x1console` installs, so the tool needs nothing new on the validator.
+- **Node.js 24**, beside `x1console`'s own Node.js 20.0.0. Node.js 20 reached the [end of its life](https://github.com/nodejs/Release) on 2026-04-30, so it gets no more fixes, and the tool doesn't run on it. `x1console`'s scripts still do, so 20.0.0 stays. `nvm`, the Node.js version manager, holds both: `x1console` installs 20.0.0 with it, and the project's install steps add 24. Of the two long-term-support majors in the project's range, the tool runs on the older one, 24, since a validator can't always move to the newest at once.
 - **`nginx` from nginx.org**, for its njs and ACME modules. The key check and the certificate then live inside `nginx`, with no other program to run. nginx.org's packages also upgrade `nginx` in place. That's a binary upgrade, after which the new `nginx` reads its configuration and its list of hashes again. The upgrade check, `util/validate-nginx-upgrade/index.js`, proves that on each machine, as the first step of installing the tool: it installs nginx.org's previous release with a throwaway key, upgrades it with `apt`, and checks that the key still gets through.
-- **Not Caddy, a proxy in Node.js, or Certbot.** Caddy or a proxy in Node.js could stand in front of the rpc in `nginx`'s place, and Certbot could get the certificate in place of `nginx`'s ACME module. Caddy listens on every address by default, and runs an admin api on `localhost:2019` that any program on the machine can use to change its configuration. Both defaults would have to be switched off. A proxy in Node.js would run on `x1console`'s Node.js 20.0.0, as the tool does, and so put it on the internet. Node.js 20 reached the [end of its life](https://github.com/nodejs/Release) on 2026-04-30, and 20.0.0 has known request-smuggling flaws, such as [CVE-2024-27982](https://security.snyk.io/vuln/SNYK-UPSTREAM-NODE-6564550). Certbot adds its own timer, and usually needs port 80, while `nginx`'s ACME module needs neither.
+- **Not Caddy, a proxy in Node.js, or Certbot.** Caddy or a proxy in Node.js could stand in front of the rpc in `nginx`'s place, and Certbot could get the certificate in place of `nginx`'s ACME module. Caddy listens on every address by default, and runs an admin api on `localhost:2019` that any program on the machine can use to change its configuration. Both defaults would have to be switched off. A proxy in Node.js would be a program of the tool's own that runs all the time and answers the internet, which the last choice below rules out. Certbot adds its own timer, and usually needs port 80, while `nginx`'s ACME module needs neither.
 - **Hashes in `nginx`'s map** for the keys, as a GitHub token is kept: the key is shown once, and only its hash stays. Measured with `nginx` 1.30.6 and njs 1.0.2, a hash takes about a microsecond, and a lookup among 10,000 hashes a fiftieth of that. The map's hash table, sized as `src/lib/key-hash-map.js` says, builds at once for up to 500,000 keys, the `maxApiKeys` limit: 500,000 started in 0.66 seconds and reloaded in 1.4. With `nginx`'s usual table size, 10,000 keys took 20 seconds to start.
 - **`systemd`'s encrypted credentials** for a saved password, so the tool keeps no secret of its own on disk in the clear.
 - **No program of the tool's own runs all the time.** `nginx` serves, `systemd` starts it, and `cron` runs `ensure` and the key count check.
-- **No database.** apply's record, the dictionary of the settings `apply` can change, the tool's state, `ensure`'s alert state and `hashed-api-keys.json` are json files.
-- **Small, common packages** for the generic parts: commander for the command line, Ajv for the settings' schema, dotenv for `.env`, which holds the Cronitor check-in url, and ora for the upgrade check's spinner. [CLAUDE.md](../../CLAUDE.md) says which versions, and why.
+- **No database.** The tool keeps its data in json files: apply's record, the tool's state, `ensure`'s alert state, `hashed-api-keys.json`, and apply's dictionary, `app-config/app-defaults-for-user-configurable/apply-settings-dictionary.json`. The dictionary names each setting of the machine `apply` can change, such as whether a file is there, with a description of each.
+- **Small, common packages** for the generic parts: commander for the command line, Ajv for the settings' schema, dotenv for `.env`, which holds the Cronitor check-in url, and ora for the upgrade check's spinner. [CLAUDE.md](../../CLAUDE.md) says which versions.

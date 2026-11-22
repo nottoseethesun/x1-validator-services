@@ -3,7 +3,7 @@
  * @description
  * The main lint rules for every JavaScript file the gate checks, as an
  * ESLint flat configuration. The files come from scripts/lint-targets.js,
- * the list every gate shares.
+ * the lists every check shares.
  *
  * ESLint's recommended rules catch common bugs. On top of them sit the
  * project's limits, from LP Ranger's conventions: cyclomatic complexity
@@ -12,10 +12,7 @@
  * `Math.random()`, no classes, no imports inside functions and no
  * re-exports. eslint-plugin-n fails an import that doesn't resolve, and
  * any Node.js api or syntax newer than the oldest version `engines` in
- * package.json allows, which is the validator's Node.js 20.0.0. Files
- * that only ever run in the full gate, on Node.js 22.13 or newer, are
- * checked against Node.js 22.13 instead, and the deliberate mistakes'
- * scripts against 22.15, which they need.
+ * package.json allows, the oldest Node.js the project supports.
  *
  * The security rules run in a pass of their own, eslint-security.config
  * .js. Their plugins are registered here too, so a one-line exception
@@ -32,7 +29,6 @@ import globals from "globals";
 import noSecretLogging from "./eslint-rules/no-secret-logging.js";
 import {
   DELIBERATE_MISTAKE_TARGETS,
-  FULL_GATE_ONLY_TARGETS,
   INSTALLED_GLOBS,
   JS_TARGETS,
   TEST_JS_TARGETS,
@@ -135,18 +131,13 @@ export default [
     },
   },
   {
-    files: FULL_GATE_ONLY_TARGETS,
-    settings: { n: { version: ">=22.13.0" } },
-  },
-  {
     /*-
      * The deliberate mistakes change a module's text as Node.js loads it,
      * which only module.registerHooks does in the process that runs the
-     * tests. Node.js 22.15 added it, and still marks it experimental. The
-     * stage checks that it's there before any run.
+     * tests. Every Node.js the project supports has it, but marks it
+     * experimental, which the lint would otherwise refuse.
      */
     files: DELIBERATE_MISTAKE_TARGETS,
-    settings: { n: { version: ">=22.15.0" } },
     rules: {
       "n/no-unsupported-features/node-builtins": [
         "error",

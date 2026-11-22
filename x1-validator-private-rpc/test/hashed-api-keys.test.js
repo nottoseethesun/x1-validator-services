@@ -9,8 +9,9 @@
  * - a wrong password refused through passwordCheck, also with no record
  * - a damaged file refused, never written over
  * - nginx's list: one line per hash, counted the same way everywhere,
- *   an empty one reported, and nginx reloaded only while it runs, after
- *   its log folder is made again when it's missing
+ *   readable by every account, an empty one reported, and nginx
+ *   reloaded only while it runs, after its log folder is made again
+ *   when it's missing
  * - the api keys' lock: held for a change, let go after it even when it
  *   fails, and refused while another command holds it
  */
@@ -193,12 +194,22 @@ test("a damaged file is refused, so it's never written over, and a missing one i
   }
 });
 
-test("nginx's list has one line per hash, and the same count everywhere", async () => {
+test("nginx's list has one line per hash, the same count everywhere, and a mode every account can read", async () => {
   const host = fakeHost();
+  const modes = new Map();
+  const writeRootFile = host.writeRootFile;
+  host.writeRootFile = (filePath, content, mode) => {
+    modes.set(filePath, mode);
+    writeRootFile(filePath, content, mode);
+  };
   const { keys, apiKeys } = await twoRecords();
   const hashes = apiKeys.map((key) => hashApiKey(key));
   assert.equal(writeMap(host, MAP, keys), 2);
   assert.equal(host.files.get(MAP), mapText(hashes));
+  // The validator's account reads the list without sudo, in three
+  // places: the key count check, url, and apply's key stage. So root
+  // alone may change it, and every account may read it.
+  assert.equal(modes.get(MAP), "0644");
   assert.equal(keysMapText(keys), `${hashes[0]} 1;\n${hashes[1]} 1;\n`);
   const written = host.calls.find((call) => call.kind === "writeRootFile");
   assert.equal(written.path, MAP);

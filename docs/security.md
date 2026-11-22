@@ -22,8 +22,6 @@ The gate, `npm run check`, which must pass before every commit, fails on a high 
 
 - `github-actionlint` takes `adm-zip` 0.6.1 or newer. Its own range is `^0.5.16`.
 - `markdownlint-cli2` takes `katex` 0.18.2 or newer. `micromark-extension-math`'s range is `^0.16.0`.
-- Every package takes `minimatch` 11.0.1 or newer. ESLint, and `@typescript-eslint/typescript-estree`, which madge pulls in, ask for `minimatch` 10. `npm` 11 writes the lockfile on the development machine, and the validator installs it with `npm` 9, which comes with Node.js 20.0.0, as [CLAUDE.md](../CLAUDE.md) says. `npm` 9 refuses the lockfile when the override names only ESLint and madge, so the override covers the whole tree. ESLint and madge are the only packages that use `minimatch`, so the wider override changes nothing else.
-
-Two runs prove that `npm` 9 accepts the lockfile: the CI job on Node.js 20.0.0, and the system test, `npm run test:system`, which installs the project with Node.js 20.0.0 in an LXD container.
+- Every package takes `minimatch` 11.0.1 or newer. ESLint, and `@typescript-eslint/typescript-estree`, which madge pulls in, ask for `minimatch` 10. ESLint and madge are the only packages that use `minimatch`, so one override for the whole tree covers both, and changes nothing else.
 
 One known advisory has no fix yet: GHSA-fc5q-39xc-vjpf, a regular-expression denial of service in `picomatch`, which `knip`, `markdownlint-cli2`, `secretlint` and `madge` pull in. It reaches only the dev tools, which read the project's own files. An override follows once `picomatch` releases a fix.

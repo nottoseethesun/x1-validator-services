@@ -1,6 +1,6 @@
 # Examples
 
-x1-validator-private-rpc's `apply` command, which the feature's [README](../README.md) describes, writes each of the files below on the validator, with your own values. This folder holds an example of each, written for placeholder values, for you to read:
+x1-validator-private-rpc's `apply` command, which makes the validator's rpc private and puts it behind `nginx`, as the feature's [README](../README.md) describes, writes each of the files below on the validator, with your own values. This folder holds an example of each, written for placeholder values, for you to read:
 
 | Example | What it is |
 | --- | --- |
@@ -9,7 +9,7 @@ x1-validator-private-rpc's `apply` command, which the feature's [README](../READ
 | `systemd/x1-validator-private-rpc.conf.example` | The `systemd` drop-in that starts `nginx` with the tool's configuration and its own read-only `/dev`, after making its log folder when it's missing |
 | `apt/nginx.sources.example` | nginx.org's `apt` repository |
 | `apt/99nginx.example` | The `apt` pin that prefers nginx.org's packages |
-| `cron/x1-validator-private-rpc-ensure.cron.example` | The `crontab` line that runs `ensure` every minute |
+| `cron/x1-validator-private-rpc-ensure.cron.example` | The `crontab` line that runs `ensure` every minute. `ensure` is the tool's command that keeps the rpc private: it puts `--private-rpc` back into `x1console`'s start script after an `x1console` update takes it out, and sends the tool's Telegram alerts. |
 | `cron/x1-validator-private-rpc-api-key-count.cron.example` | The `crontab` line that checks every few hours that `nginx` holds an api key |
 | `git-hooks/post-merge.example` | The tool's `git` hook in `x1console`'s checkout, which runs `ensure` after an update |
 
@@ -18,6 +18,7 @@ The placeholders:
 - `x1-rpc.example.com`: your rpc's hostname
 - `203.0.113.10`: the validator's public ipv4 address
 - `HASH`: an api key's SHA-256 hash, in hex
+- `v24.X.Y`: the release of Node.js 24 that runs the tool, the newest that `nvm` holds. `nvm which 24` prints its `node`'s full path.
 
 Each example but `nginx`'s list of hashes opens with a short header that says what it is. The list has none, since `apply` writes it as hash lines alone.
 

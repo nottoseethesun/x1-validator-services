@@ -136,7 +136,8 @@ export async function askKnownPassword(prompts, keys, tries) {
     try {
       return await tryPassword(prompts, keys);
     } catch (error) {
-      prompts.say(`${error.message} ${left - 1} more tries.`);
+      const more = left - 1 === 1 ? "1 more try" : `${left - 1} more tries`;
+      prompts.say(`${error.message} ${more}.`);
     }
   }
   return tryPassword(prompts, keys);

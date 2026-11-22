@@ -5,9 +5,9 @@
  * feature lists deliberate mistakes in its test/deliberate-mistakes.json.
  * An entry names a file of the feature's code, text in that file, what
  * to change the text to, and the test file that must catch the change.
- * The stage makes each mistake in turn, in memory only, and runs that
- * test file. A mistake its test passes is a hole in the tests, and fails
- * the stage.
+ * The stage makes each mistake in memory only, and runs that test file.
+ * When a test file still passes with its mistake made, that test has a
+ * hole, and the stage fails.
  *
  * A first pass runs each test file the entries name once, with no
  * mistake, since the verdicts depend on those tests passing as the code
@@ -19,7 +19,6 @@
 
 import { spawn } from "node:child_process";
 import fs from "node:fs";
-import nodeModule from "node:module";
 import path from "node:path";
 import { listTestFiles } from "./_test-files.js";
 import { projectRoot } from "./_tools.js";
@@ -221,7 +220,7 @@ function appliedCounts(stderr) {
   const line = stderr
     .split("\n")
     .find((entry) => entry.startsWith(APPLIED_PREFIX));
-  return line === undefined
+  return line === undefined || line === null
     ? []
     : JSON.parse(line.slice(APPLIED_PREFIX.length));
 }
@@ -283,7 +282,7 @@ async function tryMistake(mistake, featureDir) {
     edits: mistake.edits,
     test: path.join(featureDir, mistake.test),
   });
-  if (result.timedOut) {
+  if (result.timedOut === true) {
     return { mistake, verdict: "caught, after timing out" };
   }
   if (
@@ -361,13 +360,6 @@ async function checkFeature(root, feature, { concurrency, print }) {
 export async function checkDeliberateMistakes(options) {
   const { root, features, concurrency } = options;
   const print = options.print ?? ((line) => console.log(line));
-  if (typeof nodeModule.registerHooks !== "function") {
-    print(
-      "The deliberate mistakes need Node.js 22.15 or newer, for its " +
-        `module.registerHooks. This is Node.js ${process.versions.node}.`,
-    );
-    return false;
-  }
   const started = Date.now();
   let total = 0;
   let caught = 0;

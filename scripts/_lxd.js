@@ -5,8 +5,9 @@
  * its phases:
  *
  * - running a command in the test's container as root, or as the
- *   container's ordinary user from the project's folder with Node.js
- *   20.0.0 first on the PATH, as a validator's account runs the tool
+ *   container's ordinary user from the project's folder, with the
+ *   Node.js the test copied in, the one validators run the tool on,
+ *   first on the PATH
  * - running a command there in a real terminal, and answering its
  *   prompts as they appear, the disclaimer's dialog among them
  * - reading the start script and ufw's rules there
@@ -115,8 +116,8 @@ export function asRootCaptured(name, command) {
 
 /**
  * Builds the arguments of `lxc` that run a command in the container as
- * its ordinary user, from the project's folder, with Node.js 20.0.0
- * first on the PATH.
+ * its ordinary user, from the project's folder, with the Node.js the
+ * test copied in first on the PATH.
  * @param {string} name  The container.
  * @param {string[]} command  The command and its arguments.
  * @param {Object<string, string>} [env]  More environment variables.

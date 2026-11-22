@@ -1,12 +1,16 @@
 /**
  * @file scripts/_gate-stages.js
  * @description
- * Every check the gate runs besides the tests and the coverage verdict,
- * written down once as data: a name, a command and its arguments. `npm
- * run lint` runs the lint stages, `npm run check` runs those and the
- * audit stages, and the single-purpose scripts (format, audit) run one
- * stage each. Two npm scripts, knip:files and audit:deps, spell out a
- * stage's command again. The stages take their file lists from
+ * Every check the gate runs besides the tests, the coverage verdict and
+ * the deliberate mistakes, written down once as data: a name, a command
+ * and its arguments. `npm run lint` runs the lint stages, `npm run check`
+ * runs those and the audit stages, and the single-purpose scripts,
+ * scripts/format.js, scripts/audit.js and scripts/check-unused-files.js,
+ * run one stage each. One stage here isn't the gate's: the audit of
+ * every dependency that fails on a high or critical advisory.
+ * scripts/audit.js runs it for `npm run audit:deps:all`. The gate runs
+ * that audit itself, and only saves its report. The stages take their
+ * file lists from
  * scripts/lint-targets.js, but for Prettier's json and yaml globs, here.
  *
  * A stage only describes its command. scripts/lint.js and
@@ -188,6 +192,19 @@ export function auditShippedStage() {
     name: "Audit (shipped dependencies)",
     command: "npm",
     args: ["audit", "--audit-level=high", "--omit=dev"],
+  };
+}
+
+/**
+ * The dependency audit of the whole tree, dev tools included, failing on
+ * a high or critical advisory, for `npm run audit:deps:all`.
+ * @returns {Stage}
+ */
+export function auditAllStage() {
+  return {
+    name: "Audit (all dependencies)",
+    command: "npm",
+    args: ["audit", "--audit-level=high"],
   };
 }
 

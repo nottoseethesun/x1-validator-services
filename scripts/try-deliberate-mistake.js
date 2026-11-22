@@ -15,16 +15,23 @@
  * names, so the tests run against the changed code, while the file on
  * disk stays as it was, and a stopped run leaves nothing to undo.
  *
+ * This script may have loaded that file itself before the hook exists,
+ * such as the feature's src/lib/node-version.js, which scripts/_tools.js
+ * imports. Node.js loads each module's url only once, so its resolve hook
+ * gives the file a url of its own, with a query added, and Node.js loads
+ * it again, through the load hook, for the test file.
+ *
  * It stops at the first failing test, with exit code 1, since one is
- * enough to catch a mistake. Run it with `--help` for its usage.
+ * enough to catch a mistake. Run it with `--help` for its usage, examples
+ * and exit codes.
  */
 
-import { registerHooks } from "node:module";
+import nodeModule from "node:module";
 import { run } from "node:test";
 import { fileURLToPath } from "node:url";
 import { inspect } from "node:util";
 import { APPLIED_PREFIX } from "./_deliberate-mistakes.js";
-import { scriptProgram } from "./_tools.js";
+import { requireMinNode, scriptProgram } from "./_tools.js";
 
 /**
  * Reads the run's input from stdin, to its end.
@@ -75,16 +82,39 @@ async function main() {
   scriptProgram(
     "scripts/try-deliberate-mistake.js",
     "Runs one test file with one deliberate mistake made in memory, in a " +
-      "file of a feature's code. The gate's deliberate mistakes start it, " +
-      "with its input as json on stdin.",
-    ["0  every test passed", "1  a test failed, or the input is missing"],
+      "file of a feature's code. scripts/check-deliberate-mistakes.js, the " +
+      "gate's last stage, starts it once for each mistake, with its input " +
+      "as json on stdin.",
+    {
+      examples: [
+        "node scripts/try-deliberate-mistake.js < input.json",
+        "    Makes the mistake input.json describes, and runs its test file,",
+        "    such as to see a test file's own output for one mistake.",
+        '    input.json holds {"file": ..., "edits": [{"from": ...,',
+        '    "to": ...}], "test": ...}, with both paths absolute, and',
+        '    "file" "" for a run with no mistake.',
+      ],
+      exitCodes: [
+        "0  every test passed",
+        "1  a test failed, or the input is missing",
+      ],
+    },
   ).parse();
+  requireMinNode("scripts/try-deliberate-mistake.js");
   const input = await readInput();
   let applied = input.edits.map(() => 0);
-  registerHooks({
+  const isMistakeFile = (url) =>
+    url.startsWith("file:") && fileURLToPath(url) === input.file;
+  nodeModule.registerHooks({
+    resolve(specifier, context, nextResolve) {
+      const result = nextResolve(specifier, context);
+      return isMistakeFile(result.url)
+        ? { ...result, url: `${result.url}?deliberate-mistake` }
+        : result;
+    },
     load(url, context, nextLoad) {
       const result = nextLoad(url, context);
-      if (!url.startsWith("file:") || fileURLToPath(url) !== input.file) {
+      if (!isMistakeFile(url)) {
         return result;
       }
       const { text, counts } = makeEdits(result.source, input.edits);

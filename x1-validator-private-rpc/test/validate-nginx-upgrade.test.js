@@ -29,6 +29,7 @@ import {
   MAP_HASH_BUCKET_SIZE,
   MAP_HASH_MAX_SIZE,
 } from "../src/lib/key-hash-map.js";
+import { oldestNode } from "../src/lib/node-version.js";
 import {
   keyProblems,
   machineProblems,
@@ -553,7 +554,16 @@ test("the real entry point prints its help with exit code 0", () => {
     encoding: "utf8",
   });
   assert.equal(help.status, 0);
-  assert.ok(help.stdout.startsWith("Proves on this machine"));
+  assert.ok(help.stdout.startsWith("Once x1-validator-private-rpc is"));
+  // Typed as the usage line says, from the project's folder, four levels
+  // up, it runs on the Node.js the project needs.
+  const command = `nvm exec ${oldestNode().major} node ${path.relative(path.resolve(entry, "../../../.."), entry)}`;
+  assert.ok(help.stdout.includes(`\nUsage: ${command} [options]\n`));
+  assert.ok(help.stdout.includes(`\n  ${command}\n`));
+  assert.match(
+    help.stdout,
+    /\nExamples:\n {2}\S[^]*validate-nginx-upgrade\/index\.js[^]*\n\nExit codes:\n {2}\S/,
+  );
   const refused = spawnSync(process.execPath, [entry, "--bogus"], {
     encoding: "utf8",
   });

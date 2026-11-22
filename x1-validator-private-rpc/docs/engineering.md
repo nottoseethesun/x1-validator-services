@@ -1,13 +1,15 @@
 # x1-validator-private-rpc — Engineering Reference
 
-x1-validator-private-rpc is a command-line tool that runs on an X1 validator. It makes the validator's rpc private, and puts it behind an https url that carries an api key. This reference is for those who maintain or review the tool.
+x1-validator-private-rpc is a command-line tool that runs on an X1 validator. It makes the validator's rpc private, and puts it behind an https url that carries an api key: the keyed url. This reference is for those who maintain or review the tool.
 
 Read [`architecture.md`](architecture.md) first. It sets out the parts the tool arranges, its commands, the path of a request and of the keys, and who restarts what. This reference assumes that picture, and names the pieces underneath it: the tool's modules, apply's record of what it changed, every file the tool reads or writes, the order its commands do things in, and its tests.
+
+The operator installs the tool with its `apply` command, and uninstalls it with `undo-apply`. `apply` puts `nginx` in front of the rpc, and adds one flag, `--private-rpc`, to `x1console`'s start script, so the rpc listens on 127.0.0.1 alone from the validator's next start. An `x1console` update takes the flag out again. So `ensure`, which a `cron` job and a `git` hook run, puts it back, and sends alerts. The key count check, `ensure-there-is-at-least-one-rpc-api-key`, alerts when no api key is left, since `nginx` then refuses every request. `add-api-key` makes a key, such as one for a new client, and `remove-api-key` takes one away, such as one that leaked. `url` prints the url's https and wss forms, for when the operator needs the url again. To make the rpc public again without uninstalling, `turn-off-private-rpc` switches it to public, and `turn-on-private-rpc` switches it back. Two standalone tools come with it. The operator runs the `nginx` upgrade check, `validate-nginx-upgrade`, as the first install step, before `apply`. It proves, with a throwaway api key, that an `apt` upgrade of `nginx` keeps a keyed url working. The rpc check, `check-my-private-rpc`, queries the keyed url as a client would.
 
 Other references:
 
 - [The feature's README](../README.md): installing, running and using the tool, the alerts it sends, and how the keys are kept.
-- [`docs/engineering.md`](../../docs/engineering.md): the project's gate, scripts and system test, which every feature shares.
+- [`docs/engineering.md`](../../docs/engineering.md): the project's gate, `npm run check`, which runs the checks that must pass before every commit and every push. Also its system test, `npm run test:system`, which runs the feature on a real Ubuntu system in an LXD container, and the scripts behind both. Every feature shares them.
 - [`docs/npm-project-commands.md`](../../docs/npm-project-commands.md): every `npm` command.
 
 ---
@@ -40,6 +42,7 @@ Other references:
 ## Terminology
 
 - **The flag**: `--private-rpc`, in the validator's command in `x1console`'s start script.
+- **The host**: the object `src/lib/host.js` makes. Every effect outside the process goes through it: commands, files, web requests, name lookups, and waits, which tests make instant. It runs a command in one of three ways: as the validator's account, as root through `sudo`, or on the person's terminal. Each of the tool's commands receives it, and tests pass a stand-in.
 - **Private rpc on or off**: the operator's choice, kept in the tool's state, of whether `ensure` keeps the flag in the start script. `apply`'s flag stage and `turn-on-private-rpc` turn it on, and `turn-off-private-rpc` turns it off. It starts unset, and `undo-apply` unsets it again. While it's unset, `ensure` treats it as off.
 - **apply's record**: `app-data/what-apply-changed.json`. It holds every setting of the machine `apply` changed, such as whether a file is there, with its old value. It also holds every one `apply` found already in the state it needs, such as a firewall rule for port 443 that was there before. `undo-apply` puts back the old values of the ones `apply` changed.
 - **apply's dictionary**: `app-config/app-defaults-for-user-configurable/apply-settings-dictionary.json`, which names every setting `apply` can change, with the description and type that each entry in apply's record copies.
@@ -70,9 +73,9 @@ Since json has no comments, a key that starts with `_` is a note, such as the wa
 
 ## The Disclaimer
 
-Each run that can change the system first shows a disclaimer, and goes on only once the person running it affirms it. The function `action`, in `src/cli/program.js`, wraps every command's run, and shows the disclaimer before each run that can change the system. The `nginx` upgrade check, the first step of installing the tool, shows it too. `src/lib/disclaimer.js` holds its text, which the README's [Disclaimer](../README.md#disclaimer) section repeats, and a test checks that the two match. The README's section says which runs show it, and how to answer the dialog.
+Each run that can change the system first shows a disclaimer, and goes on only once the person running it affirms it. The function `action`, in `src/cli/program.js`, which wraps every command's run, shows it. The `nginx` upgrade check, the first step of installing the tool, shows it too. `src/lib/disclaimer.js` holds its text, which the README's [Disclaimer](../README.md#disclaimer) section repeats, and a test checks that the two match. The README's section says which runs show it, and how to answer the dialog.
 
-`runOnTerminal`, one of the functions of the host that `src/lib/host.js` makes, runs `whiptail` on the person's terminal, as a yes-or-no box whose buttons are Affirm and Decline. The box fits the terminal, which it takes to be 80 by 24 when the terminal reports no size. `whiptail` reads the keys from stdin and draws on stderr, so stdout stays clean. It exits 0 for Affirm, 1 for Decline and 255 for Esc, and ignores Ctrl-C. Only Affirm lets the run go on. Any other ending, or a run whose stdin or stderr isn't a terminal, stops the run with exit code 1 and the reason, before it has done anything.
+`runOnTerminal`, one of the host's functions, runs `whiptail` on the person's terminal, as a yes-or-no box whose buttons are Affirm and Decline. The box fits the terminal, which it takes to be 80 by 24 when the terminal reports no size. `whiptail` reads the keys from stdin and draws on stderr, so stdout carries only what the command prints. It exits 0 for Affirm, 1 for Decline and 255 for Esc, and ignores Ctrl-C. Only Affirm lets the run go on. Any other ending, or a run whose stdin or stderr isn't a terminal, stops the run with exit code 1 and the reason, before it has done anything.
 
 ---
 
@@ -80,13 +83,14 @@ Each run that can change the system first shows a disclaimer, and goes on only o
 
 ### System View
 
-The entry point, `src/cli.js`, hands the command line to the program that `src/cli/program.js` builds. Each command's code sits in `src/cli/`. Two standalone tools sit in `util/`: the `nginx` upgrade check, the first step of installing the tool, and the rpc check, which tries the keyed url as a client would. Code that they and the command-line tool share sits in `src/lib/`.
+The entry point, `src/cli.js`, checks the Node.js running it, then hands the command line to the program that `src/cli/program.js` builds. Each command's code sits in `src/cli/`. Two standalone tools sit in `util/`: the `nginx` upgrade check, the first step of installing the tool, and the rpc check, which tries the keyed url as a client would. Code that they and the command-line tool share sits in `src/lib/`. The launcher, `bin/x1-validator-private-rpc`, is a shell script that lets the operator type the tool's name. On a validator, the default `node` is Node.js 20.0.0, which `x1console` installed, and it's too old for the tool. So the launcher starts `src/cli.js` on the newest Node.js 24 that `nvm` holds. The README's Usage section links it into `~/.local/bin`.
 
 **Major functions.**
 
 | Function | File | How it fits |
 | --- | --- | --- |
 | `buildProgram` | `src/cli/program.js` | Declares every command and option once, for commander. Each command gets the host, the settings, its own paths, the log and the prompts from a set of makers, which tests replace. |
+| `nodeVersionProblem` | `src/lib/node-version.js` | Tells each program, as it starts, whether the Node.js running it is the one `engines` in `package.json` names, or newer. Otherwise it gives the message to stop with, which says how to start the program through `nvm`. The project's scripts check the version with the same module's reader and comparison. |
 | `showDisclaimer` | `src/lib/disclaimer.js` | Shows the disclaimer in `whiptail`'s dialog, before each run that can change the system, and says whether the run may go on. |
 | `loadSettings` | `src/lib/settings.js` | Merges the operator's override over the shipped values, and checks the result against the schema before any command runs. |
 | `runApply` | `src/cli/apply.js` | Runs the preflight, then each stage that changes something, asking first. Each stage records every setting it changes, or finds already in the state it needs, in apply's record. |
@@ -131,7 +135,7 @@ The entry point, `src/cli.js`, hands the command line to the program that `src/c
 | The alert state | `src/cli/alerts.js` | Each alerting check's last verdict, and the time it last alerted, or -1 when it never has. Also the messages not yet delivered. `ensure` keeps it in `app-data/alert-state.json`, and starts over from an empty one when the file is damaged. |
 | The api keys' file | `src/cli/hashed-api-keys.js` | Each key's hash, with its record's values encrypted. |
 | The log | `src/cli/log.js` | Lines tagged with their stage. A secret the log is told about shows as its last four characters. |
-| The prompts | `src/cli/prompts.js` | Confirmations, which `--yes` answers, and choices, lines such as an email, and passwords, which `--yes` never answers. |
+| The prompts | `src/cli/prompts.js` | Confirmations, which `--yes` answers yes. Three kinds that `--yes` never answers: choices, such as whether to save the password; lines, such as an email; and passwords. |
 
 ### Sequence View
 
@@ -149,7 +153,7 @@ The entry point, `src/cli.js`, hands the command line to the program that `src/c
    - **Test and start.** When it wrote a file, or `nginx` is stopped or doesn't answer, it has `nginx -t` test the configuration. When `nginx -t` refuses, the stage puts back every file it wrote as it was, removing any it made new. It keeps what it wrote, and why `nginx` refused it, in `logs/error.log`, and stops. [Setting Up and Taking Down](architecture.md#setting-up-and-taking-down) says why. Otherwise it runs `systemctl daemon-reload`, and unmasks and enables `nginx.service`, recording whether it was masked and enabled before. Then it starts `nginx` when it's stopped, restarts it when the drop-in changed or it doesn't answer, and otherwise reloads it.
    - **Check.** Unless it left `nginx` as it was and stage 4 made no key, it waits for the gate page to say ok, which it can only once the certificate has arrived. Then it checks the whole request path from the server: the new key when stage 4 made one, a path without a key, and a random key. It runs the checks again until they pass, for up to `certificateWaitSeconds`, since a reload takes a moment.
 6. **The flag.** Adds `--private-rpc` to the start script, after a timestamped backup beside it, and turns private rpc on.
-7. **Watchers.** Writes the `git` hook, unless another program's hook is there. When the tool's own hook names an old path to Node.js or to the tool, it writes the hook again. Then the two `cron` lines: when the `crontab` holds lines an earlier `apply` installed, which this version writes differently, it replaces them without asking. Otherwise it asks, then adds them. Either way, it first makes the two folders they write in, and each line also makes its folders whenever they're missing. Last, it sends a test alert when `x1console`'s Telegram files are there.
+7. **Watchers.** Writes the `git` hook, unless another program's hook is there. When the tool's own hook names an old path to Node.js or to the tool, it writes the hook again. Then the two `cron` lines. When the `crontab` holds both as this version writes them, it leaves them, and asks nothing. Otherwise, when it holds a line an earlier `apply` installed, such as one an older version wrote differently, it writes both again without asking, since the operator agreed to the jobs then. When it holds none of `apply`'s lines, it asks, then adds them. Either way, it first makes the two folders they write in, and each line also makes its folders whenever they're missing. Last, it sends a test alert when `x1console`'s Telegram files are there.
 8. **Hand-over.** Says to restart the validator while the running one lacks the flag, which it reads from the validator's own command line, as `ensure` does. Then it prints the url, with the key masked when this run made it, or with `KEY` in its place.
 
 **A start of `nginx`**, by `systemd`: `nginx` starts with the tool's configuration, which includes its list of hashes. It needs nothing else.
@@ -331,7 +335,8 @@ The tool works through the system programs and files below, on the validator. Th
 
 | Program or file | What the tool does with it |
 | --- | --- |
-| Node.js | `x1console`'s Node.js 20.0.0 runs `apply`. `apply` names that Node.js in the `cron` lines and the `git` hook, so it also runs their `ensure` and key count check. |
+| Node.js | Node.js 24 runs the tool: the launcher in `bin/`, or `nvm exec 24`, starts it on the newest Node.js 24 that `nvm` holds. `apply` names that Node.js, by its full path, in the `cron` lines and the `git` hook, so it also runs `ensure` from both, and the key count check from its `cron` line. Each program checks, when it starts, that it runs on the Node.js `engines` in `package.json` names, or newer. |
+| `nvm` | The Node.js version manager. `x1console` installs it, with the Node.js 20.0.0 its own scripts run on. The project's install steps add Node.js 24 with it, beside 20.0.0. The launcher runs the tool on the newest Node.js 24 in `nvm`'s folder, `~/.nvm/versions/node`. |
 | `nginx`, with its njs and ACME modules | Serves the keyed url. Its njs module hashes each request's key, under QuickJS, and its map looks the hash up in `nginx`'s list. Its ACME module gets and renews the certificate from Let's Encrypt. `apply` installs `nginx` from nginx.org, and has `nginx -t` test the configuration before stage five starts, restarts or reloads `nginx`. |
 | `systemd` | Runs `nginx` as `nginx.service`, with a drop-in that starts it with the tool's configuration and its own read-only `/dev`, after making its log folder when it's missing. `systemctl` masks and unmasks, enables, starts, reloads, restarts, stops and disables `nginx`, reloads `systemd` after the drop-in changes, and reads `nginx`'s state. |
 | `systemd`'s encrypted credentials | `systemd-creds` saves the password, tied to the machine's TPM2 chip when there is one, and `systemd-analyze` or `systemd-creds` says whether there is. |
@@ -375,8 +380,8 @@ Update X1 Console runs `git stash`, which takes the flag out, then `git pull`.
 - `apply` writes the tool's hook, `.git/hooks/post-merge`, unless another program's hook is there. `git` runs it after a pull that brings new commits.
 - The hook runs `ensure --quiet --from-git-hook`, which puts the flag back before the update finishes. It always exits 0, so it can't fail the update.
 - After a pull that brings nothing new, `git` runs no hook. The `cron` job's `ensure` puts the flag back within a minute after `startScriptQuietSeconds` has passed.
-- Every run of `ensure` but the hook's waits out an update. It can't tell whether the update's pull will change the start script, and if it does, an edit between the stash and the merge makes the pull fail. So it leaves the script alone while `.git/index.lock` exists, which `git` holds while the stash and the merge change the checkout's files. It also leaves the script alone while the script changed less than `startScriptQuietSeconds` ago. That covers the pull's fetch, between the stash and the merge: `git` holds no lock then, but the stash changed the script only seconds before.
-- The hook and the `cron` lines name `x1console`'s Node.js 20.0.0 by its full path.
+- Every run of `ensure` but the hook's leaves the start script alone during an update. It can't tell whether the update's pull will change the start script, and if it does, an edit between the stash and the merge makes the pull fail. So it leaves the script alone while `.git/index.lock` exists, which `git` holds while the stash and the merge change the checkout's files. It also leaves the script alone while the script changed less than `startScriptQuietSeconds` ago. That covers the pull's fetch, between the stash and the merge: `git` holds no lock then, but the stash changed the script only seconds before.
+- The hook and the `cron` lines name, by its full path, the Node.js that ran `apply`: the newest Node.js 24 that `nvm` held then. Neither starts through `nvm`, so a bare `node` there wouldn't find Node.js 24. When `nvm install 24` brings a newer release, they still name the old one until `apply` rewrites them, as stage 7 in the [Sequence View](#sequence-view) says.
 - `undo-apply` removes the hook while it's still the tool's.
 
 ### The Telegram Set-up
@@ -417,14 +422,14 @@ The process on the rpc port is found by that port, never by a name pattern, whic
 
 - One worker process, at a lower priority than the validator, `nginxWorkerPriority`.
 - `worker_shutdown_timeout 10s`: 10 seconds after a reload, the old worker closes what it still holds, websockets included. [The Keys' Path](architecture.md#the-keys-path) says why.
-- `client_header_timeout 5s`: a connection has 5 seconds from its opening to finish its tls handshake and send its request's header, and each later request on a kept-alive connection has 5 seconds of its own. [The Request Path](architecture.md#the-request-path) says why.
+- `client_header_timeout 5s`: a connection has 5 seconds from its opening to finish its tls handshake and send its request's header, and each later request on a kept-alive connection has 5 seconds of its own. [Filling `nginx`'s Connections](architecture.md#filling-nginxs-connections) says why.
 - The ACME module's issuer, Let's Encrypt, with the tls-alpn-01 challenge. With `--acme-staging`, a second issuer, Let's Encrypt's staging service, serves the certificate instead.
 - `js_engine qjs` runs the key check under QuickJS. `js_set` runs its `keyHash` and `forwardPath` for every request, and its `loggedUri` for each line of the access log.
 - A `map` looks `keyHash`'s answer up in `nginx`'s list, which it includes. `map_hash_bucket_size` and `map_hash_max_size` are set as `src/lib/key-hash-map.js` says, so the table builds at once for every key the tool allows, as [Technology Choices](architecture.md#technology-choices) measures. A request whose hash isn't in the list gets 403.
 - `limit_req` gives every keyed request one shared budget: `rateLimitRequestsPerSecond` a second, plus a burst of as many more at once. A request without a listed key never reaches it, since it gets its 403 first, in `nginx`'s rewrite phase.
 - Keyed requests go to the rpc port on 127.0.0.1, or to the next port, the websocket's, when they ask for an upgrade.
 - The access log's format writes the url as `loggedUri` gives it: `<key>` in place of every run of hex digits at least half a key long, in either case, anywhere in the url. An `nginx` `map` could replace only one run per url, so the key check's `loggedUri` does the replacing. The format's other fields carry no key: the time, the client's address, the method, the status, the bytes sent and the duration. The server's `access_log` line names this format, `x1_rpc`, and the keyed location inherits it. An `access_log` line that named no format would get `nginx`'s own, which writes the request line, key and all. The gate page's access log is off. So no key reaches the log: not one in the query string, as some providers' urls carry it, nor one after a prefix, sent twice, or mistyped.
-- The main error log, `/var/log/nginx/error.log`, keeps notice and above, and the keyed location writes no error log, so neither holds a key, as [The Request Path](architecture.md#the-request-path) explains.
+- The main error log, `/var/log/nginx/error.log`, keeps notice and above, and the keyed location writes no error log, so neither holds a key, as [Keys in `nginx`'s Logs](architecture.md#keys-in-nginxs-logs) explains.
 - Request bodies of at most 10 KB, held in memory, and no response ever written to a temporary file.
 
 The key check, `src/njs/x1-validator-private-rpc.js`, hashes the key at the start of the request's path with njs's own `crypto` module. It does so when that's a key of the right form, followed by a slash or nothing, and gives '' otherwise. Because `nginx` loads that file on its own, it keeps its own copy of the key's pattern. Its test holds the copy to `src/lib/api-key.js`, and its hash to `src/lib/key-hash-map.js`'s.
@@ -468,7 +473,7 @@ Their helpers and fixtures, in `test/`:
 - `helpers/reload-probe.js`: for the system test, holds each kind of connection open with a key while that key is removed.
 - `fixtures/start_validator.sh`: a start script in `x1console`'s shape.
 - `fixtures/crontab`: one of Autopilot's jobs, as `x1console`'s `setautopilot.sh` writes it, which `apply` and `undo-apply` must keep.
-- `deliberate-mistakes.json`: the deliberate mistakes the gate makes in the feature's code, each with the test file that must catch it. The project's [`docs/engineering.md`](../../docs/engineering.md#deliberate-mistakes) describes them.
+- `deliberate-mistakes.json`: the feature's deliberate mistakes, small changes to its code, each with the test file that must fail when the change is made. The gate makes each one in memory only, and fails when its test file still passes. The project's [`docs/engineering.md`](../../docs/engineering.md#deliberate-mistakes) describes them.
 
 ---
 
