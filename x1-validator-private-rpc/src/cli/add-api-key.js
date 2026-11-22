@@ -124,7 +124,9 @@ async function addUnderLock(run, filePath, hostname) {
   }
   log.info(
     "add-api-key",
-    "Save them now: the tool keeps only their hashes, and can't show them again.",
+    "Save these urls now. The client needs them, and so do you, to remove " +
+      "a key later. The tool stores only each key's hash, so no command can " +
+      "show a key again.",
   );
   const total = handListToNginx(run, keys, "add-api-key");
   log.info("add-api-key", `${apiKeysCount(total)} in all.`);

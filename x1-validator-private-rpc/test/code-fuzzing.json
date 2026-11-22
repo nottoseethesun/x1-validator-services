@@ -217,8 +217,8 @@
     "file": "src/cli/add-api-key.js",
     "edits": [
       {
-        "from": "  log.info(\"add-api-key\", `Made ${apiKeysCount(count)}. The urls, shown once:`);\n  for (const apiKey of made) {\n    for (const url of apiKeyUrls(hostname, apiKey)) {\n      out(url);\n    }\n  }\n  log.info(\n    \"add-api-key\",\n    \"Save them now: the tool keeps only their hashes, and can't show them again.\",\n  );\n  const total = handListToNginx(run, keys, \"add-api-key\");\n",
-        "to": "  const total = handListToNginx(run, keys, \"add-api-key\");\n  log.info(\"add-api-key\", `Made ${apiKeysCount(count)}. The urls, shown once:`);\n  for (const apiKey of made) {\n    for (const url of apiKeyUrls(hostname, apiKey)) {\n      out(url);\n    }\n  }\n  log.info(\n    \"add-api-key\",\n    \"Save them now: the tool keeps only their hashes, and can't show them again.\",\n  );\n"
+        "from": "  log.info(\"add-api-key\", `Made ${apiKeysCount(count)}. The urls, shown once:`);\n  for (const apiKey of made) {\n    for (const url of apiKeyUrls(hostname, apiKey)) {\n      out(url);\n    }\n  }\n  log.info(\n    \"add-api-key\",\n    \"Save these urls now. The client needs them, and so do you, to remove \" +\n      \"a key later. The tool stores only each key's hash, so no command can \" +\n      \"show a key again.\",\n  );\n  const total = handListToNginx(run, keys, \"add-api-key\");\n",
+        "to": "  const total = handListToNginx(run, keys, \"add-api-key\");\n  log.info(\"add-api-key\", `Made ${apiKeysCount(count)}. The urls, shown once:`);\n  for (const apiKey of made) {\n    for (const url of apiKeyUrls(hostname, apiKey)) {\n      out(url);\n    }\n  }\n  log.info(\n    \"add-api-key\",\n    \"Save these urls now. The client needs them, and so do you, to remove \" +\n      \"a key later. The tool stores only each key's hash, so no command can \" +\n      \"show a key again.\",\n  );\n"
       }
     ],
     "test": "test/key-commands.test.js"

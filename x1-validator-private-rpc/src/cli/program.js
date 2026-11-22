@@ -76,7 +76,7 @@ Examples:
       Makes an api key, such as for a new client, and prints its urls.
   x1-validator-private-rpc url
       Prints the url's two forms, https and wss, with KEY in place of the
-      key, such as to give a client the url again for a key you saved.`;
+      key, such as when you hold a key but not its urls.`;
 }
 
 /**
@@ -129,7 +129,8 @@ Examples:
 Examples:
   x1-validator-private-rpc add-api-key
       Makes one api key, such as for a new client, and prints its https
-      and wss urls. Save them: no command shows the key again.
+      and wss urls. Save them: the client needs them, and you need the key
+      to remove it later, since no command shows the key again.
   x1-validator-private-rpc add-api-key --count 3
       Makes three keys in one run, all with the one email you give, such
       as for one client's three apps. For three clients, run add-api-key
@@ -143,7 +144,7 @@ Examples:
 Examples:
   x1-validator-private-rpc url
       Prints the url's two forms, https and wss, with KEY in place of the
-      key, such as to give a client the url again for a key you saved.`,
+      key, such as when you hold a key but not its urls.`,
   keyCount: `
 Examples:
   x1-validator-private-rpc ensure-there-is-at-least-one-rpc-api-key
