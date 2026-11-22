@@ -1,5 +1,5 @@
 #!/bin/sh
-# x1-validator-private-rpc's launcher. The README's Usage section links it
+# x1-validator-private-rpc's launcher. The README's Run section links it
 # into ~/.local/bin, so typing the tool's name runs it. On a validator,
 # the default node is Node.js 20.0.0, which x1console installed with nvm,
 # the Node.js version manager, for its own scripts, and it's too old for

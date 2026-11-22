@@ -62,7 +62,7 @@ The tool needs Node.js ${oldest} or newer, while a validator's default node
 is Node.js 20.0.0, which x1console installed. The examples type the
 tool's bare name, x1-validator-private-rpc. That works once you've linked
 the tool's launcher, x1-validator-private-rpc/bin/x1-validator-private-rpc,
-into ~/.local/bin, as the README's Usage section shows. The launcher is a
+into ~/.local/bin, as the README's Run section shows. The launcher is a
 script that runs the tool on the newest Node.js ${major} that nvm holds.
 Without the link, run the tool from the project's folder,
 ~/x1-validator-services, as nvm exec ${major} node
