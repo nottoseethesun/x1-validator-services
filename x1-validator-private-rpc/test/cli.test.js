@@ -1,19 +1,25 @@
 /**
  * @file x1-validator-private-rpc/test/cli.test.js
  * @description
- * Tests the tool's command-line program: its help and each command's,
- * with their examples, its version, its refusal of what it doesn't
- * accept, and its commands, each run with its options on stand-ins, a
- * failure exiting 1 with its reason, and the
- * disclaimer before each run that can change the system. Most tests
- * parse argument lists through a program built in the test, with
- * commander's exits turned into exceptions and its output caught. The
- * last two run the real entry point as a child process, the way a person
- * runs it.
+ * Tests the tool's command-line program:
+ *
+ * - its help and each command's, with their examples
+ * - the commands doc's tables, which must name each command and
+ *   standalone tool, and each option a command declares, and no other
+ * - its version, and its refusal of what it doesn't accept
+ * - its commands, each run with its options on stand-ins, a failure
+ *   exiting 1 with its reason, and the disclaimer before each run that
+ *   can change the system
+ *
+ * Most tests parse argument lists through a program built in the test,
+ * with commander's exits turned into exceptions and its output caught.
+ * Two run the real entry point as a child process, the way a person runs
+ * it.
  */
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import fs from "node:fs";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { featurePaths } from "../src/cli/feature-paths.js";
@@ -112,6 +118,35 @@ test("each command's help gives its own examples, and ends with the exit codes",
       name,
     );
     assert.ok(help.endsWith(`${EXIT_CODES}\n`), name);
+  }
+});
+
+test("the commands doc has a row for each command and standalone tool, naming each option a command declares and no other", () => {
+  const doc = fs.readFileSync(
+    new URL("../docs/project-commands.md", import.meta.url),
+    "utf8",
+  );
+  const rows = new Map(
+    [...doc.matchAll(/^\| `([\w-]+)` \| ([^|]*) \|/gm)].map((row) => [
+      row[1],
+      row[2].match(/(?<![\w-])--?[a-z][\w-]*/g) ?? [],
+    ]),
+  );
+  const { commands } = buildProgram();
+  const tools = fs.readdirSync(new URL("../util/", import.meta.url));
+  assert.deepEqual(
+    [...rows.keys()].sort(),
+    [...commands.map((command) => command.name()), ...tools].sort(),
+  );
+  for (const command of commands) {
+    const flags = command.options
+      .flatMap((option) => [option.long, option.short])
+      .filter((flag) => flag !== undefined && flag !== null);
+    assert.deepEqual(
+      [...rows.get(command.name())].sort(),
+      flags.sort(),
+      command.name(),
+    );
   }
 });
 

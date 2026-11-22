@@ -4,10 +4,10 @@
 # Node.js versions, which `engines` gives: the oldest it allows, which
 # validators run the features on, and the newest long-term-support major.
 # check-latest has setup-node fetch the newest release of each major,
-# not an older one the runner already holds. The gate runs the
-# deliberate mistakes last, so a deliberate mistake that its test doesn't
-# catch fails the check, and with the branch protection on `main`, the
-# merge too. Every version runs even when another fails.
+# not an older one the runner already holds. The gate runs code-fuzzing
+# last, so a change to the code that its test doesn't catch fails the
+# check, and with the branch protection on `main`, the merge too. Every
+# version runs even when another fails.
 #
 # Each job's name says which version it's for, not the version's number,
 # so when a newer major becomes long-term-support, only the numbers below

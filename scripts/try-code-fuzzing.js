@@ -1,17 +1,17 @@
 #!/usr/bin/env node
 /**
- * @file scripts/try-deliberate-mistake.js
+ * @file scripts/try-code-fuzzing.js
  * @description
- * Runs one test file in this process, with one deliberate mistake made in
- * a file of a feature's code, for the gate's deliberate mistakes, which
- * scripts/_deliberate-mistakes.js describes. That stage starts it once
- * for each mistake, and once for each test file with no mistake, and
- * hands it its input as json on stdin.
+ * Runs one test file in this process, with one code-fuzzing change made
+ * in a file of a feature's code, for the gate's code-fuzzing stage, which
+ * scripts/_code-fuzzing.js describes. That stage starts it once for each
+ * change, and once for each test file with no change, and hands it its
+ * input as json on stdin.
  *
  * Node.js lets a program hook into the loading of modules. Once this
  * script registers its load hook, Node.js hands the hook each file's
  * text after reading it, and compiles the text the hook returns. The
- * hook makes the mistake's edits in the text of the file the input
+ * hook makes the change's edits in the text of the file the input
  * names, so the tests run against the changed code, while the file on
  * disk stays as it was, and a stopped run leaves nothing to undo.
  *
@@ -22,7 +22,7 @@
  * it again, through the load hook, for the test file.
  *
  * It stops at the first failing test, with exit code 1, since one is
- * enough to catch a mistake. Run it with `--help` for its usage, examples
+ * enough to catch a change. Run it with `--help` for its usage, examples
  * and exit codes.
  */
 
@@ -30,7 +30,7 @@ import nodeModule from "node:module";
 import { run } from "node:test";
 import { fileURLToPath } from "node:url";
 import { inspect } from "node:util";
-import { APPLIED_PREFIX } from "./_deliberate-mistakes.js";
+import { APPLIED_PREFIX } from "./_code-fuzzing.js";
 import { requireMinNode, scriptProgram } from "./_tools.js";
 
 /**
@@ -42,8 +42,8 @@ import { requireMinNode, scriptProgram } from "./_tools.js";
 async function readInput() {
   if (process.stdin.isTTY === true) {
     console.error(
-      "This script takes its input on stdin. The gate's deliberate " +
-        "mistakes start it, and hand it its input there.",
+      "This script takes its input on stdin. The gate's code-fuzzing " +
+        "stage starts it, and hands it its input there.",
     );
     process.exit(1);
   }
@@ -80,19 +80,19 @@ function makeEdits(source, edits) {
  */
 async function main() {
   scriptProgram(
-    "scripts/try-deliberate-mistake.js",
-    "Runs one test file with one deliberate mistake made in memory, in a " +
-      "file of a feature's code. scripts/check-deliberate-mistakes.js, the " +
-      "gate's last stage, starts it once for each mistake, with its input " +
-      "as json on stdin.",
+    "scripts/try-code-fuzzing.js",
+    "Runs one test file with one code-fuzzing change made in memory, in a " +
+      "file of a feature's code. scripts/check-code-fuzzing.js, the gate's " +
+      "last stage, starts it once for each change, with its input as json " +
+      "on stdin.",
     {
       examples: [
-        "node scripts/try-deliberate-mistake.js < input.json",
-        "    Makes the mistake input.json describes, and runs its test file,",
-        "    such as to see a test file's own output for one mistake.",
+        "node scripts/try-code-fuzzing.js < input.json",
+        "    Makes the change input.json describes, and runs its test file,",
+        "    such as to see a test file's own output for one change.",
         '    input.json holds {"file": ..., "edits": [{"from": ...,',
         '    "to": ...}], "test": ...}, with both paths absolute, and',
-        '    "file" "" for a run with no mistake.',
+        '    "file" "" for a run with no change.',
       ],
       exitCodes: [
         "0  every test passed",
@@ -100,21 +100,21 @@ async function main() {
       ],
     },
   ).parse();
-  requireMinNode("scripts/try-deliberate-mistake.js");
+  requireMinNode("scripts/try-code-fuzzing.js");
   const input = await readInput();
   let applied = input.edits.map(() => 0);
-  const isMistakeFile = (url) =>
+  const isChangedFile = (url) =>
     url.startsWith("file:") && fileURLToPath(url) === input.file;
   nodeModule.registerHooks({
     resolve(specifier, context, nextResolve) {
       const result = nextResolve(specifier, context);
-      return isMistakeFile(result.url)
-        ? { ...result, url: `${result.url}?deliberate-mistake` }
+      return isChangedFile(result.url)
+        ? { ...result, url: `${result.url}?code-fuzzing` }
         : result;
     },
     load(url, context, nextLoad) {
       const result = nextLoad(url, context);
-      if (!isMistakeFile(url)) {
+      if (!isChangedFile(url)) {
         return result;
       }
       const { text, counts } = makeEdits(result.source, input.edits);

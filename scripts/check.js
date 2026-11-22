@@ -3,19 +3,20 @@
  * @file scripts/check.js
  * @description
  * `npm run check`, the one local gate, which must pass before every
- * commit and every push. Every check but the deliberate mistakes runs
- * even after one fails. The deliberate mistakes run last, and only once
- * every test has passed: with a test failing, the gate fails anyway, and
- * they're its slowest stage. A summary at the end lists each check that
- * ran, with its result. It runs:
+ * commit and every push. Every check but code-fuzzing runs even after
+ * one fails. Code-fuzzing runs last, and only once every test has passed:
+ * with a test failing, the gate fails anyway, and it's the slowest stage.
+ * A summary at the end lists each check that ran, with its result. It
+ * runs:
  *
  * - the lint, format and security checks of scripts/_gate-stages.js
  * - the audit of the shipped dependencies
  * - a saved audit report of every dependency, dev tools included
  * - the shipped-settings tests, then the rest of the suite with coverage
  * - the coverage verdict of scripts/_coverage.js
- * - once the tests pass, the deliberate mistakes of
- *   scripts/_deliberate-mistakes.js, which prove the tests catch mistakes
+ * - once the tests pass, code-fuzzing, in scripts/_code-fuzzing.js, which
+ *   makes small changes to the features' code in memory, and proves the
+ *   tests catch each
  *
  * Like every script, it stops on a Node.js older than the one `engines`
  * in package.json names. Reports go to tmp/check/, which is disposable.
@@ -178,14 +179,14 @@ function runTests(root) {
 }
 
 /**
- * Runs the deliberate mistakes, once the tests have passed: with a test
- * failing, the gate fails anyway, and they're its slowest stage.
+ * Runs code-fuzzing, once the tests have passed: with a test failing, the
+ * gate fails anyway, and it's the slowest stage.
  * @param {import("./_run-stages.js").StageResult[]} testResults  The
  *   tests' results, with coverage's verdict.
  * @returns {import("./_run-stages.js").StageResult[]}
  */
-function runDeliberateMistakes(testResults) {
-  const name = "Deliberate mistakes";
+function runCodeFuzzing(testResults) {
+  const name = "Code-fuzzing";
   const testsPassed = testResults
     .filter((result) => result.name !== COVERAGE_STAGE)
     .every((result) => result.passed === true);
@@ -197,7 +198,7 @@ function runDeliberateMistakes(testResults) {
     {
       name,
       command: process.execPath,
-      args: ["scripts/check-deliberate-mistakes.js"],
+      args: ["scripts/check-code-fuzzing.js"],
     },
   ]);
 }
@@ -226,7 +227,7 @@ function main() {
     "scripts/check.js",
     "Runs the gate, the checks that must pass before every commit and " +
       "every push: every lint, format, security, audit, test and coverage " +
-      "check, then the deliberate mistakes, which change the features' " +
+      "check, then code-fuzzing, which makes small changes to the features' " +
       "code in memory to check that a test fails for each change.",
     {
       examples: ["npm run check", "    Before every commit and every push."],
@@ -245,7 +246,7 @@ function main() {
   ]);
   results.push(saveFullAudit(root));
   const testResults = runTests(root);
-  results.push(...testResults, ...runDeliberateMistakes(testResults));
+  results.push(...testResults, ...runCodeFuzzing(testResults));
   process.exit(printSummary(results) ? 0 : 1);
 }
 

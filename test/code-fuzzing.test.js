@@ -1,16 +1,16 @@
 /**
- * @file test/deliberate-mistakes.test.js
+ * @file test/code-fuzzing.test.js
  * @description
- * Tests the gate's deliberate mistakes, scripts/_deliberate-mistakes.js:
+ * Tests the gate's code-fuzzing stage, scripts/_code-fuzzing.js:
  *
  * - each feature's list is well formed, and each entry's text is in its
  *   file exactly once, so a change to the code that leaves an entry with
  *   nothing to change fails the tests at once, without the stage
  * - each kind of problem in an entry, or in the list's file, is named
  * - the runs keep their items' order, and no more run at once than asked
- * - on a small feature made for the test, a mistake its test catches
- *   passes, while a mistake its test misses, one its test never loads,
- *   and a test that fails with no mistake made each fail the stage
+ * - on a small feature made for the test, a change its test catches
+ *   passes, while a change its test misses, one its test never loads,
+ *   and a test that fails with no change made each fail the stage
  */
 
 import assert from "node:assert/strict";
@@ -18,13 +18,13 @@ import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
 import {
-  checkDeliberateMistakes,
+  CHANGES_FILE,
+  checkCodeFuzzing,
   entryProblems,
   featureTestFiles,
-  MISTAKES_FILE,
-  readMistakes,
+  readChanges,
   runPool,
-} from "../scripts/_deliberate-mistakes.js";
+} from "../scripts/_code-fuzzing.js";
 import { makeTestTempFolder } from "../scripts/_test-temp-folders.js";
 import { projectRoot } from "../scripts/_tools.js";
 import { FEATURES } from "../scripts/lint-targets.js";
@@ -44,13 +44,13 @@ const SUM_SOURCE = [
 /**
  * Makes a project with one small feature, `feat`, whose test checks
  * `sum` and nothing else, and a second test that loads no code.
- * @param {object[]} mistakes  The feature's deliberate mistakes.
+ * @param {object[]} changes  The feature's code-fuzzing changes.
  * @param {{expected?: number}} [options]  The sum the test expects, 5
  *   unless given.
  * @returns {string} The project's root.
  */
-function makeProject(mistakes, { expected = 5 } = {}) {
-  const root = makeTestTempFolder("mistakes");
+function makeProject(changes, { expected = 5 } = {}) {
+  const root = makeTestTempFolder("code-fuzzing");
   const write = (file, text) => {
     fs.mkdirSync(path.dirname(path.join(root, file)), { recursive: true });
     fs.writeFileSync(path.join(root, file), text);
@@ -72,7 +72,7 @@ function makeProject(mistakes, { expected = 5 } = {}) {
     "feat/test/other.test.js",
     'import { test } from "node:test";\n\ntest("passes", () => {});\n',
   );
-  write(`feat/${MISTAKES_FILE}`, JSON.stringify(mistakes));
+  write(`feat/${CHANGES_FILE}`, JSON.stringify(changes));
   return root;
 }
 
@@ -83,7 +83,7 @@ function makeProject(mistakes, { expected = 5 } = {}) {
  */
 async function check(root) {
   const lines = [];
-  const passed = await checkDeliberateMistakes({
+  const passed = await checkCodeFuzzing({
     root,
     features: ["feat"],
     concurrency: 2,
@@ -102,13 +102,13 @@ const CAUGHT = {
 test("each feature's list is well formed, and each entry's text is in its file exactly once", () => {
   const root = projectRoot();
   for (const feature of FEATURES) {
-    const { mistakes, problems } = readMistakes(root, feature);
+    const { changes, problems } = readChanges(root, feature);
     const testFiles = featureTestFiles(root, feature);
     assert.deepEqual(
-      [...problems, ...entryProblems(root, feature, mistakes, testFiles)],
+      [...problems, ...entryProblems(root, feature, changes, testFiles)],
       [],
     );
-    assert.ok(mistakes.length > 0, feature);
+    assert.ok(changes.length > 0, feature);
   }
 });
 
@@ -130,7 +130,7 @@ test("each kind of problem in an entry is named", () => {
   ];
   const testFiles = featureTestFiles(root, "feat");
   assert.deepEqual(testFiles, ["test/other.test.js", "test/sum.test.js"]);
-  const label = `feat/${MISTAKES_FILE}, entry`;
+  const label = `feat/${CHANGES_FILE}, entry`;
   assert.deepEqual(entryProblems(root, "feat", entries, testFiles), [
     `${label} 1: not an object`,
     `${label} 2: no name`,
@@ -146,16 +146,16 @@ test("each kind of problem in an entry is named", () => {
 
 test("a list's file that's missing, isn't json, or holds no list is named", () => {
   const root = makeProject([]);
-  const listPath = path.join(root, "feat", MISTAKES_FILE);
-  const label = `feat/${MISTAKES_FILE}`;
-  assert.deepEqual(readMistakes(root, "feat").problems, [
+  const listPath = path.join(root, "feat", CHANGES_FILE);
+  const label = `feat/${CHANGES_FILE}`;
+  assert.deepEqual(readChanges(root, "feat").problems, [
     `${label} must hold a list of them.`,
   ]);
   fs.writeFileSync(listPath, "[");
-  assert.match(readMistakes(root, "feat").problems.join(), /JSON/);
+  assert.match(readChanges(root, "feat").problems.join(), /JSON/);
   fs.rmSync(listPath);
-  assert.deepEqual(readMistakes(root, "feat").problems, [
-    `${label} is missing. Each feature lists its mistakes.`,
+  assert.deepEqual(readChanges(root, "feat").problems, [
+    `${label} is missing. Each feature lists its code-fuzzing changes.`,
   ]);
 });
 
@@ -173,16 +173,16 @@ test("the runs keep their items' order, and no more run at once than asked", asy
   assert.equal(most, 2);
 });
 
-test("a mistake its test catches passes the stage", async () => {
+test("a change its test catches passes the stage", async () => {
   const { passed, lines } = await check(makeProject([CAUGHT]));
   assert.equal(passed, true);
   assert.match(
     lines.join("\n"),
-    /^Caught 1 of 1 deliberate mistakes, in \d+ s\.$/,
+    /^Caught 1 of 1 code-fuzzing changes, in \d+ s\.$/,
   );
 });
 
-test("a mistake its test misses, or a test that never loads its file, fails the stage", async () => {
+test("a change its test misses, or a test that never loads its file, fails the stage", async () => {
   const missed = {
     name: "label changes",
     file: "src/sum.js",
@@ -202,19 +202,19 @@ test("a mistake its test misses, or a test that never loads its file, fails the 
     "MISSED  feat: label changes (src/sum.js, by test/sum.test.js)",
     "NOT MADE  feat: never loaded (src/sum.js, by test/other.test.js)",
   ]);
-  assert.match(lines.at(-1), /^Caught 1 of 3 deliberate mistakes/);
+  assert.match(lines.at(-1), /^Caught 1 of 3 code-fuzzing changes/);
 });
 
-test("a test that fails with no mistake made fails the stage before any mistake", async () => {
+test("a test that fails with no change made fails the stage before any change", async () => {
   const { passed, lines } = await check(makeProject([CAUGHT], { expected: 6 }));
   assert.equal(passed, false);
   assert.match(
     lines.at(0),
-    /^feat\/test\/sum\.test\.js fails with no mistake made:/,
+    /^feat\/test\/sum\.test\.js fails with no change made:/,
   );
   assert.equal(
     lines.at(1),
-    "The tests must pass before a mistake can show anything.",
+    "The tests must pass before a change can show anything.",
   );
-  assert.match(lines.at(-1), /^Caught 0 of 1 deliberate mistakes/);
+  assert.match(lines.at(-1), /^Caught 0 of 1 code-fuzzing changes/);
 });

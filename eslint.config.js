@@ -28,7 +28,7 @@ import securityPlugin from "eslint-plugin-security";
 import globals from "globals";
 import noSecretLogging from "./eslint-rules/no-secret-logging.js";
 import {
-  DELIBERATE_MISTAKE_TARGETS,
+  CODE_FUZZING_TARGETS,
   INSTALLED_GLOBS,
   JS_TARGETS,
   TEST_JS_TARGETS,
@@ -132,12 +132,12 @@ export default [
   },
   {
     /*-
-     * The deliberate mistakes change a module's text as Node.js loads it,
-     * which only module.registerHooks does in the process that runs the
-     * tests. Every Node.js the project supports has it, but marks it
+     * Code-fuzzing changes a module's text as Node.js loads it, which
+     * only module.registerHooks does in the process that runs the tests.
+     * Every Node.js the project supports has it, but marks it
      * experimental, which the lint would otherwise refuse.
      */
-    files: DELIBERATE_MISTAKE_TARGETS,
+    files: CODE_FUZZING_TARGETS,
     rules: {
       "n/no-unsupported-features/node-builtins": [
         "error",
