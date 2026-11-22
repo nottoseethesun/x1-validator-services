@@ -1,9 +1,10 @@
 /**
  * @file x1-validator-private-rpc/test/cli.test.js
  * @description
- * Tests the tool's command-line program: its help, its version, its
- * refusal of what it doesn't accept, and its commands, each run with its
- * options on stand-ins, a failure exiting 1 with its reason, and the
+ * Tests the tool's command-line program: its help and each command's,
+ * with their examples, its version, its refusal of what it doesn't
+ * accept, and its commands, each run with its options on stand-ins, a
+ * failure exiting 1 with its reason, and the
  * disclaimer before each run that can change the system. Most tests
  * parse argument lists through a program built in the test, with
  * commander's exits turned into exceptions and its output caught. The
@@ -74,6 +75,8 @@ test("help opens with what the tool is for and ends with the exit codes", () => 
   assert.ok(help.startsWith("Makes an X1 validator's rpc private, puts it"));
   assert.match(help, /-h, --help +print this help and exit/);
   assert.match(help, /-v, --version +print the version and exit/);
+  assert.match(help, /Each command's --help gives its options and examples/);
+  assert.match(help, /\nExamples:\n {2}x1-validator-private-rpc \S/);
   assert.ok(help.endsWith(`${EXIT_CODES}\n`), help);
   for (const command of [
     "apply",
@@ -87,6 +90,28 @@ test("help opens with what the tool is for and ends with the exit codes", () => 
     "ensure-there-is-at-least-one-rpc-api-key",
   ]) {
     assert.match(help, new RegExp(`^  ${command}\\b`, "m"), command);
+  }
+});
+
+test("each command's help gives its own examples, and ends with the exit codes", () => {
+  const names = buildProgram().commands.map((command) => command.name());
+  assert.equal(names.length, 9);
+  for (const name of names) {
+    const { program, out } = testProgram();
+    assert.throws(() => program.parse(["node", "cli", name, "--help"]), {
+      code: "commander.helpDisplayed",
+    });
+    const help = out();
+    assert.match(
+      help,
+      new RegExp(`^Usage: x1-validator-private-rpc ${name}\\b`, "m"),
+    );
+    assert.match(
+      help,
+      new RegExp(`\\nExamples:\\n {2}x1-validator-private-rpc ${name}\\b`),
+      name,
+    );
+    assert.ok(help.endsWith(`${EXIT_CODES}\n`), name);
   }
 });
 

@@ -9,8 +9,9 @@
  * validator. Its first phase, the nginx upgrade check, is described
  * here. Its second, apply and the commands after it, is described in
  * scripts/_lxd-apply-phase.js. It launches the container, copies in
- * the feature and Node.js 20.0.0 (the validator's version), and installs
- * the runtime dependencies. It runs the check as the container's
+ * the feature and the newest release of the Node.js major that `engines`
+ * in package.json names, the one validators run the tool on, and
+ * installs the runtime dependencies. It runs the check as the container's
  * ordinary user, who has sudo, as a validator's account does, in a real
  * terminal, where it affirms the disclaimer's dialog. Then it
  * confirms the container is as clean as before and deletes it. What
@@ -18,15 +19,17 @@
  * check loads in the container, nginx.org's repository files, and the
  * folders above them, so this test keeps no copy of a default.
  *
- * It needs LXD, and network access from the container to Ubuntu's
- * archive, nginx.org, npm's registry and GitHub, for Pebble. It isn't
- * part of `npm run check`. Run it with `--help` for its usage and exit
- * codes.
+ * It needs LXD, and network access to nodejs.org, and from the container
+ * to Ubuntu's archive, nginx.org, npm's registry and GitHub, for Pebble.
+ * It isn't
+ * part of `npm run check`. Run it with `--help` for its usage, examples
+ * and exit codes.
  */
 
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { oldestNode } from "../x1-validator-private-rpc/src/lib/node-version.js";
 import { overrideFilePath } from "../x1-validator-private-rpc/src/lib/settings.js";
 import {
   AFFIRM_DISCLAIMER,
@@ -43,13 +46,16 @@ import {
 import { runApplyPhase } from "./_lxd-apply-phase.js";
 import {
   projectRoot,
+  requireMinNode,
   runCaptured,
   runInherited,
   scriptProgram,
 } from "./_tools.js";
 
 const IMAGE = "ubuntu:24.04";
-const NODE_TARBALL = "node-v20.0.0-linux-x64.tar.xz";
+
+/** nodejs.org's list of every Node.js release, the newest first. */
+const NODE_RELEASES = "https://nodejs.org/dist/index.json";
 
 /** Prints, as json, the settings the check loads, using the app's code. */
 const PRINT_SETTINGS =
@@ -57,26 +63,43 @@ const PRINT_SETTINGS =
   "process.stdout.write(JSON.stringify(loadSettings()));";
 
 /**
- * Copies Node.js 20.0.0 into the container: nvm's downloaded copy when
- * there is one, otherwise a fresh download inside the container.
- * @param {string} name  The container.
+ * Finds the newest release of the Node.js major that `engines` in
+ * package.json names, the one validators run the tool on.
+ * @returns {Promise<string>} The version, such as "v24.22.3".
  */
-function installNode(name) {
-  const home = os.homedir();
+async function newestNodeRelease() {
+  const { major } = oldestNode();
+  const response = await fetch(NODE_RELEASES);
+  if (response.ok === false) {
+    throw new Error(`${NODE_RELEASES} answered ${response.status}.`);
+  }
+  const releases = await response.json();
+  return releases.find((release) => release.version.startsWith(`v${major}.`))
+    .version;
+}
+
+/**
+ * Copies a Node.js release into the container: nvm's downloaded copy
+ * when there is one, otherwise a fresh download inside the container.
+ * @param {string} name  The container.
+ * @param {string} version  The release, such as "v24.22.3".
+ */
+function installNode(name, version) {
+  const tarball = `node-${version}-linux-x64.tar.xz`;
   const cached = path.join(
-    home,
+    os.homedir(),
     ".nvm",
     ".cache",
     "bin",
-    "node-v20.0.0-linux-x64",
-    NODE_TARBALL,
+    `node-${version}-linux-x64`,
+    tarball,
   );
   if (fs.existsSync(cached)) {
     const copied = runInherited("lxc", [
       "file",
       "push",
       cached,
-      `${name}/tmp/${NODE_TARBALL}`,
+      `${name}/tmp/${tarball}`,
     ]);
     mustPass(copied, "Copying Node.js into the container");
   } else {
@@ -84,8 +107,8 @@ function installNode(name) {
       "curl",
       "-fsSL",
       "-o",
-      `/tmp/${NODE_TARBALL}`,
-      `https://nodejs.org/dist/v20.0.0/${NODE_TARBALL}`,
+      `/tmp/${tarball}`,
+      `https://nodejs.org/dist/${version}/${tarball}`,
     ]);
     mustPass(downloaded, "Downloading Node.js in the container");
   }
@@ -94,7 +117,7 @@ function installNode(name) {
   const unpacked = asRoot(name, [
     "tar",
     "-xJf",
-    `/tmp/${NODE_TARBALL}`,
+    `/tmp/${tarball}`,
     "-C",
     "/opt/node",
     "--strip-components=1",
@@ -173,7 +196,7 @@ async function runTest(name, workFolder) {
   mustPass(launched, "Launching");
   const booted = asRoot(name, ["cloud-init", "status", "--wait"]);
   mustPass(booted, "Waiting for the container to finish booting");
-  installNode(name);
+  installNode(name, await newestNodeRelease());
   copyProject(name, workFolder);
   const installed = asUser(name, [
     "npm",
@@ -210,19 +233,38 @@ async function main() {
   const program = scriptProgram(
     "scripts/test-in-lxd.js",
     "Runs x1-validator-private-rpc end to end in a throwaway Ubuntu 24.04 " +
-      "LXD container. First comes the nginx upgrade check, which must leave " +
-      "the container as it found it. Then come apply, ensure, url, " +
-      "add-api-key, remove-api-key, the key count check, " +
-      "turn-off-private-rpc, turn-on-private-rpc and undo-apply, with " +
-      "Pebble in place of Let's Encrypt. undo-apply leaves nginx installed, " +
-      "so the test purges it and runs undo-apply again, which must leave " +
-      "the container as apply found it. Then it deletes the container.",
-    [
-      "0  both phases passed",
-      "1  a phase failed, or the container couldn't be set up",
-    ],
+      "LXD container. First comes the nginx upgrade check, the feature's " +
+      "first install step, which proves an apt upgrade of nginx keeps the " +
+      "keyed url working. It must leave the container as it found it. " +
+      "Then comes every command of the " +
+      "tool, from apply, which sets it up, to undo-apply, which takes it " +
+      "back, with Pebble, Let's Encrypt's test server, in place of Let's " +
+      "Encrypt. undo-apply leaves nginx installed, so the test purges it " +
+      "and runs undo-apply again, which must leave the container as apply " +
+      "found it. Then it deletes the container.",
+    {
+      examples: [
+        "npm run test:system",
+        "    Before a merge, after a change to the tool's code or messages.",
+        "    A changed message can break the test. It answers apply's stage",
+        '    questions by their opening words, such as "Stage 2 of 8". It',
+        "    answers other prompts by their whole text, which it takes from",
+        "    the tool's code. And it checks what some commands print, such as",
+        '    "holds 1 api key." from url, the command that prints the keyed',
+        "    url. Needs LXD.",
+        "npm run test:system -- --keep",
+        "    The same, but keeps the container, which it names at the end,",
+        "    to look inside with lxc exec <name> -- bash. Delete it after",
+        "    with lxc delete --force <name>.",
+      ],
+      exitCodes: [
+        "0  both phases passed",
+        "1  a phase failed, or the container couldn't be set up",
+      ],
+    },
   ).option("--keep", "keep the container for a look inside", false);
   program.parse();
+  requireMinNode("scripts/test-in-lxd.js");
   const { keep } = program.opts();
   const name = `x1vs-system-test-${process.pid}`;
   const tempRoot = os.tmpdir();

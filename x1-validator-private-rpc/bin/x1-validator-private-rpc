@@ -1,0 +1,18 @@
+#!/bin/sh
+# x1-validator-private-rpc's launcher. The README's Usage section links it
+# into ~/.local/bin, so typing the tool's name runs it. On a validator,
+# the default node is Node.js 20.0.0, which x1console installed with nvm,
+# the Node.js version manager, for its own scripts, and it's too old for
+# the tool. nvm holds the newer Node.js the tool needs beside it. So the
+# launcher runs the tool on the newest release nvm holds of the Node.js
+# major that engines in the project's package.json names, the oldest one
+# the project supports.
+set -eu
+root=$(readlink -f "$(dirname "$(readlink -f "$0")")/../..")
+major=$(sed -n 's/^ *"node": *">=\([0-9][0-9]*\).*/\1/p' "$root/package.json")
+newest=$(printf '%s\n' "${NVM_DIR:-$HOME/.nvm}/versions/node/v$major."* | sort -V | tail -n 1)
+if [ ! -x "$newest/bin/node" ]; then
+  echo "x1-validator-private-rpc needs Node.js $major, which nvm doesn't hold yet. Add it with: nvm install $major" >&2
+  exit 1
+fi
+exec "$newest/bin/node" "$root/x1-validator-private-rpc/src/cli.js" "$@"

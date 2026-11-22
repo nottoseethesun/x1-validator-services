@@ -87,8 +87,9 @@ import {
 
 /** The one question about the api keys, when apply saved the password. */
 export const KEYS_AND_PASSWORD_QUESTION =
-  "Delete every api key and the saved password? They go together, so a " +
-  "no keeps both. After a yes, a later apply makes a new key under a new " +
+  "Delete every api key and the saved password? The password opens " +
+  "nothing but the keys' records, so the two go together: a no keeps " +
+  "both. After a yes, a later apply makes a new key under a new " +
   "password, and every client needs a new url.";
 
 /** The one question about the api keys, when apply saved no password. */

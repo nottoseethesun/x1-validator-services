@@ -163,7 +163,9 @@ dig +short x1-rpc.example.com @ns1.dns-provider.example
 
 ## Certificates and the New Hostname
 
-Fix the dns before you run `apply`. `apply` starts `nginx`, and within seconds `nginx`'s ACME module asks Let's Encrypt for the name's certificate. With a wrong record that request fails, and certificate authorities limit failed attempts. The module proves control of the name through port 443 alone, so port 80 stays closed, and it renews the certificate before it expires. To get and renew it:
+Fix the dns before you run `apply`. `apply` starts `nginx`, and within seconds `nginx`'s ACME module asks Let's Encrypt for the name's certificate. With a wrong record that request fails, and certificate authorities limit failed attempts. `apply`'s own check doesn't catch every wrong record. It checks only that the name's ipv4 record names this address, as the validator's resolver sees it. It doesn't check `AAAA` or `CAA` records. An `AAAA` record can send Let's Encrypt to an ipv6 address where `nginx` doesn't listen. A `CAA` record that doesn't name Let's Encrypt forbids it to issue the certificate. Let's Encrypt also looks the name up from its own servers, which may not see a new record yet.
+
+The module proves control of the name through port 443 alone, so port 80 stays closed, and it renews the certificate before it expires. To get and renew it:
 
 - The name must resolve to this server, with no stray `AAAA` record.
 - Port 443 must reach `nginx` from the internet.
@@ -175,7 +177,7 @@ Fix the dns before you run `apply`. `apply` starts `nginx`, and within seconds `
 
 - To move the rpc to another server, change the record's address. Clients follow once the TTL has run out.
 - A day before a planned move, lower the TTL to `300`, five minutes. Raise it again afterwards.
-- To stop using the name, delete the record and run `undo-apply`, as the README's [Uninstall](../README.md#uninstall) section shows.
+- To stop using the name, delete the record and run `undo-apply`, the tool's command that takes back what `apply` set up, as the README's [Uninstall](../README.md#uninstall) section shows.
 
 ## Troubleshooting
 

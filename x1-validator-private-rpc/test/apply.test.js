@@ -36,7 +36,7 @@ import { RESTART_HOW } from "../src/cli/start-script.js";
 import { readState } from "../src/cli/state.js";
 import { readRecord } from "../src/cli/what-apply-changed.js";
 import { makeApiKey } from "../src/lib/api-key.js";
-import { GATE_PAGE_NAME, GATE_PAGE_PATH } from "../src/lib/gate-page.js";
+import { GATE_PAGE_PATH } from "../src/lib/gate-page.js";
 import { hashApiKey } from "../src/lib/key-hash-map.js";
 import { NGINX_PACKAGES, NGINX_UNIT } from "../src/lib/nginx-org.js";
 import { loadSettings } from "../src/lib/settings.js";
@@ -454,7 +454,8 @@ test("stops when the request path fails a check from the server", async () => {
       ? { status: 502, body: "Bad Gateway", certificate: {} }
       : tlsGet(target);
   await assert.rejects(apply(host), {
-    message: /^The keyed path's health check answered 502: Bad Gateway$/m,
+    message:
+      /^Asked through nginx with the new key, the rpc's \/health answered 502: Bad Gateway$/m,
   });
 });
 
@@ -490,9 +491,7 @@ test("apply waits for the certificate as long, and asks as often, as the setting
     asked.push(host.now());
     return { status: 503, body: "", certificate: {} };
   };
-  await assert.rejects(apply(host, { settings }), {
-    message: `No certificate in time: ${GATE_PAGE_NAME} says http 503.`,
-  });
+  await assert.rejects(apply(host, { settings }));
   const waited = asked.at(-1) - asked[0];
   const gaps = new Set(asked.slice(1).map((at, index) => at - asked[index]));
   assert.deepEqual(

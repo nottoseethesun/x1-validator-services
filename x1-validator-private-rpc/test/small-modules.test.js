@@ -8,13 +8,18 @@
  * - the tool's state, which refuses a damaged file
  * - the Cronitor check-in, tried as many times as the settings say, with
  *   a url that never reaches the log
- * - x1console's Telegram files and the plain-text send
+ * - the project's .env.example, which the operator copies to .env: it
+ *   sits where the tool looks for .env, and names the Cronitor url as
+ *   the tool reads it
+ * - x1console's Telegram files, under x1console's own names, and the
+ *   plain-text send
  * - the prompts, with --yes answering only confirmations
  * - the key stage's TPM2 explanations, and the password's length and
  *   tries, as the settings say
  */
 
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import { PassThrough } from "node:stream";
 import { test } from "node:test";
@@ -32,12 +37,7 @@ import { checkIn, CRONITOR_URL, cronitorUrl } from "../src/cli/heartbeat.js";
 import { createLog } from "../src/cli/log.js";
 import { createPrompts } from "../src/cli/prompts.js";
 import { emptyState, readState } from "../src/cli/state.js";
-import {
-  CHAT_ID_FILE,
-  readTelegram,
-  sendTelegram,
-  TOKEN_FILE,
-} from "../src/cli/telegram.js";
+import { readTelegram, sendTelegram } from "../src/cli/telegram.js";
 import { maskSecret } from "../src/lib/mask-secret.js";
 import { shippedAndChangedSettings } from "./helpers/config-copies.js";
 import { createFakeHost } from "./helpers/fake-host.js";
@@ -132,6 +132,13 @@ test("the Cronitor url comes from .env, and the check-in is tried as many times 
   assert.equal(lines.join("\n").includes("SECRETKEY"), false);
 });
 
+test("the project's .env.example sits where the tool looks for .env, and names the Cronitor url as the tool reads it", () => {
+  // The operator makes .env with cp .env.example .env, as the root
+  // README's Credentials says, so the example ties both names.
+  const example = readFileSync(`${featurePaths().envPath}.example`, "utf8");
+  assert.match(example, new RegExp(`^${CRONITOR_URL}=`, "m"));
+});
+
 test("Telegram: x1console's two files, and a plain-text send", async () => {
   const posts = [];
   const host = createFakeHost({
@@ -146,9 +153,10 @@ test("Telegram: x1console's two files, and a plain-text send", async () => {
   const homeDir = host.homeDir();
   const x1consoleDir = homePath(settings.x1consoleDir, homeDir);
   assert.equal(readTelegram(host, settings), null);
-  host.files.set(path.join(x1consoleDir, TOKEN_FILE), "123:token\n");
+  // x1console's own names for the files, not the tool's constants.
+  host.files.set(path.join(x1consoleDir, "telegram_token.txt"), "123:token\n");
   assert.equal(readTelegram(host, settings), null);
-  host.files.set(path.join(x1consoleDir, CHAT_ID_FILE), " 42 \n");
+  host.files.set(path.join(x1consoleDir, "chat_id.txt"), " 42 \n");
   const telegram = readTelegram(host, settings);
   assert.deepEqual(telegram, { token: "123:token", chatId: "42" });
   await sendTelegram(host, telegram, "Hello *there*", 1000);
@@ -221,7 +229,8 @@ test("a password may be typed as many times as the settings say, and the last wr
     password: "the right password",
     cipherKey,
   });
-  assert.ok(prompts.asked.includes(`${WRONG_PASSWORD} 1 more tries.`));
+  assert.ok(prompts.asked.includes(`${WRONG_PASSWORD} 2 more tries.`));
+  assert.ok(prompts.asked.includes(`${WRONG_PASSWORD} 1 more try.`));
   const stubborn = scriptedPrompts({ passwords: [...wrong, "wrong too"] });
   await assert.rejects(askKnownPassword(stubborn, keys, tries), {
     message: WRONG_PASSWORD,

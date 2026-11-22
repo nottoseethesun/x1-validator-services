@@ -1,6 +1,6 @@
 # X1 Validator Services — Engineering Reference
 
-X1 Validator Services holds features, tools whose code runs on an X1 validator, each in a folder of its own. This is the reference for the engineering they share. The gate, `npm run check`, runs the checks that must pass before every commit. This doc covers the gate and each of its checks, the lists of files the checks read, and the rules every test follows. It also covers the scripts behind the `npm` commands, CI, and the system test, which runs a feature on a real system in an LXD container.
+X1 Validator Services holds features, tools whose code runs on an X1 validator, each in a folder of its own. This is the reference for the engineering they share. The gate, `npm run check`, runs the checks that must pass before every commit. This doc covers the gate and each of its checks, the lists of files the checks read, and the rules every test follows. It also covers the scripts behind the `npm` commands, CI, and the system test, which runs a feature on a real system in an LXD container. The project needs Node.js 24 or newer, as [Node.js Versions](#nodejs-versions) explains.
 
 Each feature's own design is in its folder. For x1-validator-private-rpc, read [`architecture.md`](../x1-validator-private-rpc/docs/architecture.md), then [`engineering.md`](../x1-validator-private-rpc/docs/engineering.md).
 
@@ -17,7 +17,7 @@ Other references:
 - [`npm` Project Commands](#npm-project-commands)
 - [The Gate](#the-gate)
   - [What It Runs](#what-it-runs)
-  - [On Older Node.js Versions](#on-older-nodejs-versions)
+  - [Node.js Versions](#nodejs-versions)
   - [Reports](#reports)
 - [File Lists](#file-lists)
 - [Coverage](#coverage)
@@ -38,13 +38,13 @@ Every command in `package.json`, with its flags and an example, is in [`docs/npm
 
 ## The Gate
 
-`npm run check` runs `scripts/check.js`, the one local gate. It must pass before every commit and every push. Every check runs even after one fails, and a summary at the end lists each one with its result, so one run shows every problem.
+`npm run check` runs `scripts/check.js`, the one local gate. It must pass before every commit and every push. Every check but the last runs even after one fails. The last, the deliberate mistakes, makes small changes to a feature's code in memory, and checks that a test fails for each, as [Deliberate Mistakes](#deliberate-mistakes) explains. It runs only once every test has passed: with a test failing, the gate fails anyway, and it's the gate's slowest stage. A summary at the end lists each check that ran, with its result, so one run shows every problem.
 
 ### What It Runs
 
 First of all, the gate removes any test folder left behind by a test run that died. [Tests](#tests) says how it tells those folders apart.
 
-Then, on Node.js 22.13 or newer, it runs these, in this order:
+Then it runs these, in this order:
 
 | Stage | Tool | What fails it |
 | --- | --- | --- |
@@ -63,11 +63,16 @@ Then, on Node.js 22.13 or newer, it runs these, in this order:
 | Coverage | `scripts/_coverage.js` | See [Coverage](#coverage) |
 | Deliberate mistakes, once the tests pass | `scripts/check-deliberate-mistakes.js` | A mistake its test doesn't catch. See [Deliberate Mistakes](#deliberate-mistakes) |
 
-Every stage but the tests and the coverage verdict is written down once, as data, in `scripts/_gate-stages.js`. `scripts/_run-stages.js` runs them, except the audit of every dependency, which `scripts/check.js` runs itself to save its report. `npm run lint` runs the stages from the JavaScript lint through the secret scan, and `scripts/format.js` and `scripts/audit.js` run one stage each. Two `npm` scripts spell out a stage's command again: `knip:files`, and `audit:deps`, which the Security Audit workflow runs. So a change to either stage's command in `scripts/_gate-stages.js` needs the same change in `package.json`.
+Every stage but the tests, the coverage verdict and the deliberate mistakes is written down once, as data, in `scripts/_gate-stages.js`. `scripts/_run-stages.js` runs them, except the audit of every dependency, which `scripts/check.js` runs itself to save its report. The scripts behind the other `npm` commands take their stages from the same file:
 
-### On Older Node.js Versions
+- `npm run lint` runs every check but the tests and the audits of the dependencies: the lints of JavaScript, Markdown and GitHub Actions, the format checks, the two checks for dead code, the security lint and the secret scan. The `git` pre-commit hook runs it before each commit.
+- `scripts/format.js`, behind `npm run format` and `format:check`, runs Prettier on the JavaScript: `format` when the lint reports unformatted JavaScript, `format:check` to list the files without changing them.
+- `scripts/audit.js` runs one of the gate's four security checks alone, such as to recheck a fix, through four targets: `audit:security` the security lint, `audit:secrets` the secret scan, `audit:deps` the audit of the shipped dependencies, and `audit:deps:all` the audit of every dependency. Each target fails on what its check finds. The gate fails on the first three, and only saves the fourth's report. The Security Audit workflow runs the first three on GitHub.
+- `scripts/check-unused-files.js`, behind `npm run knip:files`, lists the files nothing imports, which the gate fails on. Run it alone, such as after moving or deleting a file.
 
-Only the features' code runs on the validator, which has Node.js 20.0.0, so on that version only the features' tests matter, and the gate runs them alone. The lint, coverage and audit tools need Node.js 22.13 or newer, and so do the tests of the project's own tooling, which load those tools.
+### Node.js Versions
+
+The whole project, its features and its tools, supports one range of Node.js versions: 24 or newer, as `engines`, `>=24`, in `package.json` says. CI tests the two long-term-support majors in that range, on the newest release of each: the newest major, 26, and the one two majors before it, 24. Every script and every `npm` command runs on both. On a validator, the features run on 24, the older major, since a validator can't always move to the newest at once. They run beside `x1console`'s own Node.js 20.0.0. No tool pins a version, and `engines` names no minor, since no tool needs a later release than 24.0.0. Every script reads that minimum from `engines`, through the feature's `src/lib/node-version.js`, which the feature's programs use too, so the two can't drift. On an older version, a script stops. eslint-plugin-n reads the minimum from `engines` too, and the lint fails code that uses an api or syntax newer than that. When a newer major becomes long-term-support, `engines`, the Node.js versions in the three workflows, CI, Security Audit and System Test, and the docs move up together, and CI's jobs keep their names, as [The Pre-Commit Hook and CI](#the-pre-commit-hook-and-ci) says.
 
 ### Reports
 
@@ -79,7 +84,7 @@ The gate writes its reports to `tmp/check/`, which `git` ignores: `lcov.info`, t
 
 `scripts/lint-targets.js` holds the file lists the checks share: ESLint's, Prettier's for JavaScript, the security lint's, the secret scan's, Markdown lint's, the dead-code checks', the test runner's and the coverage report's. Prettier's json and yaml globs sit in `scripts/_gate-stages.js`. `knip` adds the scripts, the lint rules and its project glob, in `knip.config.js`.
 
-Every list is built from `FEATURES`, the names of the feature folders, so a new feature joins every check by being named there. Within a feature, the lists rely on three kinds of file, which `scripts/_project-files.js` finds:
+Every list is built from `FEATURES`, the names of the feature folders, so a new feature joins every check by being named there. It also needs a list of deliberate mistakes, its `test/deliberate-mistakes.json`, with at least one entry, or the gate's last stage fails. Within a feature, the lists rely on three kinds of file, which `scripts/_project-files.js` finds:
 
 - **Entry points**: the programs a person or a scheduler starts by their path. They sit directly in a feature's `src/` or `util/`, or in a `util/` tool's folder, as `index.js`.
 - **Modules**: the files entry points load, in folders under `src/`, and a tool's other files.
@@ -110,7 +115,7 @@ An exported function nothing imports is fine. Only whole files are judged.
 
 ## Tests
 
-Tests are files ending in `.test.js` in a test folder that `scripts/lint-targets.js` names: `test/`, for the project's own tooling, and each feature's `test/`. `scripts/_test-files.js` finds them.
+Tests are files ending in `.test.js` in a test folder that `scripts/lint-targets.js` names: `test/`, for the project's own tooling, and each feature's `test/`. `scripts/_test-files.js` finds them. `npm test` runs every test once, without the gate's other checks, for a quick run while you work.
 
 Tests of the shipped settings end in `.config-values.test.js`, and the gate runs them before the rest. A bad shipped value would make many tests fail, and running these first names the cause.
 
@@ -125,25 +130,27 @@ Every test follows the same rules:
 
 ## Deliberate Mistakes
 
-Tests can all pass and still miss the mistakes they're meant to catch. The gate's last stage checks that they don't, with deliberate mistakes: small changes to a feature's code, of the kind a slip in an edit would make, each paired with the test file that must fail when the change is made. A mistake its test passes means that test has a hole, and fails the gate.
+Tests can all pass and still miss the mistakes they're meant to catch. The gate's last stage checks that they don't, with deliberate mistakes: small changes to a feature's code, of the kind a slip in an edit would make, each paired with the test file that must fail when the change is made. When a test file still passes with its mistake made, that test has a hole, and the gate fails.
 
-Each feature lists its mistakes in its `test/deliberate-mistakes.json`. Each entry has:
+Each feature lists its mistakes in its `test/deliberate-mistakes.json`. A new feature needs that list too, with at least one entry, or the stage fails. Each entry has:
 
 - `name`: what the mistake does, in a few words
 - `file`: the file it changes, from the feature's folder
 - `edits`: the text to change, `from`, and what to change it `to`. Each `from` must be in the file exactly once, so the entry can't change the wrong place.
 - `test`: the test file that must fail, from the feature's folder
 
-`scripts/check-deliberate-mistakes.js`, which `npm run test:mistakes` runs too, makes each mistake in turn, and never changes a file on disk. For each one, `scripts/try-deliberate-mistake.js` runs the entry's test file in a process of its own, with a load hook: Node.js hands the hook each file's text after reading it, and runs the text the hook returns, so the hook makes the edits in memory. A run stops at the first failing test, since one is enough. The runs go side by side, one per processor.
+`scripts/check-deliberate-mistakes.js` makes each mistake in a process of its own, and never changes a file on disk. `npm run test:mistakes` runs it alone, without the rest of the gate, such as after adding a mistake to a feature's list. For each mistake, `scripts/try-deliberate-mistake.js` runs the entry's test file, with a load hook: Node.js hands the hook each file's text after reading it, and runs the text the hook returns, so the hook makes the edits in memory. A run stops at the first failing test, since one is enough. The runs go side by side, as many at once as the machine has processors.
+
+A finished run reports whether it made each of its entry's edits. An edit not made means its test file never loaded the file it changes, so the mistake was never made, and the stage fails it as not made. A run still going after 5 minutes is stopped, and can't report its edits. The stage counts it as caught, since its test file didn't pass in that time, and prints it as "CAUGHT, AFTER TIMING OUT".
 
 The stage fails when:
 
-- a mistake's test passes
+- a mistake's test file passes with the mistake made
 - the test never loads the file the mistake changes, so the mistake isn't made
-- an entry is wrong, such as when a change to the code leaves an entry's text other than once in its file. `test/deliberate-mistakes.test.js` checks the entries too, so `npm test` shows this at once.
-- a test file the entries name fails with no mistake made. The stage runs each one first, since a test that fails already would make every mistake look caught. For the same reason, the gate runs the stage only once every test has passed.
+- an entry is wrong. An entry's `from` text is the text its mistake replaces. A maintainer's change to the feature's code can leave that text missing from its file, or there more than once. `test/deliberate-mistakes.test.js` checks the entries too, so `npm test` shows a wrong entry at once.
+- a test file the entries name fails with no mistake made. The stage runs each one first, since a test that fails already would make every mistake look caught.
 
-The load hook needs `module.registerHooks`, from Node.js 22.15 or newer. So the stage runs in the full gate, on Node.js 22 and 24, and not on 20.0.0.
+The load hook uses Node.js's `module.registerHooks`, which every Node.js the project supports has. A resolve hook beside it gives the mistake's file a url of its own, with a query added. Node.js loads each module's url only once, and the runner may have loaded that file itself before its hooks exist, such as `src/lib/node-version.js`, which `scripts/_tools.js` imports. Under the new url, Node.js loads the file again, through the load hook, for the test file.
 
 When a new test is written to catch a mistake, add that mistake as an entry. The gate then fails if the test ever stops catching it.
 
@@ -151,12 +158,12 @@ When a new test is written to catch a mistake, add that mistake as an entry. The
 
 ## The System Test
 
-`npm run test:system` runs x1-validator-private-rpc end to end on a real Ubuntu 24.04 system, with `systemd`, in a throwaway LXD container. It runs on the development machine, or on GitHub's runner when someone starts the System Test workflow, which [The Pre-Commit Hook and CI](#the-pre-commit-hook-and-ci) describes. It never runs on a validator, and it isn't part of the gate. What it needs before it runs is in the feature README's [Test](../x1-validator-private-rpc/README.md#test) section. Its checks use the feature's own terms, which its [README](../x1-validator-private-rpc/README.md) and [architecture](../x1-validator-private-rpc/docs/architecture.md) explain: read those first.
+The tests above hand the feature a stand-in for the system, so none of them shows that the real `apt`, `systemd`, `nginx`, `ufw` and `cron` behave as the feature expects. The system test does. `npm run test:system` runs x1-validator-private-rpc end to end on a real Ubuntu 24.04 system, with `systemd`, in a throwaway LXD container. It runs on the development machine, or on GitHub's runner when someone starts the System Test workflow, which [The Pre-Commit Hook and CI](#the-pre-commit-hook-and-ci) describes. It never runs on a validator, and it isn't part of the gate. Run it before you merge a change to a feature's code. What it needs before it runs is in the feature README's [Test](../x1-validator-private-rpc/README.md#test) section. Its checks use the feature's own terms, which its [README](../x1-validator-private-rpc/README.md) and [architecture](../x1-validator-private-rpc/docs/architecture.md) explain: read those first.
 
 `scripts/test-in-lxd.js` sets the container up the way a validator is set up:
 
 1. It launches the container, and waits for it to finish booting.
-2. It copies in Node.js 20.0.0, from `nvm`'s download cache when there is one.
+2. It copies in the newest release of the Node.js major `engines` names, 24, the one validators run the features on. It finds that release in nodejs.org's list of releases. It copies it from `nvm`'s download cache when it's there, and otherwise has the container download it from nodejs.org.
 3. It copies in `package.json`, the lockfile and the feature's folder, without the operator's own settings, and installs the runtime dependencies, as a validator's install does.
 4. It runs the tool's commands as the container's ordinary user, who has `sudo`, as a validator's account does.
 
@@ -164,8 +171,8 @@ A command that asks anything runs in a real terminal, which the `script` program
 
 Then it runs two phases:
 
-- **The `nginx` upgrade check.** It runs `util/validate-nginx-upgrade/index.js`, which must pass, and must leave the container as it found it.
-- **`apply`, which sets the feature up, and the commands after it**, in `scripts/_lxd-apply-phase.js`. Pebble, Let's Encrypt's test server, stands in for Let's Encrypt, and a stand-in rpc plays the validator's. `x1console`, which starts the validator, is a `git` checkout that holds the start script the tool edits. In the test, a checkout stands in for it, at the path the settings give, cloned from a local repository that stands in for `x1console`'s on GitHub. It checks:
+- **The `nginx` upgrade check.** It runs `util/validate-nginx-upgrade/index.js`, the feature's standalone tool that proves, with a throwaway api key, that an `apt` upgrade of `nginx` keeps the feature's url working. It must pass, and must leave the container as it found it.
+- **`apply`, which sets the feature up, and the commands after it**, in `scripts/_lxd-apply-phase.js`. Pebble, Let's Encrypt's test server, stands in for Let's Encrypt, and a stand-in rpc plays the validator's. `x1console`, which starts the validator, is a `git` checkout that holds the start script the tool edits. In the test, a checkout stands in for it, at the path the settings give, cloned from a local repository that stands in for `x1console`'s on GitHub. After `apply`, it runs every other command. `ensure`, which a `cron` job runs every minute on a validator, puts back `--private-rpc`, the start script's flag that keeps the rpc private, after an `x1console` update takes it out, and checks every part. `url` prints the url's https and wss forms. `add-api-key` and `remove-api-key` make and remove api keys, and the key count check, `ensure-there-is-at-least-one-rpc-api-key`, alerts when no key is left. `turn-off-private-rpc` and `turn-on-private-rpc` switch the rpc between public and private, and `undo-apply` takes back what `apply` did. The phase checks:
   - the first key `apply` shows, the saved password `systemd-creds` holds, the request path, a random key's 403, the firewall rule, the rate limit, and that `nginx`'s logs hold no key, show `<key>` in its place, and keep the mode nginx.org's package gives them: 640, owner `nginx`, group `adm`
   - that `nginx`'s main process has its own read-only `/dev`, and still serves after a log reopen
   - `ensure`'s failure while the rpc is still public, and every one of its verdicts after the validator's restart
@@ -187,7 +194,7 @@ The test deletes the container at the end. With `--keep`, it stays, for a look i
 
 ## The Scripts' Command Lines
 
-Each script run by its path declares its options with commander, through `scriptProgram` in `scripts/_tools.js`. So each one answers `--help` and `-h` with help made from its own options, and its exit codes, on stdout, with exit code 0. It refuses an option it doesn't take, on stderr, with exit code 1. `test/script-help.test.js` checks both, for every script run by its path.
+Each script run by its path declares its options with commander, through `scriptProgram` in `scripts/_tools.js`. So each one answers `--help` and `-h` with help made from its own options, its usage examples and its exit codes, on stdout, with exit code 0. It refuses an option it doesn't take, on stderr, with exit code 1. `test/script-help.test.js` checks both, for every script run by its path, and fails a help that gives no examples. Each script also stops on a Node.js older than 24, as [Node.js Versions](#nodejs-versions) says, and the same test fails a script that doesn't check. It also fails an `npm run` target that runs no script of the project's, so every target's `--help` is one of these.
 
 Files whose names start with an underscore are helper modules, never run by their path. `scripts/_tools.js` also finds each tool's command in `node_modules/.bin`, never through `npx`, and finds the project's root from its own location, so the working directory never matters.
 
@@ -195,12 +202,12 @@ Files whose names start with an underscore are helper modules, never run by thei
 
 ## The Pre-Commit Hook and CI
 
-The pre-commit hook, `.husky/pre-commit`, runs `npm run lint`, and rewrites nothing. [`docs/npm-project-commands.md`](npm-project-commands.md) lists the commands that fix what it reports.
+The pre-commit hook, `.husky/pre-commit`, runs `npm run lint`, and rewrites nothing. [`docs/npm-project-commands.md`](npm-project-commands.md) lists the commands that fix what it reports. `npm ci` sets the hook up on a development machine. It runs the `prepare` target, whose script, `scripts/prepare.js`, runs `husky`, the package that installs `git` hooks.
 
 GitHub runs three workflows:
 
-- **CI**, `.github/workflows/ci.yml`, on every push and pull request to `main`. It runs `npm ci`, then `npm run check`, on Node.js 20.0.0, 22 and 24. Its jobs are `Check (Node.js 20.0.0)`, `Check (Node.js 22)` and `Check (Node.js 24)`.
+- **CI**, `.github/workflows/ci.yml`, on every push and pull request to `main`. It runs `npm ci`, then `npm run check`, on two versions of Node.js, in jobs named for each version's role, not its number: `check-oldest-nodejs-supported` on the newest Node.js 24, and `check-newest-nodejs-supported` on the newest Node.js 26. The step that installs Node.js, `actions/setup-node`, fetches the newest release of each major, since `check-latest` is on: without it, the step takes an older release that GitHub's runner already holds. When a newer major becomes long-term-support, only the version numbers move, so the jobs' names, which the branch protection requires, stay the same.
 - **Security Audit**, `.github/workflows/security-audit.yml`. Its jobs are `Dependency Audit`, `Security Lint` and `Secret Scan`. [`docs/security.md`](security.md#the-audit-in-ci) says when it runs, and why.
 - **System Test**, `.github/workflows/system-test.yml`, only when someone starts it, from the Actions tab or with `gh workflow run system-test.yml`, since [the system test](#the-system-test) takes about ten minutes. Its one job, `System Test`, installs LXD on GitHub's Ubuntu runner with Canonical's action, `canonical/setup-lxd`, then runs `npm run test:system`. GitHub can start a workflow by hand only once the workflow is on `main`.
 
-`main` is protected. A change reaches it only through a pull request, and the six jobs of CI and Security Audit must pass first. No pull request waits for the system test. Renaming a job means updating the protection's required checks, or every pull request waits for a check that never comes.
+`main` is protected. A change reaches it only through a pull request, and the five jobs of CI and Security Audit must pass first. No pull request waits for the system test. Renaming a job means updating the protection's required checks, or every pull request waits for a check that never comes.

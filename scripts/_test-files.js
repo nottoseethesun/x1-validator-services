@@ -10,9 +10,8 @@
  * cause rather than as the many failures it would cause.
  */
 
-import path from "node:path";
 import { listFilesUnder } from "./_tools.js";
-import { FEATURES, TEST_FOLDERS } from "./lint-targets.js";
+import { TEST_FOLDERS } from "./lint-targets.js";
 
 const TEST_SUFFIX = ".test.js";
 const CONFIG_VALUES_SUFFIX = ".config-values.test.js";
@@ -29,19 +28,6 @@ export function listTestFiles(root, folders = TEST_FOLDERS) {
     .flatMap((folder) => listFilesUnder(root, folder))
     .filter((file) => file.endsWith(TEST_SUFFIX))
     .sort();
-}
-
-/**
- * Lists the test files of the features alone, leaving out the tests of
- * the project's own tooling.
- * @param {string} root  The project's root.
- * @returns {string[]} The test files' paths, relative to the root.
- */
-export function listFeatureTestFiles(root) {
-  return listTestFiles(
-    root,
-    FEATURES.map((feature) => path.join(feature, "test")),
-  );
 }
 
 /**

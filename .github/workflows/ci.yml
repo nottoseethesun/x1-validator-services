@@ -1,12 +1,17 @@
 # .github/workflows/ci.yml
 #
-# Runs the gate, `npm run check`, on each Node.js version the project
-# supports. On Node.js 22 and 24 the gate runs everything, the deliberate
-# mistakes last, so a mistake its test doesn't catch fails the check, and
-# with the branch protection on `main`, the merge too. On 20.0.0,
-# the validator's version, it runs the features' tests alone, since the
-# lint, coverage and audit tools need Node.js 22.13 or newer (see
-# scripts/check.js). Every version runs even when another fails.
+# Runs the gate, `npm run check`, on two majors in the project's range of
+# Node.js versions, which `engines` gives: the oldest it allows, which
+# validators run the features on, and the newest long-term-support major.
+# check-latest has setup-node fetch the newest release of each major,
+# not an older one the runner already holds. The gate runs the
+# deliberate mistakes last, so a deliberate mistake that its test doesn't
+# catch fails the check, and with the branch protection on `main`, the
+# merge too. Every version runs even when another fails.
+#
+# Each job's name says which version it's for, not the version's number,
+# so when a newer major becomes long-term-support, only the numbers below
+# move, and the checks the branch protection requires keep their names.
 
 name: CI
 run-name: CI on ${{ github.head_ref || github.ref_name }}
@@ -23,12 +28,16 @@ permissions:
 
 jobs:
   check:
-    name: Check (Node.js ${{ matrix.node-version }})
+    name: ${{ matrix.check }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        node-version: ["20.0.0", "22", "24"]
+        include:
+          - check: check-oldest-nodejs-supported
+            node-version: "24"
+          - check: check-newest-nodejs-supported
+            node-version: "26"
     steps:
       - name: Check out the repository
         uses: actions/checkout@v6
@@ -37,6 +46,7 @@ jobs:
         uses: actions/setup-node@v6
         with:
           node-version: ${{ matrix.node-version }}
+          check-latest: true
           cache: npm
 
       - name: Install dependencies

@@ -7,8 +7,10 @@
  * previous nginx in place and creates nginx's user, and a later one
  * upgrades it, handing over to a new main process. Its test nginx answers
  * as the check's configuration would: the gate page says ok, a key whose
- * hash a list it was given holds gets 200, and any other path 403. Each
- * scenario changes the starting state, or answers some commands itself.
+ * hash a list it was given holds gets 200, and any other path 403. Its
+ * systemctl masks and unmasks nginx, and, as systemd does, refuses to
+ * start, restart or enable it while it's masked. Each scenario changes
+ * the starting state, or answers some commands itself.
  */
 
 import path from "node:path";
@@ -20,6 +22,7 @@ import {
   NGINX_APT_PIN_PATH,
   NGINX_APT_SOURCE_PATH,
   NGINX_KEYRING_PATH,
+  NGINX_UNIT,
   PINNED_FINGERPRINTS,
 } from "../../src/lib/nginx-org.js";
 import { createFakeHost } from "./fake-host.js";
@@ -118,6 +121,41 @@ function playInstall(call, state, files) {
 }
 
 /**
+ * Plays systemctl's mask and unmask of nginx, and refuses to start,
+ * restart or enable nginx while it's masked, with systemd's words.
+ * @param {object} call  The command.
+ * @param {object} state  The fake validator's state.
+ * @returns {object|undefined} The answer, or undefined for any other
+ *   command.
+ */
+function maskAnswer(call, state) {
+  const [verb, unit] = call.args;
+  if (call.command !== "systemctl" || unit !== NGINX_UNIT) {
+    return undefined;
+  }
+  if (verb === "mask" || verb === "unmask") {
+    state.masked = verb === "mask";
+    return {};
+  }
+  if (state.masked === false) {
+    return undefined;
+  }
+  const maskedUnit = `Unit ${NGINX_UNIT} is masked.`;
+  const refusals = new Map([
+    [
+      "enable",
+      `Failed to enable unit: Unit file /etc/systemd/system/${NGINX_UNIT} is masked.`,
+    ],
+    ["start", `Failed to start ${NGINX_UNIT}: ${maskedUnit}`],
+    ["restart", `Failed to restart ${NGINX_UNIT}: ${maskedUnit}`],
+  ]);
+  const refusal = refusals.get(verb);
+  return refusal === undefined || refusal === null
+    ? undefined
+    : { status: 1, stderr: `${refusal}\n` };
+}
+
+/**
  * Answers the commands every scenario shares, from the scenario's state.
  * @param {object} call  The command.
  * @param {object} state  The fake validator's state, changed by installs.
@@ -128,6 +166,10 @@ function commonAnswer(call, state, files) {
   const line = [call.command, ...call.args].join(" ");
   if (line === "systemctl --version") {
     return { stdout: "systemd 255 (255.4-1ubuntu8)\n" };
+  }
+  const masking = maskAnswer(call, state);
+  if (masking !== undefined) {
+    return masking;
   }
   if (call.command === "dpkg-query") {
     return state.installed === undefined || state.installed === null
@@ -182,6 +224,7 @@ export function fakeValidator(overrides = {}) {
     activeAfter: "active",
     keepOldMain: false,
     nginxUser: false,
+    masked: false,
     ...overrides.state,
   };
   const files = new Map([

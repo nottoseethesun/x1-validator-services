@@ -6,13 +6,17 @@
  * finds the flag already in the start script after an earlier run
  * stopped short. It says nothing about a restart once the running
  * validator carries the flag. A dry run says the restart a real run
- * would need, and not to restart now.
+ * would need, and not to restart now. Its last line gives the command
+ * that makes more api keys, through nvm on the Node.js the tool needs,
+ * since a validator's default node is older.
  */
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { runApply } from "../src/cli/apply.js";
+import { featurePaths } from "../src/cli/feature-paths.js";
 import { RESTART_HOW, RESTART_STEPS } from "../src/cli/start-script.js";
+import { oldestNode } from "../src/lib/node-version.js";
 import { loadSettings } from "../src/lib/settings.js";
 import { commandRun, PASSWORD } from "./helpers/applied-validator.js";
 import { copyShippedConfig } from "./helpers/config-copies.js";
@@ -83,7 +87,7 @@ test("after a run that stopped short, the next one still says to restart, since 
   assert.ok(saysRestart(finished.lines), finished.lines.join("\n"));
 });
 
-test("once the running validator carries the flag, apply says nothing about a restart", async () => {
+test("once the running validator carries the flag, apply says nothing about a restart, and ends with the command for more keys", async () => {
   const { host, settings } = freshValidator({ flagRunning: true });
   const { code, lines } = await apply(
     host,
@@ -92,6 +96,10 @@ test("once the running validator carries the flag, apply says nothing about a re
   );
   assert.equal(code, 0, lines.join("\n"));
   assert.equal(saysRestart(lines), false);
+  assert.equal(
+    lines.at(-1),
+    `[hand-over] To make more api keys, run: nvm exec ${oldestNode().major} node ${featurePaths().toolCli} add-api-key`,
+  );
 });
 
 test("a dry run says the restart a real run would need, and not to restart now", async () => {

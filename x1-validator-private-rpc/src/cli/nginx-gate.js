@@ -148,7 +148,7 @@ export async function requestPathProblems(host, target, key) {
     const health = await answer(`/${key}/health`);
     if (health.status !== 200 || health.body.trim() !== "ok") {
       problems.push(
-        `The keyed path's health check answered ${health.status}: ${health.body.trim()}`,
+        `Asked through nginx with the new key, the rpc's /health answered ${health.status}: ${health.body.trim()}`,
       );
     }
   }

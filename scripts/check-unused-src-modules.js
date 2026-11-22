@@ -4,12 +4,12 @@
  * @description
  * The gate's check that every source module is loaded by an entry point,
  * not only by tests. See scripts/_unused-src-modules.js for why knip
- * alone can't catch this. Run it with `--help` for its usage and exit
- * codes.
+ * alone can't catch this. Run it with `--help` for its usage, examples
+ * and exit codes.
  */
 
 import { entryPointFiles, moduleFiles } from "./_project-files.js";
-import { projectRoot, scriptProgram } from "./_tools.js";
+import { projectRoot, requireMinNode, scriptProgram } from "./_tools.js";
 import { findUnusedSrcModules } from "./_unused-src-modules.js";
 
 /**
@@ -18,12 +18,21 @@ import { findUnusedSrcModules } from "./_unused-src-modules.js";
 async function main() {
   scriptProgram(
     "scripts/check-unused-src-modules.js",
-    "Fails when a module under a feature's src/ or util/ is loaded by no entry point.",
-    [
-      "0  every source module is reached from an entry point",
-      "1  at least one isn't, and each is listed",
-    ],
+    "Fails when a module under a feature's src/ or util/ is loaded by no " +
+      "entry point, only by tests. The gate and npm run lint run it.",
+    {
+      examples: [
+        "node scripts/check-unused-src-modules.js",
+        "    Runs the check alone, such as after moving a module, without",
+        "    the rest of the lint.",
+      ],
+      exitCodes: [
+        "0  every source module is reached from an entry point",
+        "1  at least one isn't, and each is listed",
+      ],
+    },
   ).parse();
+  requireMinNode("scripts/check-unused-src-modules.js");
   const root = projectRoot();
   const entries = entryPointFiles(root);
   const modules = moduleFiles(root);

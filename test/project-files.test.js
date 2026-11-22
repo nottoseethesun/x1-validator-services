@@ -15,7 +15,6 @@ import {
   moduleFiles,
 } from "../scripts/_project-files.js";
 import {
-  listFeatureTestFiles,
   listTestFiles,
   splitConfigValueTests,
 } from "../scripts/_test-files.js";
@@ -29,12 +28,6 @@ test("finds the tests of the tooling and of each feature, sorted", () => {
   assert.ok(files.includes("test/project-files.test.js"));
   assert.ok(files.includes(`${FEATURE}/test/cli.test.js`));
   assert.deepEqual(files, [...files].sort());
-});
-
-test("finds the features' tests alone, leaving out the tooling's", () => {
-  const files = listFeatureTestFiles(projectRoot());
-  assert.ok(files.includes(`${FEATURE}/test/cli.test.js`));
-  assert.ok(files.every((file) => !file.startsWith("test/")));
 });
 
 test("puts the shipped-settings tests in a group of their own", () => {

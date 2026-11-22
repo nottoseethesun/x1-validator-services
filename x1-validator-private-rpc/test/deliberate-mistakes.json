@@ -1032,11 +1032,11 @@
     "file": "src/cli/apply-nginx.js",
     "edits": [
       {
-        "from": "`No certificate in time: ${GATE_PAGE_NAME} says ${gate}.`",
-        "to": "`No certificate in time: the gate page says ${gate}.`"
+        "from": "`No certificate in time: ${GATE_PAGE_NAME} says ${gate}. `",
+        "to": "`No certificate in time: the gate page says ${gate}. `"
       }
     ],
-    "test": "test/apply.test.js"
+    "test": "test/apply-fails-part-way.test.js"
   },
   {
     "name": "apply's last nginx line goes back to vague wording",
@@ -1749,5 +1749,145 @@
       }
     ],
     "test": "test/render-nginx.test.js"
+  },
+  {
+    "name": "ensure's and the key count check's alerts read x1console's Telegram files from the shipped folder",
+    "file": "src/cli/telegram.js",
+    "edits": [
+      {
+        "from": "  const telegram = readTelegram(host, settings);\n",
+        "to": "  const telegram = readTelegram(host, { ...settings, x1consoleDir: \"~/x1console\" });\n"
+      }
+    ],
+    "test": "test/ensure.test.js"
+  },
+  {
+    "name": "the upgrade check starts nginx without unmasking it first",
+    "file": "util/validate-nginx-upgrade/steps.js",
+    "edits": [
+      {
+        "from": "  systemctl(host, [\"daemon-reload\"]);\n  systemctl(host, [\"unmask\", NGINX_UNIT]);\n  undo.push({",
+        "to": "  systemctl(host, [\"daemon-reload\"]);\n  undo.push({"
+      }
+    ],
+    "test": "test/validate-nginx-upgrade.test.js"
+  },
+  {
+    "name": "apply unmasks nginx only after starting it",
+    "file": "src/cli/apply-nginx.js",
+    "edits": [
+      {
+        "from": "  systemctl(host, [\"unmask\", NGINX_UNIT]);\n  record({\n    key: \"nginxServiceMasked\",",
+        "to": "  record({\n    key: \"nginxServiceMasked\","
+      },
+      {
+        "from": "  systemctl(host, [how, NGINX_UNIT]);\n}",
+        "to": "  systemctl(host, [how, NGINX_UNIT]);\n  systemctl(host, [\"unmask\", NGINX_UNIT]);\n}"
+      }
+    ],
+    "test": "test/apply.test.js"
+  },
+  {
+    "name": "apply enables nginx while it's still masked, and unmasks it just before the start",
+    "file": "src/cli/apply-nginx.js",
+    "edits": [
+      {
+        "from": "  systemctl(host, [\"unmask\", NGINX_UNIT]);\n  record({\n    key: \"nginxServiceMasked\",",
+        "to": "  record({\n    key: \"nginxServiceMasked\","
+      },
+      {
+        "from": "  systemctl(host, [how, NGINX_UNIT]);\n}",
+        "to": "  systemctl(host, [\"unmask\", NGINX_UNIT]);\n  systemctl(host, [how, NGINX_UNIT]);\n}"
+      }
+    ],
+    "test": "test/apply.test.js"
+  },
+  {
+    "name": "url's help loses its examples",
+    "file": "src/cli/program.js",
+    "edits": [
+      {
+        "from": "    .addHelpText(\"after\", EXAMPLES.url)\n",
+        "to": ""
+      }
+    ],
+    "test": "test/cli.test.js"
+  },
+  {
+    "name": "nginx's list is written readable by root alone",
+    "file": "src/cli/hashed-api-keys.js",
+    "edits": [
+      {
+        "from": "host.writeRootFile(mapPath, text, \"0644\");",
+        "to": "host.writeRootFile(mapPath, text, \"0600\");"
+      }
+    ],
+    "test": "test/hashed-api-keys.test.js"
+  },
+  {
+    "name": "the Node.js version check lets an older major through",
+    "file": "src/lib/node-version.js",
+    "edits": [
+      {
+        "from": "running > major ||",
+        "to": "running >= major - 1 ||"
+      }
+    ],
+    "test": "test/node-version.test.js"
+  },
+  {
+    "name": "apply's last line gives a command with a plain node",
+    "file": "src/cli/apply.js",
+    "edits": [
+      {
+        "from": "`To make more api keys, run: nvm exec ${oldestNode().major} node ${paths.toolCli} add-api-key`",
+        "to": "`To make more api keys, run: node ${paths.toolCli} add-api-key`"
+      }
+    ],
+    "test": "test/apply-hand-over.test.js"
+  },
+  {
+    "name": "x1console's token file misnamed",
+    "file": "src/cli/telegram.js",
+    "edits": [
+      {
+        "from": "export const TOKEN_FILE = \"telegram_token.txt\";",
+        "to": "export const TOKEN_FILE = \"telegram-token.txt\";"
+      }
+    ],
+    "test": "test/small-modules.test.js"
+  },
+  {
+    "name": "x1console's chat id file misnamed",
+    "file": "src/cli/telegram.js",
+    "edits": [
+      {
+        "from": "export const CHAT_ID_FILE = \"chat_id.txt\";",
+        "to": "export const CHAT_ID_FILE = \"chat-id.txt\";"
+      }
+    ],
+    "test": "test/small-modules.test.js"
+  },
+  {
+    "name": "the project's .env looked for in the feature's folder",
+    "file": "src/cli/feature-paths.js",
+    "edits": [
+      {
+        "from": "    envPath: path.join(featureDir, \"..\", \".env\"),",
+        "to": "    envPath: path.join(featureDir, \".env\"),"
+      }
+    ],
+    "test": "test/small-modules.test.js"
+  },
+  {
+    "name": "the Cronitor url read under another name",
+    "file": "src/cli/heartbeat.js",
+    "edits": [
+      {
+        "from": "export const CRONITOR_URL = \"X1_PRIVATE_RPC_CRONITOR_URL\";",
+        "to": "export const CRONITOR_URL = \"X1_PRIVATE_RPC_CRONITOR\";"
+      }
+    ],
+    "test": "test/small-modules.test.js"
   }
 ]

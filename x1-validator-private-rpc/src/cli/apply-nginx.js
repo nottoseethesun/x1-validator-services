@@ -385,7 +385,10 @@ export async function configureNginx(context) {
     const gate = await waitForGate(host, target, waitMs, settings.gatePollMs);
     if (gate !== "ok") {
       throw new Error(
-        `No certificate in time: ${GATE_PAGE_NAME} says ${gate}.`,
+        `No certificate in time: ${GATE_PAGE_NAME} says ${gate}. ` +
+          `nginx writes why in ${NGINX_LOG_DIR}/error.log, and ` +
+          "x1-validator-private-rpc/docs/manual-domain-setup.md lists the " +
+          "usual causes.",
       );
     }
     /*-

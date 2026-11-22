@@ -19,7 +19,8 @@
  * - a damaged alert state, set aside for a fresh one
  * - the Cronitor check-in, tried as many times as the settings say, and
  *   what --quiet prints
- * - every check passing with every setting changed
+ * - every check passing with every setting changed, and an alert sent
+ *   through the Telegram files in the folder they name for x1console
  * - in every run, no question and no sudo, and the hostname apply set
  *   nginx up with, whatever the settings name now
  */
@@ -410,14 +411,16 @@ test("checks in with Cronitor when .env holds its url, and tries as many times a
   assert.equal(fetched.length, tries);
 });
 
-test("with every setting changed, it reports every check without --quiet, and nothing with it when all is well", async () => {
+test("with every setting changed, it reports every check without --quiet, nothing with it when all is well, and an alert through the Telegram files in the folder x1consoleDir names", async () => {
   /*-
    * Every setting changed, so a check that read a shipped value, such as
-   * x1console's start script's place, would show.
+   * x1console's start script's place, or the folder of x1console's
+   * Telegram files, would show.
    */
   const { changed } = shippedAndChangedSettings();
-  const { host, settings } = await appliedValidator({
+  const { host, state, settings } = await appliedValidator({
     state: PRIVATE,
+    telegram: true,
     settings: { ...changed, hostname: HOSTNAME },
   });
   const quiet = await ensure(host, settings);
@@ -430,4 +433,7 @@ test("with every setting changed, it reports every check without --quiet, and no
     loud.lines.join("\n"),
   );
   assert.ok(loud.lines.includes(`[ensure] ok: ${GATE_PAGE_NAME} says ok.`));
+  state.active = false;
+  await ensure(host, settings);
+  assert.ok(telegramTexts(host).some((text) => text.includes("nginx is down")));
 });

@@ -23,6 +23,7 @@
  */
 
 import { maskSecret } from "../lib/mask-secret.js";
+import { oldestNode } from "../lib/node-version.js";
 import { installNginx, openFirewall } from "./apply-install.js";
 import { checkedKey, setUpApiKeys } from "./apply-key.js";
 import { configureNginx } from "./apply-nginx.js";
@@ -46,7 +47,7 @@ const STAGES = [
   { title: "open tcp port 443 in ufw", run: openFirewall },
   {
     title:
-      "make the first api key when there's none, and decide whether to save the password",
+      "make the first api key when there's none, under the x1-validator-services password that encrypts the keys' records, and decide whether to save that password",
     run: async (context) => {
       const { key } = await setUpApiKeys(context);
       context.key = key;
@@ -115,7 +116,7 @@ function handOver(context) {
   );
   log.info(
     "hand-over",
-    `To make more api keys, run: node ${paths.toolCli} add-api-key`,
+    `To make more api keys, run: nvm exec ${oldestNode().major} node ${paths.toolCli} add-api-key`,
   );
 }
 

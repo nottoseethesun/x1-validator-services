@@ -172,8 +172,11 @@ async function installCronLines(context) {
     context.dryRun === true ||
     replacing === true ||
     (await prompts.confirm(
-      "Install the cron jobs that run ensure every minute, and check every " +
-        `${settings.apiKeyCountCheckHours} hours that nginx holds an api key?`,
+      "One cron job would run ensure every minute: ensure puts " +
+        "--private-rpc back after an x1console update takes it out, and " +
+        "sends the tool's alerts. The other would check every " +
+        `${settings.apiKeyCountCheckHours} hours that nginx holds an api ` +
+        "key. Install them?",
     ));
   if (wanted === false) {
     log.info(

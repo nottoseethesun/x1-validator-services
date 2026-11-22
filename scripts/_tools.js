@@ -6,8 +6,10 @@
  * directory never redirects a run. They find each tool's command in
  * `node_modules/.bin`, never through npx. They run a command either with
  * the terminal attached, so its output streams as it comes, or with its
- * output captured for a report. And they start every script's
- * command-line program the same way, with commander.
+ * output captured for a report. They start every script's command-line
+ * program the same way, with commander. And they stop a script on a
+ * Node.js older than the one `engines` in package.json names, with the
+ * same check the feature's programs make.
  */
 
 import fs from "node:fs";
@@ -15,33 +17,57 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { Command } from "commander";
+import {
+  meetsOldestNode,
+  oldestNodeText,
+} from "../x1-validator-private-rpc/src/lib/node-version.js";
+
+/**
+ * Stops a script with exit code 1, and says why, when the Node.js running
+ * it is older than the oldest one the project supports.
+ * @param {string} script  The script's path, such as `scripts/lint.js`.
+ */
+export function requireMinNode(script) {
+  if (meetsOldestNode(process.versions.node)) {
+    return;
+  }
+  console.error(
+    `${script} needs Node.js ${oldestNodeText()} or newer. ` +
+      `This is Node.js ${process.versions.node}.`,
+  );
+  process.exit(1);
+}
 
 /**
  * Starts a script's command-line program, with commander, so the help is
  * made from the options the script declares and can't drift from them.
- * Asked for help with `--help` or `-h`, it prints it to stdout and exits
- * 0. Given an argument the script doesn't take, it prints the reason and
- * the help to stderr and exits 1.
+ * The help ends with the examples, then the exit codes. Asked for help
+ * with `--help` or `-h`, it prints it to stdout and exits 0. Given an
+ * argument the script doesn't take, it prints the reason and the help to
+ * stderr and exits 1.
  * @param {string} script  The script's path, such as `scripts/lint.js`.
  * @param {string} description  What the script does.
- * @param {string[]} exitCodes  One line per exit code, such as
+ * @param {{examples: string[], exitCodes: string[]}} lists  The examples,
+ *   one line each: a command, then a line or more, indented by four
+ *   spaces, on when to use it. And one line per exit code, such as
  *   `0  every check passed`.
  * @returns {Command} The program, for the script to add its options to
  *   and parse.
  */
-export function scriptProgram(script, description, exitCodes) {
-  const codes = exitCodes.map((line) => `  ${line}`).join("\n");
+export function scriptProgram(script, description, { examples, exitCodes }) {
+  const indent = (lines) => lines.map((line) => `  ${line}`).join("\n");
   return new Command(`node ${script}`)
     .description(description)
     .helpOption("-h, --help", "print this help and exit")
-    .addHelpText("after", `\nExit codes:\n${codes}`)
+    .addHelpText(
+      "after",
+      `\nExamples:\n${indent(examples)}\n\nExit codes:\n${indent(exitCodes)}`,
+    )
     .showHelpAfterError();
 }
 
 /**
- * Lists the files under a folder, at any depth. It walks by hand because
- * Node.js 20.0.0, the oldest version the gate runs on, has neither
- * `fs.globSync` nor a recursive `fs.readdirSync`. A folder that doesn't
+ * Lists the files under a folder, at any depth. A folder that doesn't
  * exist holds no files.
  * @param {string} root  The project's root.
  * @param {string} folder  The folder, relative to the root.
@@ -52,10 +78,12 @@ export function listFilesUnder(root, folder) {
   if (!fs.existsSync(absolute)) {
     return [];
   }
-  return fs.readdirSync(absolute, { withFileTypes: true }).flatMap((entry) => {
-    const relative = path.join(folder, entry.name);
-    return entry.isDirectory() ? listFilesUnder(root, relative) : [relative];
-  });
+  return fs
+    .readdirSync(absolute, { recursive: true, withFileTypes: true })
+    .filter((entry) => !entry.isDirectory())
+    .map((entry) =>
+      path.relative(root, path.join(entry.parentPath, entry.name)),
+    );
 }
 
 /**

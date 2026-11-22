@@ -148,13 +148,13 @@
       "maximum": 1440
     },
     "rateLimitRequestsPerSecond": {
-      "description": "How many keyed requests a second nginx forwards to the rpc, all keys' together. It also lets a burst of as many more through at once, and answers the rest 429 Too Many Requests. The shipped value is half of the 40 requests a second that Moralis's entry plan, Starter, allows an api key.",
+      "description": "How many keyed requests a second nginx forwards to the rpc, all keys' together. It also lets a burst of as many more through at once, and answers the rest 429 Too Many Requests. The shipped value is half of the 40 requests a second that Moralis, a commercial rpc provider, allows an api key on its entry plan, Starter.",
       "type": "integer",
       "minimum": 1,
       "maximum": 10000
     },
     "requestTimeoutSeconds": {
-      "description": "The time limit of each request the tool makes. The nginx upgrade check also waits this long for nginx or systemd to change.",
+      "description": "The time limit of each request the tool makes. validate-nginx-upgrade, the first install step, which tests that an apt upgrade of nginx keeps the keyed url working, also waits this long for nginx or systemd to change.",
       "type": "integer",
       "minimum": 1,
       "maximum": 120
@@ -172,7 +172,7 @@
       "maximum": 10000
     },
     "upgradeCheckPollMs": {
-      "description": "How long util/validate-nginx-upgrade waits between two looks at nginx or systemd, while it waits for a change.",
+      "description": "How long validate-nginx-upgrade waits between two looks at nginx or systemd, while it waits for a change.",
       "type": "integer",
       "minimum": 50,
       "maximum": 5000
@@ -208,7 +208,7 @@
       "maximum": 24
     },
     "checkQueryCount": {
-      "description": "How many queries check-my-private-rpc sends through the keyed url, one right after another.",
+      "description": "How many queries check-my-private-rpc, the standalone tool that tests the keyed url as a client would, sends through the keyed url, one right after another.",
       "type": "integer",
       "minimum": 1,
       "maximum": 50

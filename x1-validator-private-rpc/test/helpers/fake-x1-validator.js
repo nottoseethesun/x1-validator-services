@@ -14,7 +14,8 @@
  * - apt installs nginx and its modules, which count as installed until
  *   nginx itself is purged, and nginx's log folder, which goes with it
  * - userdel removes the account nginx's package made
- * - systemctl masks and starts nginx
+ * - systemctl masks and starts nginx, and, as systemd does, refuses to
+ *   start, restart or enable it while it's masked
  * - ufw adds and deletes rules, skips one it holds, and overwrites one
  *   for the same port with another action, log setting or comment
  * - crontab keeps its table
@@ -36,7 +37,6 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { featurePaths, homePath } from "../../src/cli/feature-paths.js";
-import { CHAT_ID_FILE, TOKEN_FILE } from "../../src/cli/telegram.js";
 import { API_KEY_PATTERN } from "../../src/lib/api-key.js";
 import { GATE_PAGE_PATH } from "../../src/lib/gate-page.js";
 import { hashApiKey } from "../../src/lib/key-hash-map.js";
@@ -355,6 +355,13 @@ function loadHashes(state, files) {
  * @returns {object|undefined}
  */
 function changeAnswer(call, line, state, files) {
+  /*-
+   * systemd refuses to start, restart or enable a masked unit, so a
+   * stage that forgets to unmask nginx first fails here too.
+   */
+  const unlessMasked = (refusal, answer) => () =>
+    state.masked === true ? { status: 1, stderr: `${refusal}\n` } : answer();
+  const maskedUnit = `Unit ${NGINX_UNIT} is masked.`;
   const systemctlVerbs = new Map([
     [
       "mask",
@@ -370,9 +377,13 @@ function changeAnswer(call, line, state, files) {
     ],
     [
       "enable",
-      () => {
-        state.enabled = true;
-      },
+      unlessMasked(
+        `Failed to enable unit: Unit file /etc/systemd/system/${NGINX_UNIT} is masked.`,
+        () => {
+          state.enabled = true;
+          return {};
+        },
+      ),
     ],
     [
       "disable",
@@ -388,8 +399,18 @@ function changeAnswer(call, line, state, files) {
         return {};
       },
     ],
-    ["start", () => loadHashes(state, files)],
-    ["restart", () => loadHashes(state, files)],
+    [
+      "start",
+      unlessMasked(`Failed to start ${NGINX_UNIT}: ${maskedUnit}`, () =>
+        loadHashes(state, files),
+      ),
+    ],
+    [
+      "restart",
+      unlessMasked(`Failed to restart ${NGINX_UNIT}: ${maskedUnit}`, () =>
+        loadHashes(state, files),
+      ),
+    ],
     [
       "reload",
       () =>
@@ -508,13 +529,15 @@ export function fakeX1Validator(scenario = {}) {
         ...(state.flagRunning === true ? ["--private-rpc"] : []),
       ].join("\0"),
     ],
+    // x1console's own names for its Telegram files, not the tool's
+    // constants, so a test sees the tool read the wrong file.
     ...(scenario.telegram === true
       ? [
           [
-            path.join(x1consoleDir, TOKEN_FILE),
+            path.join(x1consoleDir, "telegram_token.txt"),
             "123456:telegram-token-for-tests\n",
           ],
-          [path.join(x1consoleDir, CHAT_ID_FILE), "-1001\n"],
+          [path.join(x1consoleDir, "chat_id.txt"), "-1001\n"],
         ]
       : []),
     ...(scenario.files ?? []),

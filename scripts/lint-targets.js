@@ -1,7 +1,7 @@
 /**
  * @file scripts/lint-targets.js
  * @description
- * The file lists the gates share. ESLint, Prettier for JavaScript, the
+ * The file lists the checks share. ESLint, Prettier for JavaScript, the
  * security pass, the secret scan, Markdown lint, the dead-code checks,
  * the test runner and the coverage report take their lists from here.
  * Prettier's json and yaml globs are in scripts/_gate-stages.js, and
@@ -9,7 +9,7 @@
  *
  * The project is a set of features, each in a sub-directory of its own
  * with `src/`, `test/` and, when it has standalone tools, `util/`. Every
- * list below is built from FEATURES, so a new feature joins every gate by
+ * list below is built from FEATURES, so a new feature joins every check by
  * being named there. A feature's entry points are the files directly in
  * its `src/` and its `util/` tools. The modules they load sit in folders
  * under `src/`.
@@ -90,21 +90,7 @@ export const TEST_JS_TARGETS = TEST_FOLDERS.map(
 );
 
 /**
- * JavaScript files that only ever run in the full gate, on Node.js 22.13
- * or newer: the tests of the project's own tooling, the lint rules, and
- * the tools' configuration files. Everything else also runs on Node.js
- * 20.0.0, on the validator or in the gate's tests-only mode.
- * @type {string[]}
- */
-export const FULL_GATE_ONLY_TARGETS = [
-  "test/**/*.js",
-  "eslint-rules/**/*.js",
-  "*.config.js",
-];
-
-/**
- * The scripts of the gate's deliberate mistakes, which also only ever run
- * in the full gate. They need Node.js 22.15 or newer, for its
+ * The scripts of the gate's deliberate mistakes. They use Node.js's
  * module.registerHooks, which Node.js still marks experimental.
  * @type {string[]}
  */
