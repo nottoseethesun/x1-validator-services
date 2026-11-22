@@ -15,7 +15,7 @@
     "test:coverage": "node scripts/run-tests.js --coverage",
     "test:watch": "node scripts/run-tests.js --watch",
     "test:system": "node scripts/test-in-lxd.js",
-    "test:mistakes": "node scripts/check-deliberate-mistakes.js",
+    "test:fuzzing": "node scripts/check-code-fuzzing.js",
     "knip:files": "node scripts/check-unused-files.js",
     "audit:deps": "node scripts/audit.js --deps",
     "audit:deps:all": "node scripts/audit.js --deps-all",

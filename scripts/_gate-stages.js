@@ -2,7 +2,7 @@
  * @file scripts/_gate-stages.js
  * @description
  * Every check the gate runs besides the tests, the coverage verdict and
- * the deliberate mistakes, written down once as data: a name, a command
+ * code-fuzzing, written down once as data: a name, a command
  * and its arguments. `npm run lint` runs the lint stages, `npm run check`
  * runs those and the audit stages, and the single-purpose scripts,
  * scripts/format.js, scripts/audit.js and scripts/check-unused-files.js,

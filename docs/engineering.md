@@ -23,7 +23,7 @@ Other references:
 - [Coverage](#coverage)
 - [Dead Code](#dead-code)
 - [Tests](#tests)
-- [Deliberate Mistakes](#deliberate-mistakes)
+- [Code-Fuzzing](#code-fuzzing)
 - [The System Test](#the-system-test)
 - [The Scripts' Command Lines](#the-scripts-command-lines)
 - [The Pre-Commit Hook and CI](#the-pre-commit-hook-and-ci)
@@ -38,7 +38,7 @@ Every command in `package.json`, with its flags and an example, is in [`docs/npm
 
 ## The Gate
 
-`npm run check` runs `scripts/check.js`, the one local gate. It must pass before every commit and every push. Every check but the last runs even after one fails. The last, the deliberate mistakes, makes small changes to a feature's code in memory, and checks that a test fails for each, as [Deliberate Mistakes](#deliberate-mistakes) explains. It runs only once every test has passed: with a test failing, the gate fails anyway, and it's the gate's slowest stage. A summary at the end lists each check that ran, with its result, so one run shows every problem.
+`npm run check` runs `scripts/check.js`, the one local gate. It must pass before every commit and every push. Every check but the last runs even after one fails. The last, code-fuzzing, makes small changes to a feature's code in memory, and checks that a test fails for each, as [Code-Fuzzing](#code-fuzzing) explains. It runs only once every test has passed: with a test failing, the gate fails anyway, and it's the gate's slowest stage. A summary at the end lists each check that ran, with its result, so one run shows every problem.
 
 ### What It Runs
 
@@ -61,9 +61,9 @@ Then it runs these, in this order:
 | Tests (shipped settings) | Node.js's test runner | A shipped value its tests refuse |
 | Tests | Node.js's test runner, with coverage | Any failing test |
 | Coverage | `scripts/_coverage.js` | See [Coverage](#coverage) |
-| Deliberate mistakes, once the tests pass | `scripts/check-deliberate-mistakes.js` | A mistake its test doesn't catch. See [Deliberate Mistakes](#deliberate-mistakes) |
+| Code-fuzzing, once the tests pass | `scripts/check-code-fuzzing.js` | A change its test doesn't catch. See [Code-Fuzzing](#code-fuzzing) |
 
-Every stage but the tests, the coverage verdict and the deliberate mistakes is written down once, as data, in `scripts/_gate-stages.js`. `scripts/_run-stages.js` runs them, except the audit of every dependency, which `scripts/check.js` runs itself to save its report. The scripts behind the other `npm` commands take their stages from the same file:
+Every stage but the tests, the coverage verdict and code-fuzzing is written down once, as data, in `scripts/_gate-stages.js`. `scripts/_run-stages.js` runs them, except the audit of every dependency, which `scripts/check.js` runs itself to save its report. The scripts behind the other `npm` commands take their stages from the same file:
 
 - `npm run lint` runs every check but the tests and the audits of the dependencies: the lints of JavaScript, Markdown and GitHub Actions, the format checks, the two checks for dead code, the security lint and the secret scan. The `git` pre-commit hook runs it before each commit.
 - `scripts/format.js`, behind `npm run format` and `format:check`, runs Prettier on the JavaScript: `format` when the lint reports unformatted JavaScript, `format:check` to list the files without changing them.
@@ -84,7 +84,7 @@ The gate writes its reports to `tmp/check/`, which `git` ignores: `lcov.info`, t
 
 `scripts/lint-targets.js` holds the file lists the checks share: ESLint's, Prettier's for JavaScript, the security lint's, the secret scan's, Markdown lint's, the dead-code checks', the test runner's and the coverage report's. Prettier's json and yaml globs sit in `scripts/_gate-stages.js`. `knip` adds the scripts, the lint rules and its project glob, in `knip.config.js`.
 
-Every list is built from `FEATURES`, the names of the feature folders, so a new feature joins every check by being named there. It also needs a list of deliberate mistakes, its `test/deliberate-mistakes.json`, with at least one entry, or the gate's last stage fails. Within a feature, the lists rely on three kinds of file, which `scripts/_project-files.js` finds:
+Every list is built from `FEATURES`, the names of the feature folders, so a new feature joins every check by being named there. It also needs a list of code-fuzzing changes, its `test/code-fuzzing.json`, with at least one entry, or the gate's last stage fails. Within a feature, the lists rely on three kinds of file, which `scripts/_project-files.js` finds:
 
 - **Entry points**: the programs a person or a scheduler starts by their path. They sit directly in a feature's `src/` or `util/`, or in a `util/` tool's folder, as `index.js`.
 - **Modules**: the files entry points load, in folders under `src/`, and a tool's other files.
@@ -128,31 +128,31 @@ Every test follows the same rules:
 
 ---
 
-## Deliberate Mistakes
+## Code-Fuzzing
 
-Tests can all pass and still miss the mistakes they're meant to catch. The gate's last stage checks that they don't, with deliberate mistakes: small changes to a feature's code, of the kind a slip in an edit would make, each paired with the test file that must fail when the change is made. When a test file still passes with its mistake made, that test has a hole, and the gate fails.
+Tests can all pass and still miss the bugs they're meant to catch. The gate's last stage, code-fuzzing, checks that they don't. Where the usual fuzzing feeds a program random input, code-fuzzing changes the code itself, from a fixed list: small changes to a feature's code, of the kind a slip in an edit would make, each paired with the test file that must fail when the change is made. When a test file still passes with its change made, that test has a hole, and the gate fails.
 
-Each feature lists its mistakes in its `test/deliberate-mistakes.json`. A new feature needs that list too, with at least one entry, or the stage fails. Each entry has:
+Each feature lists its changes in its `test/code-fuzzing.json`. A new feature needs that list too, with at least one entry, or the stage fails. Each entry has:
 
-- `name`: what the mistake does, in a few words
+- `name`: what the change does, in a few words
 - `file`: the file it changes, from the feature's folder
 - `edits`: the text to change, `from`, and what to change it `to`. Each `from` must be in the file exactly once, so the entry can't change the wrong place.
 - `test`: the test file that must fail, from the feature's folder
 
-`scripts/check-deliberate-mistakes.js` makes each mistake in a process of its own, and never changes a file on disk. `npm run test:mistakes` runs it alone, without the rest of the gate, such as after adding a mistake to a feature's list. For each mistake, `scripts/try-deliberate-mistake.js` runs the entry's test file, with a load hook: Node.js hands the hook each file's text after reading it, and runs the text the hook returns, so the hook makes the edits in memory. A run stops at the first failing test, since one is enough. The runs go side by side, as many at once as the machine has processors.
+`scripts/check-code-fuzzing.js` makes each change in a process of its own, and never changes a file on disk. `npm run test:fuzzing` runs it alone, without the rest of the gate, such as after adding a change to a feature's list. For each change, `scripts/try-code-fuzzing.js` runs the entry's test file, with a load hook: Node.js hands the hook each file's text after reading it, and runs the text the hook returns, so the hook makes the edits in memory. A run stops at the first failing test, since one is enough. The runs go side by side, as many at once as the machine has processors.
 
-A finished run reports whether it made each of its entry's edits. An edit not made means its test file never loaded the file it changes, so the mistake was never made, and the stage fails it as not made. A run still going after 5 minutes is stopped, and can't report its edits. The stage counts it as caught, since its test file didn't pass in that time, and prints it as "CAUGHT, AFTER TIMING OUT".
+A finished run reports whether it made each of its entry's edits. An edit not made means its test file never loaded the file it changes, so the change was never made, and the stage fails it as not made. A run still going after 5 minutes is stopped, and can't report its edits. The stage counts it as caught, since its test file didn't pass in that time, and prints it as "CAUGHT, AFTER TIMING OUT".
 
 The stage fails when:
 
-- a mistake's test file passes with the mistake made
-- the test never loads the file the mistake changes, so the mistake isn't made
-- an entry is wrong. An entry's `from` text is the text its mistake replaces. A maintainer's change to the feature's code can leave that text missing from its file, or there more than once. `test/deliberate-mistakes.test.js` checks the entries too, so `npm test` shows a wrong entry at once.
-- a test file the entries name fails with no mistake made. The stage runs each one first, since a test that fails already would make every mistake look caught.
+- a change's test file passes with the change made
+- the test never loads the file the change edits, so the change isn't made
+- an entry is wrong. An entry's `from` text is the text its change replaces. A maintainer's edit to the feature's code can leave that text missing from its file, or there more than once. `test/code-fuzzing.test.js` checks the entries too, so `npm test` shows a wrong entry at once.
+- a test file the entries name fails with no change made. The stage runs each one first, since a test that fails already would make every change look caught.
 
-The load hook uses Node.js's `module.registerHooks`, which every Node.js the project supports has. A resolve hook beside it gives the mistake's file a url of its own, with a query added. Node.js loads each module's url only once, and the runner may have loaded that file itself before its hooks exist, such as `src/lib/node-version.js`, which `scripts/_tools.js` imports. Under the new url, Node.js loads the file again, through the load hook, for the test file.
+The load hook uses Node.js's `module.registerHooks`, which every Node.js the project supports has. A resolve hook beside it gives the changed file a url of its own, with a query added. Node.js loads each module's url only once, and the runner may have loaded that file itself before its hooks exist, such as `src/lib/node-version.js`, which `scripts/_tools.js` imports. Under the new url, Node.js loads the file again, through the load hook, for the test file.
 
-When a new test is written to catch a mistake, add that mistake as an entry. The gate then fails if the test ever stops catching it.
+When a new test is written to catch a bug, add the change that bug would make as an entry. The gate then fails if the test ever stops catching it.
 
 ---
 

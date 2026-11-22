@@ -1,20 +1,20 @@
 /**
- * @file scripts/_deliberate-mistakes.js
+ * @file scripts/_code-fuzzing.js
  * @description
- * The gate's last stage, which proves the tests catch mistakes. Each
- * feature lists deliberate mistakes in its test/deliberate-mistakes.json.
- * An entry names a file of the feature's code, text in that file, what
- * to change the text to, and the test file that must catch the change.
- * The stage makes each mistake in memory only, and runs that test file.
- * When a test file still passes with its mistake made, that test has a
- * hole, and the stage fails.
+ * Code-fuzzing, the gate's last stage, which proves the tests catch bugs.
+ * Each feature lists small changes to its code, of the kind a slip in an
+ * edit would make, in its test/code-fuzzing.json. An entry names a file of
+ * the feature's code, text in that file, what to change the text to, and
+ * the test file that must catch the change. The stage makes each change
+ * in memory only, and runs that test file. When a test file still passes
+ * with its change made, that test has a hole, and the stage fails.
  *
  * A first pass runs each test file the entries name once, with no
- * mistake, since the verdicts depend on those tests passing as the code
- * stands: a test that fails already would make every mistake look
- * caught. scripts/try-deliberate-mistake.js makes each run, in a process
- * of its own, and stops at the first failing test, since one is enough.
- * The runs go side by side, one per processor.
+ * change, since the verdicts depend on those tests passing as the code
+ * stands: a test that fails already would make every change look caught.
+ * scripts/try-code-fuzzing.js makes each run, in a process of its own,
+ * and stops at the first failing test, since one is enough. The runs go
+ * side by side, one per processor.
  */
 
 import { spawn } from "node:child_process";
@@ -24,20 +24,20 @@ import { listTestFiles } from "./_test-files.js";
 import { projectRoot } from "./_tools.js";
 
 /**
- * @typedef {object} Mistake
- * @property {string} name  What the mistake does, in a few words.
+ * @typedef {object} Change
+ * @property {string} name  What the change does, in a few words.
  * @property {string} file  The file it changes, from the feature's folder.
  * @property {{from: string, to: string}[]} edits  The text to change, and
  *   what to change it to. Each `from` is in the file exactly once.
- * @property {string} test  The test file that must fail with the
- *   mistake made, from the feature's folder.
+ * @property {string} test  The test file that must fail with the change
+ *   made, from the feature's folder.
  */
 
-/** Each feature's list of deliberate mistakes, from its folder. */
-export const MISTAKES_FILE = "test/deliberate-mistakes.json";
+/** Each feature's list of code-fuzzing changes, from its folder. */
+export const CHANGES_FILE = "test/code-fuzzing.json";
 
-/** How a run starts the line that counts the changes it made. */
-export const APPLIED_PREFIX = "deliberate-mistake-applied ";
+/** How a run starts the line that counts the edits it made. */
+export const APPLIED_PREFIX = "code-fuzzing-applied ";
 
 /** The longest a run may take, in milliseconds, before it's stopped. */
 const RUN_TIMEOUT_MS = 300000;
@@ -81,31 +81,33 @@ export function featureTestFiles(root, feature) {
 }
 
 /**
- * Reads a feature's deliberate mistakes.
+ * Reads a feature's code-fuzzing changes.
  * @param {string} root  The project's root.
  * @param {string} feature  The feature's folder, from the root.
- * @returns {{mistakes: Mistake[], problems: string[]}} The entries, and
+ * @returns {{changes: Change[], problems: string[]}} The entries, and
  *   what keeps the file from being read as a list of them.
  */
-export function readMistakes(root, feature) {
-  const label = `${feature}/${MISTAKES_FILE}`;
-  const file = path.join(root, feature, MISTAKES_FILE);
+export function readChanges(root, feature) {
+  const label = `${feature}/${CHANGES_FILE}`;
+  const file = path.join(root, feature, CHANGES_FILE);
   if (!fs.existsSync(file)) {
     return {
-      mistakes: [],
-      problems: [`${label} is missing. Each feature lists its mistakes.`],
+      changes: [],
+      problems: [
+        `${label} is missing. Each feature lists its code-fuzzing changes.`,
+      ],
     };
   }
   let parsed;
   try {
     parsed = JSON.parse(fs.readFileSync(file, "utf8"));
   } catch (error) {
-    return { mistakes: [], problems: [`${label}: ${error.message}`] };
+    return { changes: [], problems: [`${label}: ${error.message}`] };
   }
   if (!Array.isArray(parsed) || parsed.length === 0) {
-    return { mistakes: [], problems: [`${label} must hold a list of them.`] };
+    return { changes: [], problems: [`${label} must hold a list of them.`] };
   }
-  return { mistakes: parsed, problems: [] };
+  return { changes: parsed, problems: [] };
 }
 
 /**
@@ -137,31 +139,31 @@ function editProblems(edit, file, text) {
  * Finds what's wrong with one entry.
  * @param {string} root  The project's root.
  * @param {string} feature  The feature's folder, from the root.
- * @param {unknown} mistake  The entry.
+ * @param {unknown} change  The entry.
  * @param {string[]} testFiles  The feature's test files, from its folder.
  * @returns {string[]}
  */
-function oneEntryProblems(root, feature, mistake, testFiles) {
-  if (!isObject(mistake)) {
+function oneEntryProblems(root, feature, change, testFiles) {
+  if (!isObject(change)) {
     return ["not an object"];
   }
-  const problems = isText(mistake.name) ? [] : ["no name"];
-  if (!testFiles.includes(mistake.test)) {
-    problems.push(`its test, ${mistake.test}, isn't a test file here`);
+  const problems = isText(change.name) ? [] : ["no name"];
+  if (!testFiles.includes(change.test)) {
+    problems.push(`its test, ${change.test}, isn't a test file here`);
   }
-  if (!isText(mistake.file)) {
+  if (!isText(change.file)) {
     return [...problems, "no file"];
   }
-  const filePath = path.join(root, feature, mistake.file);
+  const filePath = path.join(root, feature, change.file);
   if (!fs.existsSync(filePath)) {
-    return [...problems, `${mistake.file} isn't there`];
+    return [...problems, `${change.file} isn't there`];
   }
-  if (!Array.isArray(mistake.edits) || mistake.edits.length === 0) {
+  if (!Array.isArray(change.edits) || change.edits.length === 0) {
     return [...problems, "no edits"];
   }
   const text = fs.readFileSync(filePath, "utf8");
-  for (const edit of mistake.edits) {
-    problems.push(...editProblems(edit, mistake.file, text));
+  for (const edit of change.edits) {
+    problems.push(...editProblems(edit, change.file, text));
   }
   return problems;
 }
@@ -172,16 +174,16 @@ function oneEntryProblems(root, feature, mistake, testFiles) {
  * exactly once, or a test that isn't one of the feature's test files.
  * @param {string} root  The project's root.
  * @param {string} feature  The feature's folder, from the root.
- * @param {unknown[]} mistakes  The entries.
+ * @param {unknown[]} changes  The entries.
  * @param {string[]} testFiles  The feature's test files, from its folder.
  * @returns {string[]} One line per problem.
  */
-export function entryProblems(root, feature, mistakes, testFiles) {
+export function entryProblems(root, feature, changes, testFiles) {
   const names = new Set();
-  return mistakes.flatMap((mistake, index) => {
-    const label = `${feature}/${MISTAKES_FILE}, entry ${index + 1}`;
-    const problems = oneEntryProblems(root, feature, mistake, testFiles);
-    const name = isObject(mistake) ? mistake.name : undefined;
+  return changes.flatMap((change, index) => {
+    const label = `${feature}/${CHANGES_FILE}, entry ${index + 1}`;
+    const problems = oneEntryProblems(root, feature, change, testFiles);
+    const name = isObject(change) ? change.name : undefined;
     if (isText(name) && names.has(name)) {
       problems.push(`the name "${name}" is used twice`);
     }
@@ -226,8 +228,8 @@ function appliedCounts(stderr) {
 }
 
 /**
- * Starts scripts/try-deliberate-mistake.js for one run, hands it its
- * input on stdin, and waits for it.
+ * Starts scripts/try-code-fuzzing.js for one run, hands it its input on
+ * stdin, and waits for it.
  * @param {{file: string, edits: {from: string, to: string}[],
  *   test: string}} input  The file to change, absolute, or "" for none;
  *   its edits; and the test file, absolute.
@@ -239,7 +241,7 @@ function runOnce(input) {
   return new Promise((resolve) => {
     const child = spawn(
       process.execPath,
-      [path.join(projectRoot(), "scripts", "try-deliberate-mistake.js")],
+      [path.join(projectRoot(), "scripts", "try-code-fuzzing.js")],
       { cwd: projectRoot(), stdio: ["pipe", "pipe", "pipe"] },
     );
     child.stdin.end(JSON.stringify(input));
@@ -269,33 +271,33 @@ function runOnce(input) {
 }
 
 /**
- * Makes one mistake, and runs its test file.
- * @param {Mistake} mistake  The entry.
+ * Makes one change, and runs its test file.
+ * @param {Change} change  The entry.
  * @param {string} featureDir  The feature's folder, absolute.
- * @returns {Promise<{mistake: Mistake, verdict: string}>} The verdict:
+ * @returns {Promise<{change: Change, verdict: string}>} The verdict:
  *   `caught`, `caught, after timing out`, `missed`, or `not made` when
  *   the test file never loaded the file, so its text wasn't changed.
  */
-async function tryMistake(mistake, featureDir) {
+async function tryChange(change, featureDir) {
   const result = await runOnce({
-    file: path.join(featureDir, mistake.file),
-    edits: mistake.edits,
-    test: path.join(featureDir, mistake.test),
+    file: path.join(featureDir, change.file),
+    edits: change.edits,
+    test: path.join(featureDir, change.test),
   });
   if (result.timedOut === true) {
-    return { mistake, verdict: "caught, after timing out" };
+    return { change, verdict: "caught, after timing out" };
   }
   if (
-    result.applied.length !== mistake.edits.length ||
+    result.applied.length !== change.edits.length ||
     result.applied.some((count) => count === 0)
   ) {
-    return { mistake, verdict: "not made" };
+    return { change, verdict: "not made" };
   }
-  return { mistake, verdict: result.status === 0 ? "missed" : "caught" };
+  return { change, verdict: result.status === 0 ? "missed" : "caught" };
 }
 
 /**
- * Checks one feature's deliberate mistakes, and prints what went wrong.
+ * Checks one feature's code-fuzzing changes, and prints what went wrong.
  * @param {string} root  The project's root.
  * @param {string} feature  The feature's folder, from the root.
  * @param {{concurrency: number, print: (line: string) => void}} run
@@ -304,14 +306,14 @@ async function tryMistake(mistake, featureDir) {
  */
 async function checkFeature(root, feature, { concurrency, print }) {
   const featureDir = path.join(root, feature);
-  const read = readMistakes(root, feature);
-  const total = read.mistakes.length;
+  const read = readChanges(root, feature);
+  const total = read.changes.length;
   const problems = [
     ...read.problems,
     ...entryProblems(
       root,
       feature,
-      read.mistakes,
+      read.changes,
       featureTestFiles(root, feature),
     ),
   ];
@@ -319,7 +321,7 @@ async function checkFeature(root, feature, { concurrency, print }) {
     problems.forEach((problem) => print(problem));
     return { total, caught: 0, passed: false };
   }
-  const tests = [...new Set(read.mistakes.map((mistake) => mistake.test))];
+  const tests = [...new Set(read.changes.map((change) => change.test))];
   const firstRuns = await runPool(tests, concurrency, async (test) => {
     const testPath = path.join(featureDir, test);
     const result = await runOnce({ file: "", edits: [], test: testPath });
@@ -328,19 +330,19 @@ async function checkFeature(root, feature, { concurrency, print }) {
   const failing = firstRuns.filter(({ result }) => result.status !== 0);
   if (failing.length > 0) {
     for (const { test, result } of failing) {
-      print(`${feature}/${test} fails with no mistake made:\n${result.output}`);
+      print(`${feature}/${test} fails with no change made:\n${result.output}`);
     }
-    print("The tests must pass before a mistake can show anything.");
+    print("The tests must pass before a change can show anything.");
     return { total, caught: 0, passed: false };
   }
-  const tries = await runPool(read.mistakes, concurrency, (mistake) =>
-    tryMistake(mistake, featureDir),
+  const tries = await runPool(read.changes, concurrency, (change) =>
+    tryChange(change, featureDir),
   );
-  for (const { mistake, verdict } of tries) {
+  for (const { change, verdict } of tries) {
     if (verdict !== "caught") {
       print(
-        `${verdict.toUpperCase()}  ${feature}: ${mistake.name} ` +
-          `(${mistake.file}, by ${mistake.test})`,
+        `${verdict.toUpperCase()}  ${feature}: ${change.name} ` +
+          `(${change.file}, by ${change.test})`,
       );
     }
   }
@@ -349,15 +351,15 @@ async function checkFeature(root, feature, { concurrency, print }) {
 }
 
 /**
- * Checks every feature's deliberate mistakes, and prints a line for each
+ * Checks every feature's code-fuzzing changes, and prints a line for each
  * one its test didn't catch, and a summary.
  * @param {{root: string, features: string[], concurrency: number,
  *   print?: (line: string) => void}} options  The project's root, the
  *   features' folders from it, how many runs may go at once, and where
  *   the lines go, the console unless given.
- * @returns {Promise<boolean>} Whether every mistake failed its test.
+ * @returns {Promise<boolean>} Whether every change failed its test.
  */
-export async function checkDeliberateMistakes(options) {
+export async function checkCodeFuzzing(options) {
   const { root, features, concurrency } = options;
   const print = options.print ?? ((line) => console.log(line));
   const started = Date.now();
@@ -371,6 +373,6 @@ export async function checkDeliberateMistakes(options) {
     passed = passed && result.passed;
   }
   const seconds = Math.round((Date.now() - started) / 1000);
-  print(`Caught ${caught} of ${total} deliberate mistakes, in ${seconds} s.`);
+  print(`Caught ${caught} of ${total} code-fuzzing changes, in ${seconds} s.`);
   return passed;
 }

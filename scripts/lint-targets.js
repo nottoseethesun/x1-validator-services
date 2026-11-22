@@ -90,14 +90,14 @@ export const TEST_JS_TARGETS = TEST_FOLDERS.map(
 );
 
 /**
- * The scripts of the gate's deliberate mistakes. They use Node.js's
+ * The scripts of the gate's code-fuzzing stage. They use Node.js's
  * module.registerHooks, which Node.js still marks experimental.
  * @type {string[]}
  */
-export const DELIBERATE_MISTAKE_TARGETS = [
-  "scripts/_deliberate-mistakes.js",
-  "scripts/check-deliberate-mistakes.js",
-  "scripts/try-deliberate-mistake.js",
+export const CODE_FUZZING_TARGETS = [
+  "scripts/_code-fuzzing.js",
+  "scripts/check-code-fuzzing.js",
+  "scripts/try-code-fuzzing.js",
 ];
 
 /**

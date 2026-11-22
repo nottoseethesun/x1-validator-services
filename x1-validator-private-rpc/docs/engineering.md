@@ -59,7 +59,7 @@ Other references:
 
 ## Commands
 
-The tool's commands, and what each does for the operator, are in the README's [Usage](../README.md#usage) section. Every `npm` command is in [`docs/npm-project-commands.md`](../../docs/npm-project-commands.md).
+Every command of the tool and of its standalone tools, with its options and what it does for the operator, is in [`project-commands.md`](project-commands.md). Every `npm` command is in [`docs/npm-project-commands.md`](../../docs/npm-project-commands.md).
 
 ---
 
@@ -473,7 +473,7 @@ Their helpers and fixtures, in `test/`:
 - `helpers/reload-probe.js`: for the system test, holds each kind of connection open with a key while that key is removed.
 - `fixtures/start_validator.sh`: a start script in `x1console`'s shape.
 - `fixtures/crontab`: one of Autopilot's jobs, as `x1console`'s `setautopilot.sh` writes it, which `apply` and `undo-apply` must keep.
-- `deliberate-mistakes.json`: the feature's deliberate mistakes, small changes to its code, each with the test file that must fail when the change is made. The gate makes each one in memory only, and fails when its test file still passes. The project's [`docs/engineering.md`](../../docs/engineering.md#deliberate-mistakes) describes them.
+- `code-fuzzing.json`: the feature's code-fuzzing changes, small changes to its code, each with the test file that must fail when the change is made. The gate makes each one in memory only, and fails when its test file still passes. The project's [`docs/engineering.md`](../../docs/engineering.md#code-fuzzing) describes them.
 
 ---
 
