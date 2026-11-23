@@ -103,7 +103,7 @@ The tool needs Ubuntu, because of where some of the system programs it uses come
 
 Once the tool is installed, `nginx` updates with the system's other packages, whenever `apt upgrade` runs, as `x1console`'s Update X1 Validator does. This check, the standalone tool `validate-nginx-upgrade`, proves on this machine that such an upgrade keeps a keyed url working. Run it first, before `apply` installs `nginx`: the check refuses to run while any `nginx` is installed, since it installs and removes `nginx` itself.
 
-The check installs nginx.org's previous release of `nginx`, with a throwaway api key, and runs that `nginx` under `systemd` the way the tool will. Then it upgrades `nginx` with `apt`. nginx.org's upgrade starts a new `nginx` process and hands over to it, without a restart, and the old process then exits. `systemd` tracks a service by its main process, so `systemd` must follow that handover to the new process. If it didn't, it would count `nginx` as stopped, and stop every process left in the service, including the new process, which the old one started. So the keyed url would stop working. Or `systemd` would restart `nginx`, which drops every open connection. The check makes sure neither happened: `systemd` still counts `nginx` as running, now as the new process, with no restart. It also makes sure the new `nginx` still lets the throwaway key through and turns a random one away. Last, it removes everything it added. It never touches the validator's software, port 443 or the firewall.
+The check installs nginx.org's previous release of `nginx`, with a throwaway api key, and runs that `nginx` under `systemd` the way the tool will. Then it upgrades `nginx` with `apt`. nginx.org's upgrade starts a new `nginx` process and hands over to it, without a restart, and the old process then exits. `systemd` tracks a service by its main process, so `systemd` must follow that handover to the new process. If it didn't, one of two things would happen. `systemd` would count `nginx` as stopped, and stop every process left in the service, including the new process, which the old one started, so the keyed url would stop working. Or `systemd` would restart `nginx`, which drops every open connection. The check makes sure neither happened: `systemd` still counts `nginx` as running, now as the new process, with no restart. It also makes sure the new `nginx` still lets the throwaway key through and turns a random one away. Last, it removes everything it added. It never touches the validator's software, port 443 or the firewall.
 
 It takes a few minutes. Run it inside `tmux`, so that a dropped `ssh` connection can't stop it halfway and leave `nginx` installed. If the connection drops, log in again and run `tmux attach` to get back to it. Run it as the validator's account, from the project root, `~/x1-validator-services`. It asks for your `sudo` password. Start `tmux`, then the check:
 
@@ -355,7 +355,7 @@ The tool has no releases: an update brings the newest code from the project's `m
 
 An update can raise the Node.js version the tool needs. The tool's `cron` lines and its `git` hook each start the tool with the full path of the Node.js that ran the last `apply`, so after such an update they still name the older Node.js. The tool checks its Node.js before anything else, so every run they start stops at once. Then `ensure` puts no flag back, and neither it nor the key count check sends an alert. So run `apply` as soon as the new code and its packages are installed: `apply` rewrites the lines and the hook when they name another Node.js, or an old path to the tool.
 
-From the project root, get the new code with `git pull`. Then install the newest release of Node.js 24, beside any older one, with `nvm install 24`, since the new code may need a newer release than the one you have. When `nvm` holds that release already, the command installs nothing. Install the tool's Node.js packages on that release with `npm ci`, as the project's [Get the Code](../README.md#get-the-code) does. Last, run `apply` on Node.js 24. Each step, in order:
+From the project root, get the new code with `git pull`. Then install the newest release of Node.js 24, beside any older one, with `nvm install 24`, since the new code may need a newer release than the one you have. When `nvm` holds that release already, the command installs nothing. Install the tool's Node.js packages on that release with `npm ci`, as the project's [Get the Code](../README.md#get-the-code) does. Last, run `apply` on that release, so that the `cron` lines and the hook name it. Each step, in order:
 
 ```bash
 cd ~/x1-validator-services
@@ -439,7 +439,7 @@ The tests are for changing the tool, on a development machine. A validator never
 
 On a development machine, install the project's packages with `npm ci`, as the project's [Development](../README.md#development) section says, and run every `npm` command from the project root. The tool has two kinds of test. The unit tests give the tool a stand-in for the system, so none of them touches the machine. The system test runs the tool with the real `apt`, `systemd`, `nginx`, `ufw` and `cron`, in a throwaway Ubuntu 24.04 LXD container on your development machine. `npm test` runs every test in the project, the tool's unit tests included, except the system test. Run it after each change. `npm run test:system` runs the system test, and it alone needs LXD. Run it before you merge a change to the tool's code. [The System Test](../docs/engineering.md#the-system-test), in the project's `docs/engineering.md`, says what it checks.
 
-Set up LXD once, on Ubuntu, then log out and back in so the group change takes effect:
+Set up LXD once, on Ubuntu, and add your account to the `lxd` group, which lets the test use LXD without `sudo`:
 
 ```bash
 sudo snap install lxd
@@ -447,7 +447,7 @@ sudo lxd init --auto
 sudo usermod -aG lxd "$USER"
 ```
 
-Then run the test. It takes about ten minutes, and the container needs internet access:
+Log out and back in, so that the group change takes effect. Then run the test. It takes about ten minutes, and the container needs internet access:
 
 ```bash
 npm run test:system
