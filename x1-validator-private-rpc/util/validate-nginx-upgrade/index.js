@@ -34,10 +34,10 @@ const COMMAND =
 const PURPOSE = `Once x1-validator-private-rpc is installed, nginx updates with the
 system's other packages. This check proves on this machine that such an
 apt upgrade keeps the tool's keyed url, the https url with an api key in
-its path, working. It installs nginx.org's previous release, runs it
-under systemd the way the tool will, with a throwaway api key, and
-upgrades it with apt. nginx.org's upgrade starts a new nginx process and
-hands over to it, without a restart, and the old process then exits.
+its path, working. It installs nginx.org's previous release, runs that
+nginx under systemd the way the tool will, with a throwaway api key, and
+upgrades nginx with apt. nginx.org's upgrade starts a new nginx process
+and hands over to it, without a restart, and the old process then exits.
 systemd knows nginx by its main process, so systemd must follow that
 handover. If systemd didn't, it would stop nginx, the new process
 included, or restart nginx, which drops every open connection. The check
