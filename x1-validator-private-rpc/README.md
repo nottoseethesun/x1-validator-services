@@ -160,7 +160,7 @@ Then `apply` says how `systemd` would protect a saved password on this machine, 
 
 `apply` asks whether to save the password only right after it makes the first key, and no later run makes a first key while the api keys' file holds a key. So if you answer no, or stop the run at the question, such as with Ctrl-C, no later run asks again, and the password stays unsaved.
 
-`--yes` answers yes to each stage's question and to the question about the `cron` jobs. You still type the password, and answer the save question.
+`--yes` answers yes to each stage's question and to the question about the `cron` jobs. You still affirm the disclaimer, type the password, and answer the save question.
 
 Start the staging run inside `tmux`, as with the upgrade check, so that a dropped `ssh` connection can't stop the run at the save question, which no later run asks again:
 
@@ -169,13 +169,13 @@ tmux
 nvm exec 24 node x1-validator-private-rpc/src/cli.js apply --acme-staging
 ```
 
+Every stage first checks whether its work is done, so running `apply` again changes nothing that's in place. If it stops partway, fix any problem it names, then run it again with the same options, and it picks up from there. So after a staging run that stopped, such as at stage 5 with no certificate, run `apply` with `--acme-staging` again. A key it made and showed stays, so the next run makes none. If you stop `apply` before stage 6, its flag stage, the start script stays as it was. Even an `ensure` you run yourself leaves the start script alone until `apply` has added the flag.
+
 Stage 5 waits for the certificate as long as the `certificateWaitSeconds` setting says, and stops the run if none comes. So a staging run that finishes shows that Let's Encrypt can check your hostname. Then run `apply` again without `--acme-staging`, for the real certificate. It changes `nginx`'s configuration, but not the api keys, so the key from the staging run stays valid, and it asks for no x1-validator-services password:
 
 ```bash
 nvm exec 24 node x1-validator-private-rpc/src/cli.js apply
 ```
-
-Every stage first checks whether its work is done, so running `apply` again changes nothing that's in place. If it stops partway, fix any problem it names, then run it again with the same options, and it picks up from there. So after a staging run that stopped, such as at stage 5 with no certificate, run `apply` with `--acme-staging` again. A key it made and showed stays, so the next run makes none. If you stop `apply` before stage 6, its flag stage, the start script stays as it was. Even an `ensure` you run yourself leaves the start script alone until `apply` has added the flag.
 
 If `nginx` refuses a new configuration, `apply` puts the old one back, so `nginx` runs as before. It writes what `nginx` refused, and why, to `x1-validator-private-rpc/logs/error.log`.
 
@@ -193,7 +193,7 @@ Replace `203.0.113.10` with the validator's address. Then check the keyed url wi
 
 ### Cronitor Heartbeat
 
-`ensure` runs every minute, from the `cron` job that `apply` installs when you accept it. If that job ever stops working, for example because the project's folder moved or the tool's settings have a typo, the flag stops going back after an `x1console` update, and `ensure`'s alerts stop, all without a word. So at the end of each run, `ensure` checks in with Cronitor, and Cronitor alerts you when the check-ins stop. While all is well, Cronitor sends nothing. Without that job, don't set up the heartbeat: no run would check in each minute, and Cronitor would keep alerting.
+`ensure` runs every minute, from the `cron` job that `apply` installs when you accept it. If that job ever stops working, for example because the project's folder moved or the tool's settings have a typo, the flag can stay out of the start script after an `x1console` update, and `ensure`'s alerts stop. Nothing on the validator tells you either has happened. So at the end of each run, `ensure` checks in with Cronitor, and Cronitor alerts you when the check-ins stop. While all is well, Cronitor sends nothing. Without that job, don't set up the heartbeat: no run would check in each minute, and Cronitor would keep alerting.
 
 The heartbeat is optional. Without a url, `ensure` doesn't check in. To set it up, first create a Cronitor account, as the project's [Cronitor Alerts](../README.md#cronitor-alerts) section describes. Then:
 
@@ -236,13 +236,13 @@ Each task has a section below: [Api Keys](#api-keys), [Check](#check), [After an
 
 #### Api Keys
 
-`add-api-key` makes one key, or as many as `--count` says, such as three for one client's three apps. It first checks that the api keys' file has room for them under the `maxApiKeys` setting, and refuses if the file doesn't. Then it asks for your x1-validator-services password, which encrypts the new keys' records. Next it asks for one email, the client's, to write into every new key's record. The email shows as you type. Press Enter for none. Then it makes the keys, and prints each key's https and wss urls. Save them, as with the first key.
+`add-api-key` makes one key, or as many as `--count` says, such as three for one client's three apps. It first checks that the api keys' file has room for them under the `maxApiKeys` setting, and refuses if the file doesn't. Then it asks for your x1-validator-services password, which encrypts the new keys' records. It goes on only with the password you chose during `apply`. Next it asks for one email, the client's, to write into every new key's record. The email shows as you type. Press Enter for none. Then it makes the keys, and prints each key's https and wss urls. Save them now, since no command can show these keys again.
 
 ```bash
 nvm exec 24 node x1-validator-private-rpc/src/cli.js add-api-key --count 3
 ```
 
-`remove-api-key` removes a key. It asks for the key, which you paste at a prompt that shows nothing. It asks no x1-validator-services password: it hashes the key you paste, and looks for that hash in the api keys' file, where the hashes aren't encrypted. Since it needs the key itself, a key you no longer have stays valid until `undo-apply` deletes every key. Removing the last key asks first, since `nginx` then refuses every request, and the key count check alerts you until `add-api-key` makes another:
+`remove-api-key` removes a key. It asks for the key, which you paste at a prompt that shows nothing. It asks no x1-validator-services password: it hashes the key you paste, and looks for that hash in the api keys' file, where the hashes aren't encrypted. Since it needs the key itself, a key you no longer have stays valid until `undo-apply` deletes every key. Removing the last key asks first, since `nginx` then refuses every request:
 
 ```bash
 nvm exec 24 node x1-validator-private-rpc/src/cli.js remove-api-key
@@ -274,15 +274,21 @@ nvm exec 24 node x1-validator-private-rpc/util/check-my-private-rpc/index.js
 
 #### After an `x1console` Update
 
-An Update X1 Console takes `--private-rpc` out of the start script, and the tool puts it back on its own. Meanwhile the running validator keeps its private rpc, since it read its flags when it started. Only a restart while the flag is out would start it with a public rpc. Autopilot can make such a restart on its own, such as after it updates the validator's software. If you accepted the `cron` job, `ensure` then alerts you that the rpc is public. Once `ensure` has also alerted you that it put the flag back in the start script, restart the validator at a quiet moment, as in [Restart the Validator](#restart-the-validator), and it starts with the flag.
+An Update X1 Console takes `--private-rpc` out of the start script, and the tool puts it back on its own. `x1console`'s folder is a `git` checkout, and Update X1 Console runs `git stash` there, then `git pull`. `git stash` saves every edit nobody committed, then undoes those edits in the folder's files. The flag is the tool's own edit to an `x1console` file, and nobody commits it. So the stash takes the flag out of the start script, and the update never applies the stash back. When the pull merges new commits, `git` runs the tool's `git` hook, which puts the flag back before the update finishes. A pull with nothing new merges nothing, so `git` runs no hook. In that case, the `cron` job's `ensure` puts the flag back. Either way, `ensure` sends an alert that it put the flag back.
 
-`x1console`'s folder is a `git` checkout, and Update X1 Console runs `git stash` there, then `git pull`, and never applies the stash back. The flag is the tool's own edit to an `x1console` file, and nobody commits it. `git stash` saves every edit nobody committed, then undoes those edits in the folder's files. So the stash takes the flag out of the start script. When the pull merges new commits, `git` runs the tool's `git` hook, which puts the flag back before the update finishes. A pull with nothing new merges nothing, so `git` runs no hook. In that case, the `cron` job's `ensure` puts the flag back. Either way, `ensure` sends an alert that it put the flag back.
-
-The `cron` job's `ensure` waits before it puts the flag back. An `ensure` that `cron` starts during an update can't tell whether the update's pull will change the start script. If the pull does change the script, and `ensure` has put the flag back after the stash, the pull fails, since `git` won't overwrite an edit nobody committed. So `ensure` leaves the script alone until it has gone unchanged for `startScriptQuietSeconds`, 30 seconds as shipped. The stash changes the script, and the pull usually ends a few seconds after it. So by the time the script has gone unchanged for `startScriptQuietSeconds`, the pull is over. Since the `cron` job runs once a minute, the flag is back 30 to 90 seconds after the update. The hook's `ensure` doesn't wait, since `git` runs the hook only once the pull's merge is done.
+The `cron` job's `ensure` waits before it puts the flag back. An `ensure` that `cron` starts during an update can't tell whether the update's pull will change the start script. If the pull does change the script, and `ensure` has put the flag back after the stash, the pull fails, since `git` won't overwrite an edit nobody committed. So `ensure` leaves the script alone until the script has gone unchanged for `startScriptQuietSeconds`, 30 seconds as shipped. The stash changes the script, and the pull usually ends a few seconds after it. So by the time the script has gone unchanged for `startScriptQuietSeconds`, the pull is over. Since the `cron` job runs once a minute, the flag is back 30 to 90 seconds after the update. The hook's `ensure` doesn't wait, since `git` runs the hook only once the pull's merge is done.
 
 Without the `cron` job, run `ensure` yourself after each update, once `startScriptQuietSeconds` has passed, since a sooner run leaves the script alone.
 
-Update X1 Validator restarts the validator, so the start script must carry the flag before you choose it. Even with the `cron` job, the flag can be out for up to 90 seconds after an Update X1 Console. So before Update X1 Validator, run `ensure`, and check that it says the start script carries `--private-rpc`. If `ensure` says instead that `x1console` may be updating, so `ensure` left the start script alone, run `ensure` again once the script has gone unchanged for `startScriptQuietSeconds`. [`x1console`'s Updates and Autopilot's Restarts](docs/architecture.md#x1consoles-updates-and-autopilots-restarts), in `docs/architecture.md`, explains each time the script lacks the flag, and for how long.
+While the flag is out, the running validator keeps its private rpc, since it read its flags when it started. Only a restart in that time would start it with a public rpc. Autopilot can make such a restart on its own, such as after it updates the validator's software. If you accepted the `cron` job, `ensure` then alerts you that the rpc is public. Once `ensure` has also alerted you that it put the flag back in the start script, restart the validator when no leader slot is coming soon, as in [Restart the Validator](#restart-the-validator). The validator then starts with the flag.
+
+Update X1 Validator restarts the validator, so the start script must carry the flag before you choose it. Even with the `cron` job, the flag can be out for up to 90 seconds after an Update X1 Console. So before Update X1 Validator, run `ensure`, and check that it says the start script carries `--private-rpc`:
+
+```bash
+nvm exec 24 node x1-validator-private-rpc/src/cli.js ensure
+```
+
+If `ensure` says instead that `x1console` may be updating, so `ensure` left the start script alone, run `ensure` again once the script has gone unchanged for `startScriptQuietSeconds`. [`x1console`'s Updates and Autopilot's Restarts](docs/architecture.md#x1consoles-updates-and-autopilots-restarts), in `docs/architecture.md`, explains each time the script lacks the flag, and for how long.
 
 #### Turn the Private Rpc Off and On
 
@@ -293,7 +299,7 @@ nvm exec 24 node x1-validator-private-rpc/src/cli.js turn-off-private-rpc
 nvm exec 24 node x1-validator-private-rpc/src/cli.js turn-on-private-rpc
 ```
 
-Restart the validator as in [Restart the Validator](#restart-the-validator), for the change to take effect. Running `apply` again turns private rpc on too, as [Update](#update) notes. If `ensure` is changing the start script at the moment you answer, `turn-off-private-rpc` refuses, changes nothing, and says to run it again.
+Restart the validator as in [Restart the Validator](#restart-the-validator), for the change to take effect. A run of `apply`, such as after an [update of the tool](#update) or a change to a setting, turns private rpc on again, since its flag stage puts the flag back and records that private rpc is on. So run `turn-off-private-rpc` again after it. If `ensure` is changing the start script at the moment you answer, `turn-off-private-rpc` refuses, changes nothing, and says to run it again.
 
 `turn-off-private-rpc` takes out only the flag the tool adds, at the end of the `--rpc-port` line. A flag anywhere else in the start script, such as one you added by hand on a line of its own, stays. Then the rpc stays on 127.0.0.1 after the validator's next start, and `turn-off-private-rpc` says so. To make the rpc public, take that flag out of the start script by hand, then restart the validator.
 
@@ -312,13 +318,13 @@ Restart the validator as in [Restart the Validator](#restart-the-validator), for
 
 The first two stay quiet before `apply` has added the flag, and while private rpc is off, as [Turn the Private Rpc Off and On](#turn-the-private-rpc-off-and-on) explains. When an alert from `ensure` fails to send, because Telegram can't be reached or refuses it, `ensure` sends it at its next run. Without `x1console`'s Telegram files, its bot's token and chat id, `ensure` and the key count check only print their alerts. The `cron` jobs add what both print to `ensure`'s log, `x1-validator-private-rpc/logs/ensure.log`.
 
-Two checks send no alert: whether the running validator carries `--private-rpc`, and what listens on ports 80 and 443. The `cron` job runs `ensure` with `--quiet`, which prints only what `ensure` changed and its alerts, so these two checks stay out of `ensure`'s log. Their problems show only when you run `ensure` yourself: in its exit code, and, without `--quiet`, in its output.
+Two checks send no alert: whether the running validator carries `--private-rpc`, and what listens on ports 80 and 443. The `cron` job runs `ensure` with `--quiet`, which prints only what `ensure` changed and its alerts, so these two checks stay out of `ensure`'s log. Their problems show only when you run `ensure` yourself: in its exit code, and, without `--quiet`, in its output. A validator running without the flag still sets off an alert, though: its rpc listens on every interface, and the alert that the rpc is public reports that.
 
 ---
 
 ## Configure
 
-Your settings go in `x1-validator-private-rpc/app-config/user-configurable/private-rpc.json`, the file [Set the Hostname](#set-the-hostname) made. The [README in its folder](app-config/user-configurable/README.md) says what the file holds, and where every setting is described. One setting you may want to change is `rateLimitRequestsPerSecond`: how many keyed requests a second `nginx` forwards to the rpc, all keys together. If your clients get 429 Too Many Requests, raising it lets more of their requests through, but each one competes with voting, as [What the Tool Is For](#what-the-tool-is-for) explains. After changing any setting, run `apply` again. It rewrites what the change affects, such as `nginx`'s configuration.
+Your settings go in `x1-validator-private-rpc/app-config/user-configurable/private-rpc.json`, the file [Set the Hostname](#set-the-hostname) made. The [README in its folder](app-config/user-configurable/README.md) says what the file holds, and where every setting is described. One setting you may want to change is `rateLimitRequestsPerSecond`: how many keyed requests a second `nginx` forwards to the rpc, all keys together. If your clients get 429 Too Many Requests, raising it lets more of their requests through, but each one competes with voting, as [What the Tool Is For](#what-the-tool-is-for) explains. After changing any setting, run `apply` again. It rewrites what the change affects, such as `nginx`'s configuration. If you had turned private rpc off, run `turn-off-private-rpc` again once `apply` is done, since `apply` turns private rpc back on.
 
 The `hashedApiKeysMapPath` setting says where the tool writes `nginx`'s list of the keys' hashes. `apply` writes that path into `nginx`'s configuration, and `nginx` reads the list from there. After changing the setting, run `apply` straight away, with no other command of the tool before it. Until `apply` rewrites `nginx`'s configuration, `nginx` keeps reading the list at the old path, while the tool's other commands use the new path at once. So `remove-api-key` would write a list that `nginx` doesn't read, and the removed key would keep working.
 
@@ -336,7 +342,7 @@ The Cronitor url is a credential, so it goes in the project root's `.env` instea
 
 The tool has no releases: an update brings the newest code from the project's `main` branch. When you run `apply` after an update, it rewrites the files it wrote for `nginx`, and the tool's `cron` lines, wherever the new version writes them differently. nginx.org's `apt` repository stays as the first `apply` set it up.
 
-The `cron` lines start `ensure` and the key count check, and the tool's `git` hook starts `ensure`. Each names, by its full path, the Node.js that ran the last `apply`. When an update raises the Node.js major the tool needs, the lines and the hook still name the older Node.js. The tool checks its Node.js before anything else, so every run they start stops at once. Then `ensure` puts no flag back, and neither it nor the key count check sends an alert. So run `apply` as soon as the new code and its packages are in: it rewrites the lines and the hook when they name another Node.js, or an old path to the tool.
+The tool's `cron` lines and its `git` hook each start the tool with the full path of the Node.js that ran the last `apply`. When an update raises the Node.js major the tool needs, the lines and the hook still name the older Node.js. The tool checks its Node.js before anything else, so every run they start stops at once. Then `ensure` puts no flag back, and neither it nor the key count check sends an alert. So run `apply` as soon as the new code and its packages are in: it rewrites the lines and the hook when they name another Node.js, or an old path to the tool.
 
 From the project root, get the new code with `git pull`. Then `nvm install 24` installs the newest release of Node.js 24, beside any older one, when `nvm` doesn't hold it yet. Install the tool's Node.js packages on it with `npm ci`, as the project's [Get the Code](../README.md#get-the-code) does. Last, run `apply` on Node.js 24:
 
@@ -360,7 +366,7 @@ To uninstall the tool, run `undo-apply`. `apply` records each change it makes on
 
 To make the rpc public for a while and keep everything else, use `turn-off-private-rpc` instead, as [Turn the Private Rpc Off and On](#turn-the-private-rpc-off-and-on) shows. `nginx` then keeps serving the keyed url, which `undo-apply` stops.
 
-If you set up the [Cronitor heartbeat](#cronitor-heartbeat), pause or delete its monitor first. Once the `cron` line goes, the check-ins stop, and Cronitor alerts you.
+If you set up the [Cronitor heartbeat](#cronitor-heartbeat), pause or delete its monitor before you run `undo-apply`. `undo-apply` removes `ensure`'s `cron` line, so the check-ins stop, and Cronitor would alert you.
 
 Look at what `undo-apply` would do first, then run it:
 
@@ -383,7 +389,7 @@ Once the start-script flag is out, the running validator's rpc stays as it start
 
 `undo-apply` stops, disables and masks `nginx`, but leaves it installed, with its two modules. With the files the tool wrote for `nginx` gone, a start of `nginx` would run the package's own configuration, `/etc/nginx/nginx.conf`, and its default site. The mask stops anything from starting it. `nginx`'s configuration in `/etc/nginx`, its certificates in `/var/cache/nginx`, its logs in `/var/log/nginx`, its account and nginx.org's `apt` repository stay too.
 
-A later `apply` refuses an installed `nginx` unless `x1-validator-private-rpc/app-data/what-apply-changed.json` shows that `apply` installed it. So `nginx`'s packages, its account, nginx.org's repository and the mask stay listed in that file. With these entries, a later `apply` takes this `nginx` as its own, and reuses its certificate. `undo-apply` says what stays, and why, as it runs.
+A later `apply` refuses an installed `nginx` unless `x1-validator-private-rpc/app-data/what-apply-changed.json` shows that `apply` installed it. So `nginx`'s packages, its account, nginx.org's repository and the mask stay listed in that file. With these entries, a later `apply` treats this `nginx` as one it installed, and reuses `nginx`'s certificate. `undo-apply` says what stays, and why, as it runs.
 
 If you want `nginx` gone, purge it, then run `undo-apply` again, which removes `nginx`'s account, nginx.org's repository and the mask:
 
@@ -406,7 +412,7 @@ Whatever a run of `undo-apply` doesn't take back, such as a step that failed, st
 - **Never an argument.** A key is never a command's argument, so no other user sees it in a process list.
 - **Encrypted records.** Only your account can read the api keys' file. Its folder, `~/.config/x1-validator-services`, is one that future validator services can share. Every value of a key's record is encrypted with your x1-validator-services password, with AES-256-GCM. The encryption key comes from the password, through PBKDF2-SHA-512 at 600,000 iterations. [LP Ranger](https://github.com/nottoseethesun/lp-ranger), another project by the same author, stores private keys the same way.
 - **No key in the access log.** `nginx` writes its usual `access.log` and `error.log` in `/var/log/nginx`. The access log shows `<key>` in place of anything that looks like a key, anywhere in the url, a mistyped one included.
-- **No key in the error log.** Unlike the access log, the error log can't hide a key, since `nginx` lets no configuration set its format: a line about a request carries the request line as the client sent it. So the part of `nginx`'s configuration that forwards keyed requests writes no error log: it sends those lines to `/dev/null`. But `nginx` picks that part only once it has read a request's header. An error before then also carries the request line, as far as the client sent it, so its line must be kept out of `error.log` another way. Three things a client can do set off such an error: stall partway through its header, hang up partway through it, or send a header line `nginx` can't read. `nginx` writes each such error at its info level, one level below notice. The tool's configuration writes only notice and above to `error.log`, so such errors never reach it.
+- **No key in the error log.** `nginx` can't write `<key>` in place of a key in the error log, as it does in the access log, since no configuration sets the error log's format: a line about a request carries the request line as the client sent it. So the tool keeps those lines out of `error.log`. The part of `nginx`'s configuration that forwards keyed requests writes no error log: it sends those lines to `/dev/null`. But `nginx` picks that part only once it has read a request's header. An error before then also carries the request line, as far as the client sent it, so that error's line must be kept out of `error.log` another way. Three things a client can do set off such an error: stall partway through its header, hang up partway through it, or send a header line `nginx` can't read. `nginx` writes each such error at its info level, one level below notice. The tool's configuration writes only notice and above to `error.log`, so such errors never reach it.
 - **Who can read the logs.** Both logs hold each client's address. Root, `nginx` and the `adm` group can read them, as with any `nginx` from nginx.org's package, and the package's `logrotate` rule keeps 52 days of them.
 - **A nightly `[emerg]` line.** About once a night, `nginx` writes an `[emerg] chown("/dev/null", …) failed` line to `error.log`. The line needs nothing from you. It comes from sending the keyed requests' error lines to `/dev/null`. When `logrotate` has `nginx` reopen its logs each night, `nginx` tries to make its account the owner of each of them, `/dev/null` among them. The tool runs `nginx` with a read-only `/dev` of its own, so that change fails, and the machine's `/dev/null` stays root's. [Keys in `nginx`'s Logs](docs/architecture.md#keys-in-nginxs-logs), in `docs/architecture.md`, explains why the machine's `/dev/null` must stay root's.
 - **A saved password.** `systemd` encrypts a saved password. When the machine has a usable TPM2 chip, `systemd` ties the encryption to the chip, so a copy of the disk alone can't decrypt the password. Without a chip, the key that decrypts the password sits on the same disk, so a copy of the disk gives the password up.

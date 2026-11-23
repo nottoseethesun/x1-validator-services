@@ -317,7 +317,7 @@ function addCommands(program, makers) {
         "it leaves the start script alone while x1console may be updating, " +
         "so it never makes the update's git pull fail",
     )
-    .option("-q, --quiet", "print only what changed and the alerts sent", false)
+    .option("-q, --quiet", "print only what changed and its alerts", false)
     .option(
       "--from-git-hook",
       "run as the tool's git hook, which puts the flag back at once, since git runs the hook once the update's merge is done",
