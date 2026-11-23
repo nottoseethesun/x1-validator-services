@@ -11,6 +11,7 @@
  * - http and https requests, json posts, and https requests to an
  *   address under a hostname, which also report the server's certificate
  * - name lookups, and the machine's own addresses
+ * - the names of the programs that work in a folder, read from /proc
  * - picking a free port, and pausing
  *
  * Tests pass a stand-in with the same functions instead, so no test
@@ -408,6 +409,69 @@ function lockFolder(folder) {
 }
 
 /**
+ * Gives one process's program, the file name of its executable, when its
+ * working folder is a folder or is under it. The executable's name is
+ * used rather than /proc's comm, which a program can rename: Node.js
+ * calls its main thread "MainThread".
+ * @param {string} procDir  The process's folder in /proc.
+ * @param {string} folder  The folder, with every link resolved.
+ * @returns {string} Its program's file name, or "" when the process works
+ *   elsewhere, or can't be read.
+ */
+function programAt(procDir, folder) {
+  try {
+    const cwd = fs.readlinkSync(path.join(procDir, "cwd"));
+    if (cwd !== folder && cwd.startsWith(`${folder}${path.sep}`) === false) {
+      return "";
+    }
+    // An executable replaced while it runs, as by apt, shows as deleted.
+    const executable = fs.readlinkSync(path.join(procDir, "exe"));
+    return path.basename(executable.replace(/ \(deleted\)$/, ""));
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * Resolves every link in a folder's path, as /proc shows a working folder.
+ * @param {string} folder  The folder.
+ * @returns {string} The resolved path, or "" when the folder isn't there.
+ */
+function resolvedFolder(folder) {
+  try {
+    return fs.realpathSync(folder);
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * Names the programs whose working folder is a folder or is under it,
+ * read from /proc: a `git pull` in x1console's folder shows as "git". A
+ * process of another account, or one that ends while it's read, is left
+ * out, and a folder that isn't there has none.
+ * @param {string} folder  The folder.
+ * @returns {string[]} Each such process's program, by its executable's
+ *   file name.
+ */
+function programsIn(folder) {
+  const real = resolvedFolder(folder);
+  if (real === "") {
+    return [];
+  }
+  const names = [];
+  for (const entry of fs.readdirSync("/proc")) {
+    if (/^\d+$/.test(entry) === true) {
+      const name = programAt(path.join("/proc", entry), real);
+      if (name !== "") {
+        names.push(name);
+      }
+    }
+  }
+  return names;
+}
+
+/**
  * Builds the real host.
  * @param {object} [options]  How to build it.
  * @param {string[]} [options.sudoPrefix]  The command that runs another
@@ -477,6 +541,7 @@ export function createHost({ sudoPrefix = ["sudo"] } = {}) {
     modifiedAt: (filePath) => fs.statSync(filePath).mtimeMs,
     homeDir: () => os.userInfo().homedir,
     exists: (filePath) => fs.existsSync(filePath),
+    programsIn,
     makeTempDir: () => {
       const tempRoot = os.tmpdir();
       const prefix = path.join(tempRoot, "x1-validator-private-rpc-");

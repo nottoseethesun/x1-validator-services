@@ -213,6 +213,50 @@
     "test": "test/ensure.test.js"
   },
   {
+    "name": "ensure no longer waits while git works in x1console's folder",
+    "file": "src/cli/ensure.js",
+    "edits": [
+      {
+        "from": "(locked === true || gitRuns === true || recent === true)",
+        "to": "(locked === true || recent === true)"
+      }
+    ],
+    "test": "test/ensure.test.js"
+  },
+  {
+    "name": "the host counts a program only in the folder itself, not under it",
+    "file": "src/lib/host.js",
+    "edits": [
+      {
+        "from": "if (cwd !== folder && cwd.startsWith(`${folder}${path.sep}`) === false) {",
+        "to": "if (cwd !== folder) {"
+      }
+    ],
+    "test": "test/host.test.js"
+  },
+  {
+    "name": "the host counts a program only under the folder, not in it",
+    "file": "src/lib/host.js",
+    "edits": [
+      {
+        "from": "if (cwd !== folder && cwd.startsWith(`${folder}${path.sep}`) === false) {",
+        "to": "if (cwd.startsWith(`${folder}${path.sep}`) === false) {"
+      }
+    ],
+    "test": "test/host.test.js"
+  },
+  {
+    "name": "the host counts every program as working in the folder",
+    "file": "src/lib/host.js",
+    "edits": [
+      {
+        "from": "if (cwd !== folder && cwd.startsWith(`${folder}${path.sep}`) === false) {",
+        "to": "if (cwd === \"\") {"
+      }
+    ],
+    "test": "test/host.test.js"
+  },
+  {
     "name": "add-api-key shows the new keys after nginx's list",
     "file": "src/cli/add-api-key.js",
     "edits": [
