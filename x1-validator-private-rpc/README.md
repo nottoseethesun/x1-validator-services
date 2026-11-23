@@ -152,13 +152,13 @@ cd ~/x1-validator-services
 nvm exec 24 node x1-validator-private-rpc/src/cli.js apply --dry-run
 ```
 
-The first run that sets the tool up, the staging run, takes `--acme-staging`. With it, `apply` gets the certificate from Let's Encrypt's staging service, whose certificates no client trusts. At stage 5, `nginx` starts, and its ACME module asks Let's Encrypt for the certificate. Stage 5 waits for the certificate as long as the `certificateWaitSeconds` setting says, and stops the run if none comes. A mistake, such as a dns record Let's Encrypt can't see yet, makes the request fail, and Let's Encrypt allows only five failed requests an hour for one hostname. Failures at the staging service don't count toward that limit, so a mistake found on the staging run can't hold up the real certificate.
+The first run that sets the tool up, the staging run, is started with `--acme-staging`. With it, `apply` gets the certificate from Let's Encrypt's staging service, whose certificates no client trusts. At stage 5, `nginx` starts, and its ACME module asks Let's Encrypt for the certificate. Stage 5 waits for the certificate as long as the `certificateWaitSeconds` setting says, and stops the run if none comes. A mistake, such as a dns record Let's Encrypt can't see yet, makes the request fail. Let's Encrypt allows only five failed requests an hour for one hostname, but failures at the staging service don't count toward that limit. So a mistake found on the staging run can't hold up the real certificate.
 
 During the staging run, at its stage for the first api key, `apply` asks for a new x1-validator-services password, typed twice, with at least as many characters as the `passwordMinLength` setting says. Then `apply` makes the first api key. It writes the key's hash and its record, with no email, to the api keys' file, `~/.config/x1-validator-services/hashed-api-keys.json`. Then it prints the key's two urls, https and wss, with the key in them. **Save them now**: the client needs them, and so do you, to remove the key later, since no command can show the key again.
 
-Then `apply` says how `systemd` would protect a saved password on this machine, and asks whether to save the password there. A saved password is the only way back to a forgotten one. Features to come will also use it to read the records unattended: billing, and rotation notices, which will email a key's client when the key is due to be replaced. None of the tool's commands reads a saved password yet, and `nginx` never needs it. [Api Key Security](#api-key-security) says what `systemd`'s protection guards against, and how root reads a saved password back.
+Then `apply` says how `systemd` would protect a saved password on this machine, and asks whether to save the password there. Without the password, `add-api-key` can't make a key, and a saved password is the only way back to a forgotten one. Features to come will also use it to read the records unattended: billing, and rotation notices, which will email a key's client when the key is due to be replaced. None of the tool's commands reads a saved password yet, and `nginx` never needs it. [Api Key Security](#api-key-security) says what `systemd`'s protection guards against, and how root reads a saved password back.
 
-`apply` asks whether to save the password only right after it makes the first key, and no later run makes a first key while the api keys' file holds a key. So if you answer no, or stop the run at the question, such as with Ctrl-C, no later run asks again, and the password stays unsaved.
+`apply` asks whether to save the password only right after it makes the first key, and no later run makes a first key while the api keys' file holds any key's hash. So if you answer no, or stop the run at the question, such as with Ctrl-C, no later run asks again, and the password stays unsaved.
 
 `--yes` answers yes to each stage's question and to the question about the `cron` jobs. You still affirm the disclaimer, type the password, and answer the save question.
 
@@ -175,7 +175,7 @@ A run also stops at stage 5 if `nginx` refuses the configuration the stage wrote
 
 If you stop `apply` before stage 6, its flag stage, the start script stays as it was. No `ensure` adds the flag before `apply` does. The `cron` job and the `git` hook that run `ensure` are installed only at stage 7, and an `ensure` you run yourself puts the flag back only once `apply` has added it.
 
-A staging run that finishes got its certificate at stage 5. The staging service checks that the hostname is yours the same way as for a real certificate, so that run shows that Let's Encrypt can check your hostname. Then run `apply` again without `--acme-staging`, for the real certificate. It changes `nginx`'s configuration, but not the api keys, so the key from the staging run stays valid, and it asks for no x1-validator-services password:
+A staging run that finishes gets its certificate at stage 5. The staging service checks that the hostname is yours the same way as for a real certificate, so that run shows that Let's Encrypt can check your hostname. Then run `apply` again without `--acme-staging`, for the real certificate. It changes `nginx`'s configuration, but not the api keys, so the key from the staging run stays valid, and it asks for no x1-validator-services password:
 
 ```bash
 nvm exec 24 node x1-validator-private-rpc/src/cli.js apply
@@ -195,7 +195,7 @@ Replace `203.0.113.10` with the validator's address. Then check the keyed url wi
 
 ### Cronitor Heartbeat
 
-`ensure` runs every minute, from the `cron` job that `apply` installs when you accept it. If that job ever stops working, for example because the project's folder moved or the tool's settings have a typo, the flag can stay out of the start script after an `x1console` update, and `ensure`'s alerts stop. Nothing on the validator tells you either has happened. So at the end of each run, `ensure` checks in with Cronitor, and Cronitor alerts you when the check-ins stop. While all is well, Cronitor sends nothing. Without that job, don't set up the heartbeat: no run would check in each minute, and Cronitor would keep alerting.
+`ensure` runs every minute, from the `cron` job that `apply` installs when you accept it. If that job ever stops working, for example because the project's folder moved or the tool's settings have a typo, the flag can stay out of the start script after an `x1console` update, and `ensure`'s alerts stop. Nothing on the validator tells you that the job has stopped, or that the flag is out. So at the end of each run, `ensure` checks in with Cronitor, and Cronitor alerts you when the check-ins stop. While all is well, Cronitor sends nothing. Without that job, don't set up the heartbeat: no run would check in each minute, and Cronitor would keep alerting.
 
 The heartbeat is optional. Without a url, `ensure` doesn't check in. To set it up, first create a Cronitor account, as the project's [Cronitor Alerts](../README.md#cronitor-alerts) section describes. Then:
 
@@ -225,7 +225,7 @@ cd ~/x1-validator-services
 nvm exec 24 node x1-validator-private-rpc/src/cli.js --help
 ```
 
-To type the tool by name from anywhere, link its launcher into `~/.local/bin`, which Ubuntu's default profile puts on your PATH from your next login. The launcher, `x1-validator-private-rpc/bin/x1-validator-private-rpc`, runs the tool on the newest Node.js 24 that `nvm` holds. So `x1-validator-private-rpc COMMAND` does the same as `nvm exec 24 node x1-validator-private-rpc/src/cli.js COMMAND` in the project root:
+The tool's launcher, `x1-validator-private-rpc/bin/x1-validator-private-rpc`, runs the tool on the newest Node.js 24 that `nvm` holds. Once you link it into `~/.local/bin`, typing `x1-validator-private-rpc COMMAND` in any folder does the same as `nvm exec 24 node x1-validator-private-rpc/src/cli.js COMMAND` in the project root. Ubuntu's default profile puts `~/.local/bin` on your PATH from your next login. To link the launcher:
 
 ```bash
 mkdir -p ~/.local/bin
@@ -262,17 +262,19 @@ Both then write `nginx`'s list, and reload a running `nginx`, so it reads the ne
 
 Only one command changes the keys at a time. While `apply`, `undo-apply` or another key command is changing the keys, `add-api-key` and `remove-api-key` refuse, change nothing, and say to run the command again once the other one is done.
 
-If `remove-api-key` stops part way, for any reason, run it again with the same key, before any other key command or `apply`. It takes the key's hash out of `nginx`'s list first, and out of the api keys' file, `hashed-api-keys.json`, last. So a stop in between leaves the hash in that file. `add-api-key`, `remove-api-key` for another key, and `apply` each write `nginx`'s list from that file. So each would put the removed key's hash back in the list, and the key would work again. [The Keys' Path](docs/architecture.md#the-keys-path), in `docs/architecture.md`, says more.
+If `remove-api-key` stops partway, for any reason, run it again with the same key, before any other key command or `apply`. It takes the key's hash out of `nginx`'s list first, and out of the api keys' file, `hashed-api-keys.json`, last. So a stop in between leaves the hash in that file. `add-api-key`, `remove-api-key` for another key, and `apply` each write `nginx`'s list from that file. So each would put the removed key's hash back in the list, and the key would work again. [The Keys' Path](docs/architecture.md#the-keys-path), in `docs/architecture.md`, says more.
 
 #### Check
 
 `check-my-private-rpc` checks once that your keyed url works for a client, such as after the validator's restart, or when a client reports a problem. It asks for the rpc's hostname and the api key at prompts, never as arguments, so the key stays out of your shell's history. The key doesn't show as you type. Then the check sends the rpc a run of queries through `nginx`, one right after another, as many as the `checkQueryCount` setting says, and prints a table of the answers. It ends with a green ✔ when every query worked, or a red ✘ and what went wrong.
 
-Take the hostname and the key from a url that `apply` or `add-api-key` printed: the hostname follows `https://`, and the key follows the hostname. Run it from the project root, on the validator or on any machine where the project is installed. On a machine without `nvm`, start it with a `node` that's Node.js 24 or newer, in place of `nvm exec 24 node`:
+Take the hostname and the key from a url that `apply` or `add-api-key` printed: the hostname follows `https://`, and the key follows the hostname. Run the check from the project root, on the validator or on any machine where the project is installed:
 
 ```bash
 nvm exec 24 node x1-validator-private-rpc/util/check-my-private-rpc/index.js
 ```
+
+On a machine without `nvm`, start the check with a `node` that's Node.js 24 or newer, in place of `nvm exec 24 node`.
 
 #### After an `x1console` Update
 
@@ -301,7 +303,7 @@ nvm exec 24 node x1-validator-private-rpc/src/cli.js turn-off-private-rpc
 nvm exec 24 node x1-validator-private-rpc/src/cli.js turn-on-private-rpc
 ```
 
-Restart the validator as in [Restart the Validator](#restart-the-validator), for the change to take effect. A run of `apply`, such as after an [update of the tool](#update) or a change to a setting, turns private rpc on again, since its flag stage puts the flag back and records that private rpc is on. So run `turn-off-private-rpc` again after it. If `ensure` is changing the start script at the moment you answer, `turn-off-private-rpc` refuses, changes nothing, and says to run it again.
+Restart the validator as in [Restart the Validator](#restart-the-validator), for the change to take effect. A run of `apply`, such as after an [update of the tool](#update) or a change to a setting, turns private rpc on again, since its flag stage puts the flag back and records that private rpc is on. If `ensure` is changing the start script at the moment you answer `turn-off-private-rpc`'s question, `turn-off-private-rpc` refuses, changes nothing, and says to run it again.
 
 `turn-off-private-rpc` takes out only the flag the tool adds, at the end of the `--rpc-port` line. A flag anywhere else in the start script, such as one you added by hand on a line of its own, stays. Then the rpc stays on 127.0.0.1 after the validator's next start, and `turn-off-private-rpc` says so. To make the rpc public, take that flag out of the start script by hand, then restart the validator.
 
@@ -316,9 +318,9 @@ Restart the validator as in [Restart the Validator](#restart-the-validator), for
 | `nginx` is down | `nginx` isn't active | No |
 | The certificate needs attention | Under `certificateWarningDays` left, issued for another name, or `ensure` can't read it from `nginx` over tls | Every `certificateReminderHours` |
 | The flag is back | `ensure` put `--private-rpc` back after an Update X1 Console | No |
-| No api key | `nginx`'s list holds no key, so `nginx` refuses every request | Every `apiKeyCountCheckHours`, while the list stays empty |
+| No api key | `nginx`'s list of the keys' hashes is empty, so `nginx` refuses every request | Every `apiKeyCountCheckHours`, while the list stays empty |
 
-The first two stay quiet before `apply` has added the flag, and while private rpc is off, since `ensure` then doesn't check that the rpc is private. When an alert from `ensure` fails to send, because Telegram can't be reached or refuses it, `ensure` sends it at its next run. Without `x1console`'s Telegram files, its bot's token and chat id, `ensure` and the key count check only print their alerts. The `cron` jobs add what both print to `ensure`'s log, `x1-validator-private-rpc/logs/ensure.log`.
+The first two stay quiet before `apply` has added the flag, and while private rpc is off, since `ensure` then doesn't check the start script for the flag, or check that the rpc is private. When an alert from `ensure` fails to send, because Telegram can't be reached or refuses it, `ensure` sends it at its next run. Without `x1console`'s Telegram files, its bot's token and chat id, `ensure` and the key count check only print their alerts. The `cron` jobs add what both print to `ensure`'s log, `x1-validator-private-rpc/logs/ensure.log`.
 
 Two checks send no alert: whether the running validator carries `--private-rpc`, and what listens on ports 80 and 443. The `cron` job runs `ensure` with `--quiet`, which prints only what `ensure` changed and its alerts, so these two checks stay out of `ensure`'s log. Their problems show only when you run `ensure` yourself: in its exit code, and, without `--quiet`, in its output. A validator running without the flag still sets off an alert, though: its rpc listens on every interface, and the alert that the rpc is public reports that.
 
@@ -332,7 +334,7 @@ One setting you may want to change is `rateLimitRequestsPerSecond`: how many key
 
 The `hashedApiKeysMapPath` setting says where the tool writes `nginx`'s list of the keys' hashes. `apply` writes that path into `nginx`'s configuration, and `nginx` reads the list from there. After changing the setting, run `apply` straight away, with no other command of the tool before it. Until `apply` rewrites `nginx`'s configuration, `nginx` keeps reading the list at the old path, while the tool's other commands use the new path at once. So `remove-api-key` would write a list that `nginx` doesn't read, and the removed key would keep working.
 
-To move the api keys' file, move the file itself first, then change `hashedApiKeysPath`, then run `apply`. With no file at the new path, `apply` takes the machine for a first install: it makes a new first key under a new password, and hands `nginx` a list that holds only that key. Every key your clients hold then stops working.
+To move the api keys' file, move the file itself first, then change `hashedApiKeysPath`, then run `apply`. With no file at the new path, `apply` treats the machine as a first install: it makes a new first key under a new password, and writes `nginx`'s list with that key's hash alone. Every key your clients hold then stops working.
 
 Non-standard settings for the programs the tool uses, such as `nginx`, aren't fully supported. A non-default `acmeStatePath`, this tool's setting for the folder where `nginx` keeps its certificates, is one example. There, the only gap is that when you purge `nginx` after `undo-apply`, that folder's files stay behind.
 
@@ -346,9 +348,9 @@ The Cronitor url is a credential, so it goes in the project root's `.env` instea
 
 The tool has no releases: an update brings the newest code from the project's `main` branch. When you run `apply` after an update, it rewrites the files it wrote for `nginx`, and the tool's `cron` lines, wherever the new version writes them differently. nginx.org's `apt` repository stays as the first `apply` set it up.
 
-The tool's `cron` lines and its `git` hook each start the tool with the full path of the Node.js that ran the last `apply`. When an update raises the Node.js major the tool needs, the lines and the hook still name the older Node.js. The tool checks its Node.js before anything else, so every run they start stops at once. Then `ensure` puts no flag back, and neither it nor the key count check sends an alert. So run `apply` as soon as the new code and its packages are in: it rewrites the lines and the hook when they name another Node.js, or an old path to the tool.
+An update can raise the Node.js version the tool needs. The tool's `cron` lines and its `git` hook each start the tool with the full path of the Node.js that ran the last `apply`, so after such an update they still name the older Node.js. The tool checks its Node.js before anything else, so every run they start stops at once. Then `ensure` puts no flag back, and neither it nor the key count check sends an alert. So run `apply` as soon as the new code and its packages are in: it rewrites the lines and the hook when they name another Node.js, or an old path to the tool.
 
-From the project root, get the new code with `git pull`. Then `nvm install 24` installs the newest release of Node.js 24, beside any older one, when `nvm` doesn't hold it yet. Install the tool's Node.js packages on it with `npm ci`, as the project's [Get the Code](../README.md#get-the-code) does. Last, run `apply` on Node.js 24:
+From the project root, get the new code with `git pull`. Then install the newest release of Node.js 24, beside any older one, with `nvm install 24`, since the new code may need a newer release than the one you have. When `nvm` holds that release already, the command installs nothing. Install the tool's Node.js packages on that release with `npm ci`, as the project's [Get the Code](../README.md#get-the-code) does. Last, run `apply` on Node.js 24:
 
 ```bash
 cd ~/x1-validator-services
@@ -366,7 +368,7 @@ If you had turned private rpc off, run `turn-off-private-rpc` again once `apply`
 
 ## Uninstall
 
-To uninstall the tool, run `undo-apply`. `apply` records each change it makes on the machine, such as a file or a firewall rule it adds, with what was there before, in `x1-validator-private-rpc/app-data/what-apply-changed.json`. `undo-apply` takes back only those changes, newest first. What was there before `apply`, such as a firewall rule you added, stays. It never removes a package, since something else may need one.
+To uninstall the tool, run `undo-apply`. `apply` records each change it makes on the machine, such as a file or a firewall rule it adds, with what was there before, in `x1-validator-private-rpc/app-data/what-apply-changed.json`. `undo-apply` takes back only those changes, newest first. What was there before `apply`, such as a firewall rule you added, stays.
 
 To make the rpc public for a while and keep everything else, use `turn-off-private-rpc` instead, as [Turn the Private Rpc Off and On](#turn-the-private-rpc-off-and-on) shows. `nginx` then keeps serving the keyed url, which `undo-apply` stops.
 
@@ -380,7 +382,7 @@ nvm exec 24 node x1-validator-private-rpc/src/cli.js undo-apply --dry-run
 nvm exec 24 node x1-validator-private-rpc/src/cli.js undo-apply
 ```
 
-First `undo-apply` asks one question: whether to delete every api key, with the saved password if `apply` saved one. One answer covers both, since the password opens nothing but the keys' records. So a no leaves both in place. A later `apply` then gives `nginx` the same keys' hashes, and your clients' urls work again. After a yes, a later `apply` makes a new first key under a new password, and every client needs a new url. Then `undo-apply` removes each of these that `apply` made:
+First `undo-apply` asks one question: whether to delete every api key, with the saved password if `apply` saved one. One answer covers both, since the password decrypts nothing but the keys' records. So a no leaves both in place. A later `apply` then writes `nginx`'s list from the same keys' hashes, and your clients' urls work again. After a yes, a later `apply` makes a new first key under a new password, and every client needs a new url. Then `undo-apply` removes each of these that `apply` made:
 
 - the `cron` lines, and the tool's `tmp/` and `logs/` folders, with `ensure`'s log and the tool's error log in them
 - the `git` hook
@@ -389,9 +391,11 @@ First `undo-apply` asks one question: whether to delete every api key, with the 
 - the saved password, unless you kept it, and the folders made for it and for the api keys' file, once nothing else is in them
 - the firewall rule
 
-Once the start-script flag is out, the running validator's rpc stays unchanged until the validator's next start, since the validator read its flags when it started. So to make the rpc public, restart the validator from `x1console`, as in [Restart the Validator](#restart-the-validator). `undo-apply` reminds you to restart, unless the running validator already lacks the flag: its rpc is public then, and a restart changes nothing. A flag `apply` didn't add stays in the start script, and `undo-apply` says so in place of the reminder. You may have added it by hand, or with `turn-on-private-rpc` after an `apply` that stopped before stage 6, its flag stage. If you want it gone, take it out of the start script by hand, after `undo-apply` and before the restart.
+Once the start-script flag is out, the running validator's rpc stays unchanged until the validator's next start, since the validator read its flags when it started. So to make the rpc public, restart the validator from `x1console`, as in [Restart the Validator](#restart-the-validator). `undo-apply` reminds you to restart, unless the running validator already lacks the flag: its rpc is public then, and a restart changes nothing.
 
-`undo-apply` stops, disables and masks `nginx`, but leaves it installed, with its two modules. With the files the tool wrote for `nginx` gone, a start of `nginx` would run the package's own configuration, `/etc/nginx/nginx.conf`, and its default site. The mask stops anything from starting it. `nginx`'s configuration in `/etc/nginx`, its certificates in `/var/cache/nginx`, its logs in `/var/log/nginx`, its account and nginx.org's `apt` repository stay too.
+A flag `apply` didn't add stays in the start script, so the rpc stays on 127.0.0.1 after the validator's next start. `undo-apply` says so, in place of the reminder to restart. You may have added that flag by hand, or with `turn-on-private-rpc` after an `apply` that stopped before stage 6, its flag stage. If you want it gone, take it out of the start script by hand, after `undo-apply` and before the restart.
+
+`undo-apply` never removes a package, since something else may need one. So `nginx` stays installed, with its two modules. `undo-apply` stops, disables and masks it. With the files the tool wrote for `nginx` gone, a start of `nginx` would run the package's own configuration, `/etc/nginx/nginx.conf`, and its default site. The mask stops anything from starting it. `nginx`'s configuration in `/etc/nginx`, its certificates in `/var/cache/nginx`, its logs in `/var/log/nginx`, its account and nginx.org's `apt` repository stay too.
 
 A later `apply` refuses an installed `nginx` unless `x1-validator-private-rpc/app-data/what-apply-changed.json` shows that `apply` installed it. So `nginx`'s packages, its account, nginx.org's repository and the mask stay listed in that file. With these entries, a later `apply` treats this `nginx` as one it installed, and reuses `nginx`'s certificate. `undo-apply` says what stays, and why, as it runs.
 
@@ -416,7 +420,7 @@ Whatever a run of `undo-apply` doesn't take back, such as a step that failed, st
 - **Never an argument.** A key is never a command's argument, so no other user sees it in a process list.
 - **Encrypted records.** Only your account can read the api keys' file. Its folder, `~/.config/x1-validator-services`, is named for the whole project, so that the project's later features can keep their own files there too. Every value of a key's record is encrypted with your x1-validator-services password, with AES-256-GCM. The encryption key comes from the password, through PBKDF2-SHA-512 at 600,000 iterations. [LP Ranger](https://github.com/nottoseethesun/lp-ranger), another project by the same author, stores private keys the same way.
 - **No key in the access log.** `nginx` writes its usual `access.log` and `error.log` in `/var/log/nginx`. The access log shows `<key>` in place of anything that looks like a key, anywhere in the url, a mistyped one included.
-- **No key in the error log.** `nginx` has no setting for the error log's format, so it can't write `<key>` there in place of a key, as it does in the access log. Each line it writes there about a request carries the request line as the client sent it, and the request line holds the url, key and all. So the tool keeps those lines out of `error.log`. The part of `nginx`'s configuration that forwards keyed requests writes no error log: it sends those lines to `/dev/null`. But `nginx` picks that part only once it has read a request's header. An error before then also carries the request line, as far as the client sent it, so that error's line must be kept out of `error.log` another way. Three things a client can do set off such an error: stall partway through its header, hang up partway through it, or send a header line `nginx` can't read. `nginx` writes each such error at its info level, one level below notice. The tool's configuration writes only notice and above to `error.log`, so such errors never reach it.
+- **No key in the error log.** `nginx` has no setting for the error log's format, so it can't write `<key>` there in place of a key, as it does in the access log. Each line `nginx` writes there about a request quotes the request line just as the client sent it, and the request line holds the url, key and all. So the tool keeps those lines out of `error.log`. The part of `nginx`'s configuration that forwards keyed requests writes no error log: it sends those lines to `/dev/null`. But `nginx` picks that part only once it has read a request's header. The line for an error that comes before then also quotes the request line, as far as the client sent it, so that line must be kept out of `error.log` another way. Three things a client can do set off such an error: stall partway through its header, hang up partway through it, or send a header line `nginx` can't read. `nginx` writes each such error at its info level, one level below notice. The tool's configuration writes only notice and above to `error.log`, so such errors never reach it.
 - **Who can read the logs.** Both logs hold each client's address. Root, `nginx` and the `adm` group can read them, as with any `nginx` from nginx.org's package, and the package's `logrotate` rule keeps 52 days of them.
 - **A nightly `[emerg]` line.** About once a night, `nginx` writes an `[emerg] chown("/dev/null", …) failed` line to `error.log`. The line needs nothing from you. It comes from sending the keyed requests' error lines to `/dev/null`. When `logrotate` has `nginx` reopen its logs each night, `nginx` tries to make its account the owner of each of them, `/dev/null` among them. The tool runs `nginx` with a read-only `/dev` of its own, so that change fails, and the machine's `/dev/null` stays root's. [Keys in `nginx`'s Logs](docs/architecture.md#keys-in-nginxs-logs), in `docs/architecture.md`, explains why the machine's `/dev/null` must stay root's.
 - **A saved password.** `systemd` encrypts a saved password. When the machine has a usable TPM2 chip, `systemd` ties the encryption to the chip, so a copy of the disk alone can't decrypt the password. Without a chip, the key that decrypts the password sits on the same disk, so a copy of the disk gives the password up.
