@@ -103,7 +103,7 @@ The tool needs Ubuntu, because of where some of the system programs it uses come
 
 Once the tool is installed, `nginx` updates with the system's other packages, whenever `apt upgrade` runs, as `x1console`'s Update X1 Validator does. This check, the standalone tool `validate-nginx-upgrade`, proves on this machine that such an upgrade keeps a keyed url working. Run it first, before `apply` installs `nginx`: the check refuses to run while any `nginx` is installed, since it installs and removes `nginx` itself.
 
-The check installs nginx.org's previous release of `nginx`, with a throwaway api key, and runs that `nginx` under `systemd` the way the tool will. Then it upgrades `nginx` with `apt`. nginx.org's upgrade starts a new `nginx` process and hands over to it, without a restart, and the old process then exits. `systemd` tracks a service by its main process, so `systemd` must follow that handover to the new process. If it didn't, it would stop counting `nginx` as running, or restart `nginx`, which drops every open connection. The check makes sure neither happened: `systemd` still counts `nginx` as running, now as the new process, with no restart. It also makes sure the new `nginx` still lets the throwaway key through and turns a random one away. Last, it removes everything it added. It never touches the validator's software, port 443 or the firewall.
+The check installs nginx.org's previous release of `nginx`, with a throwaway api key, and runs that `nginx` under `systemd` the way the tool will. Then it upgrades `nginx` with `apt`. nginx.org's upgrade starts a new `nginx` process and hands over to it, without a restart, and the old process then exits. `systemd` tracks a service by its main process, so `systemd` must follow that handover to the new process. If it didn't, it would count `nginx` as stopped, and stop every process left in the service, including the new process, which the old one started. So the keyed url would stop working. Or `systemd` would restart `nginx`, which drops every open connection. The check makes sure neither happened: `systemd` still counts `nginx` as running, now as the new process, with no restart. It also makes sure the new `nginx` still lets the throwaway key through and turns a random one away. Last, it removes everything it added. It never touches the validator's software, port 443 or the firewall.
 
 It takes a few minutes. Run it inside `tmux`, so that a dropped `ssh` connection can't stop it halfway and leave `nginx` installed. If the connection drops, log in again and run `tmux attach` to get back to it. Run it as the validator's account, from the project root, `~/x1-validator-services`. It asks for your `sudo` password. Start `tmux`, then the check:
 
@@ -113,7 +113,7 @@ cd ~/x1-validator-services
 nvm exec 24 node x1-validator-private-rpc/util/validate-nginx-upgrade/index.js
 ```
 
-It ends with `Passed`, or with the reasons it failed. A run that leaves behind something it added fails too, and lists each step it couldn't finish, with a `By hand:` command that does the same. Run those commands in the order listed, then run the check again. To stop it early, press Ctrl-C: it finishes the step it's on, then removes everything it added. Once the check has ended, type `exit` to leave `tmux`. Go on with the install only once it passes.
+It ends with `Passed`, or with the reasons it failed. A run that leaves behind something it added fails too. It lists each removal step it couldn't finish, with a `By hand:` command that does that step. Run those commands in the order listed, then run the check again. To stop it early, press Ctrl-C: it finishes the step it's on, then removes everything it added. Once the check has ended, type `exit` to leave `tmux`. Go on with the install only once it passes.
 
 ### Point the Hostname at the Validator
 
@@ -146,7 +146,7 @@ Stage 8 changes nothing: it says whether to restart the validator, and prints th
 
 Until you restart the validator, its rpc still listens on every interface. So once stage 7 has installed `ensure`'s `cron` job, `ensure` alerts you within a minute that the rpc is public, and repeats the alert until the restart, as often as the `exposedReminderMinutes` setting says.
 
-First have a look at what `apply` would do. `sudo` may ask for your password, since stage 1 reads the firewall's rules as root, but the dry run changes nothing:
+First have a look at what `apply` would do. With `--dry-run`, it prints each change it would make, and makes none. `sudo` may still ask for your password, since stage 1 reads the firewall's rules as root:
 
 ```bash
 cd ~/x1-validator-services
