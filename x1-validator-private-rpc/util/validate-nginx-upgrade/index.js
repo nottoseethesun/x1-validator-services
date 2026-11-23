@@ -37,12 +37,14 @@ apt upgrade keeps the tool's keyed url, the https url with an api key in
 its path, working. It installs nginx.org's previous release, runs it
 under systemd the way the tool will, with a throwaway api key, and
 upgrades it with apt. nginx.org's upgrade starts a new nginx process and
-hands over to it, without a restart. systemd knows nginx by its main
-process, so it must follow that handover. The check makes sure it did:
-systemd still counts nginx as running, now as the new process, with no
-restart. It also makes sure the new nginx still lets the throwaway key
-through and turns a random one away. Then it removes everything it
-added.
+hands over to it, without a restart, and the old process then exits.
+systemd knows nginx by its main process, so systemd must follow that
+handover. If systemd didn't, it would stop nginx, the new process
+included, or restart nginx, which drops every open connection. The check
+makes sure it did: systemd still counts nginx as running, now as the new
+process, with no restart. It also makes sure the new nginx still lets
+the throwaway key through and turns a random one away. Then it removes
+everything it added.
 
 Run it as the validator's account, before installing the tool. It asks
 for sudo itself, and never touches the validator, port 443 or the
