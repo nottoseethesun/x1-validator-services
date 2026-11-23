@@ -42,7 +42,7 @@ Other references:
 ## Terminology
 
 - **The flag**: `--private-rpc`, in the validator's command in `x1console`'s start script.
-- **The host**: the object `src/lib/host.js` makes. Every effect outside the process goes through it: commands, files, web requests, name lookups, and waits, which tests make instant. It runs a command in one of three ways: as the validator's account, as root through `sudo`, or on the person's terminal. Each of the tool's commands receives it, and tests pass a stand-in.
+- **The host**: the object `src/lib/host.js` makes. Every effect outside the process goes through it: commands, files, web requests, name lookups, the programs at work in a folder, and waits, which tests make instant. It runs a command in one of three ways: as the validator's account, as root through `sudo`, or on the person's terminal. Each of the tool's commands receives it, and tests pass a stand-in.
 - **Private rpc on or off**: the operator's choice, kept in the tool's state, of whether `ensure` keeps the flag in the start script. `apply`'s flag stage and `turn-on-private-rpc` turn it on, and `turn-off-private-rpc` turns it off. It starts unset, and `undo-apply` unsets it again. While it's unset, `ensure` treats it as off.
 - **apply's record**: `app-data/what-apply-changed.json`. It holds every setting of the machine `apply` changed, such as whether a file is there, with its old value. It also holds every one `apply` found already in the state it needs, such as a firewall rule for port 443 that was there before. `undo-apply` puts back the old values of the ones `apply` changed.
 - **apply's dictionary**: `app-config/app-defaults-for-user-configurable/apply-settings-dictionary.json`, which names every setting `apply` can change, with the description and type that each entry in apply's record copies.
@@ -127,7 +127,7 @@ The entry point, `src/cli.js`, checks the Node.js running it, then hands the com
 
 | Object | File | How it fits |
 | --- | --- | --- |
-| The host | `src/lib/host.js` | Every effect outside the process: commands, with or without `sudo` or on the person's terminal, files, requests, name lookups and pauses. Tests pass a stand-in. |
+| The host | `src/lib/host.js` | Every effect outside the process: commands, with or without `sudo` or on the person's terminal, files, requests, name lookups, the programs at work in a folder, and pauses. Tests pass a stand-in. |
 | The settings | `src/lib/settings.js` | One merged, checked object. |
 | The feature's paths | `src/cli/feature-paths.js` | Where the tool keeps its own files, found from the code's own location, so the working directory never matters. |
 | apply's record | `src/cli/what-apply-changed.js` | See [apply's Record](#applys-record). |
@@ -167,7 +167,7 @@ The entry point, `src/cli.js`, checks the Node.js running it, then hands the com
 **`ensure`**, one run:
 
 1. Reads the tool's state. Before apply has set `nginx` up, it stops there, with exit code 0.
-2. Takes the start script's lock, reads whether private rpc is on, and holds the lock until it has put the flag back or left it. While another command holds the lock, the run changes nothing and exits 0. While private rpc is on, it puts the flag back when it's missing. Every run but the `git` hook's, a run by hand included, first keeps clear of an `x1console` update. It leaves the script alone while `.git/index.lock` exists, or while the script changed less than `startScriptQuietSeconds` ago, and a later run puts the flag back. The `git` hook's run skips that check, since the merge is done when `git` runs the hook.
+2. Takes the start script's lock, reads whether private rpc is on, and holds the lock until it has put the flag back or left it. While another command holds the lock, the run changes nothing and exits 0. While private rpc is on, it puts the flag back when it's missing. Every run but the `git` hook's, a run by hand included, first keeps clear of an `x1console` update. It leaves the script alone while `.git/index.lock` exists, while a `git` process works in `x1console`'s folder, or while the script changed less than `startScriptQuietSeconds` ago, and a later run puts the flag back. The `git` hook's run skips those checks, since the merge is done when `git` runs the hook.
 3. Runs the checks. Unless private rpc is on, it drops the three that test the rpc is private.
 4. Decides the alerts, sends them with any still pending, and writes the new alert state.
 5. Checks in with Cronitor, when `.env` holds the check-in url.
@@ -304,6 +304,7 @@ Paths that a setting names are given by the setting's name. Its value is in the 
 | The `solana` cli's settings | `~/.config/solana/cli/config.yml` | the `solana` cli | `apply`'s preflight, which refuses a cli url that names this validator |
 | The running validator's command line | `/proc/<pid>/cmdline`, for the process on the rpc port | the kernel | `apply`'s hand-over, `ensure`, and `turn-off-private-rpc` and `undo-apply` once they've taken the flag out, which check it for the flag |
 | `git`'s lock in `x1console`'s checkout | `.git/index.lock` in `x1consoleDir` | `git`, during an update | `ensure`, which leaves the start script alone while it's there |
+| Each process's working folder and program | `/proc/<pid>/cwd` for every process, and `/proc/<pid>/exe` for each one that works in `x1consoleDir` | the kernel | `ensure`, which leaves the start script alone while a `git` process works in `x1consoleDir` |
 
 `app-data/`, `tmp/` and `logs/` sit in the feature's folder, and `git` ignores them. [`examples/`](../examples/README.md) holds what `apply` writes for the placeholder hostname and address, and a test checks each example against the tool's own output.
 
@@ -348,7 +349,7 @@ The tool works through the system programs and files below, on the validator. Th
 | `cron` and `flock` | `cron` runs `ensure` every minute, and the key count check every `apiKeyCountCheckHours` hours, from the lines `apply` adds with `crontab`. `flock` skips a run of `ensure` while the last one is still going. It also takes the api keys' lock, on the folder of their file, and the command holds it while it changes the keys. And it takes the start script's lock, on the folder of the tool's state, for `ensure`, `turn-off-private-rpc` and `undo-apply`'s step that takes the flag out. |
 | `logrotate` | nginx.org's rule for it rotates `nginx`'s logs every day, keeps 52 days of them, and has `nginx` reopen them. The tool adds no rule of its own. |
 | `ss` | Finds what listens on a port, and so finds the validator by its rpc port. |
-| `/proc` | Holds the running validator's command line. [Files the Tool Reads and Writes](#files-the-tool-reads-and-writes) says who reads it. |
+| `/proc` | Holds the running validator's command line, and each process's working folder and program. [Files the Tool Reads and Writes](#files-the-tool-reads-and-writes) says who reads them. |
 | `git` | Runs the tool's hook in `x1console`'s checkout, after Update X1 Console pulls new commits. |
 | `sudo` | Runs every step that needs root. |
 | `whiptail` | Draws the disclaimer's dialog, which each run that can change the system shows first. |
@@ -379,8 +380,8 @@ Update X1 Console runs `git stash`, which takes the flag out, then `git pull`.
 
 - `apply` writes the tool's hook, `.git/hooks/post-merge`, unless another program's hook is there. `git` runs it after a pull that brings new commits.
 - The hook runs `ensure --quiet --from-git-hook`, which puts the flag back before the update finishes. It always exits 0, so it can't fail the update.
-- After a pull that brings nothing new, `git` runs no hook. The `cron` job's `ensure` puts the flag back within a minute after `startScriptQuietSeconds` has passed.
-- Every run of `ensure` but the hook's leaves the start script alone during an update. It can't tell whether the update's pull will change the start script, and if it does, an edit between the stash and the merge makes the pull fail. So it leaves the script alone while `.git/index.lock` exists, which `git` holds while the stash and the merge change the checkout's files. It also leaves the script alone while the script changed less than `startScriptQuietSeconds` ago. That covers the pull's fetch, between the stash and the merge: `git` holds no lock then, but the stash changed the script only seconds before.
+- After a pull that brings nothing new, `git` runs no hook. The `cron` job's `ensure` puts the flag back within a minute once `startScriptQuietSeconds` has passed and no `git` process works in `x1console`'s folder.
+- Every run of `ensure` but the hook's leaves the start script alone during an update. It can't tell whether the update's pull will change the start script, and if the pull does, an edit between the stash and the merge makes the pull fail. So it leaves the script alone while `.git/index.lock` exists, which `git` holds while the stash and the merge change the checkout's files. It also leaves the script alone while a `git` process works in `x1console`'s folder, as `git pull` and the `git fetch` that the pull runs both do. That wait covers the pull's fetch, between the stash and the merge, however long a slow network makes it: `git` holds no lock then. The host's `programsIn` finds those processes in `/proc`, by each process's working folder and executable. Last, `ensure` leaves the script alone while the script changed less than `startScriptQuietSeconds` ago, which covers the moment between the stash and the pull's start, when no `git` runs.
 - The hook and the `cron` lines name, by its full path, the Node.js that ran `apply`: the newest Node.js 24 that `nvm` held then. Neither starts through `nvm`, so a bare `node` there wouldn't find Node.js 24. When `nvm install 24` brings a newer release, they still name the old one until `apply` rewrites them, as stage 7 in the [Sequence View](#sequence-view) says.
 - `undo-apply` removes the hook while it's still the tool's.
 
@@ -462,7 +463,7 @@ The feature has two kinds of test. The unit tests are in `test/`. Every one but 
 
 Their helpers and fixtures, in `test/`:
 
-- `helpers/fake-host.js`: the generic stand-in. Commands go to an answer function the test writes, files live in a map, and every call is recorded in order.
+- `helpers/fake-host.js`: the generic stand-in. Commands go to an answer function the test writes, files live in a map, and every call is recorded in order. The programs at work in a folder are a map the test sets.
 - `helpers/fake-validator.js`: a machine for the upgrade check, whose `apt`, `systemd` and `nginx` change a small state. Its test `nginx` answers a key whose hash a list it was given holds.
 - `helpers/fake-x1-validator.js`: a stock `x1console` validator for `apply`, `ensure`, `undo-apply` and the key commands. It has an executable start script and a `git` checkout, where the settings put them, and a running validator. It also has `ufw`, on or off, and `cron`, whose table holds one of Autopilot's jobs. Its `nginx` reads the list of hashes where the settings put it, at each start and reload, and answers a key whose hash it read.
 - `helpers/applied-validator.js`: that validator once `apply` has run on it, for the commands that come after.

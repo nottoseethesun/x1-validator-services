@@ -12,10 +12,15 @@
  * x1console's `git stash` and the end of its `git pull`, an edit could
  * make the pull fail, when the update changes the start script. So every
  * run but the hook's, a run by hand included, leaves the script alone
- * while `.git/index.lock` exists, or while the script changed less than
- * startScriptQuietSeconds ago, and leaves the flag for a later run. The
- * hook passes --from-git-hook, which skips that check, since the merge is
- * done when git runs the hook.
+ * while `.git/index.lock` exists, while a git process works in
+ * x1console's folder, or while the script changed less than
+ * startScriptQuietSeconds ago, and leaves the flag for a later run. git
+ * holds the lock while the stash and the merge change the folder's
+ * files, but not through the pull's fetch, which a slow network can
+ * stretch past startScriptQuietSeconds: the git process covers that. The
+ * quiet period covers the moment between the stash and the pull's start,
+ * when no git runs. The hook passes --from-git-hook, which skips these
+ * checks, since the merge is done when git runs the hook.
  *
  * It holds the start script's lock from its read of whether private rpc
  * is on until it has put the flag back or left it, so a command that
@@ -79,9 +84,14 @@ export function restoreFlag(host, values) {
   }
   const lockPath = path.join(x1consoleDir, ".git", "index.lock");
   const locked = host.exists(lockPath);
+  // git pull, and the git fetch it runs, both show as "git".
+  const gitRuns = host.programsIn(x1consoleDir).includes("git");
   const changedAt = host.modifiedAt(scriptPath);
   const recent = host.now() - changedAt < quietMs;
-  if (fromGitHook === false && (locked === true || recent === true)) {
+  if (
+    fromGitHook === false &&
+    (locked === true || gitRuns === true || recent === true)
+  ) {
     const seconds = quietMs / 1000;
     return {
       status: "deferred",

@@ -129,6 +129,9 @@ export function createFakeHost({
   const calls = [];
   const modes = new Map();
   const modified = new Map();
+  // The programs working in a folder, keyed by the folder, as a test sets
+  // them.
+  const programs = new Map();
   const locks = new Set();
   let clock = 0;
   const needFile = (filePath) => {
@@ -155,6 +158,7 @@ export function createFakeHost({
     files,
     modes,
     modified,
+    programs,
     locks,
     run: command("run"),
     sudo,
@@ -238,6 +242,7 @@ export function createFakeHost({
     },
     homeDir: () => "/home/validator",
     exists: (filePath) => files.has(filePath),
+    programsIn: (folder) => programs.get(folder) ?? [],
     makeTempDir: () => "/tmp/fake-temp",
     httpGet,
     httpsGet,

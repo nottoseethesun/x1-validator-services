@@ -9,7 +9,8 @@
  */
 
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
+import { once } from "node:events";
 import fs from "node:fs";
 import http from "node:http";
 import https from "node:https";
@@ -173,6 +174,29 @@ test("reads, writes and checks files, and makes temporary folders", () => {
   assert.equal(host.readText(file), "text");
   host.removeUserTree(folder);
   assert.equal(host.exists(folder), false);
+});
+
+test("names the programs that work in a folder or under it, and none for a folder that isn't there", async () => {
+  const host = testHost();
+  const folder = host.makeTempDir();
+  const inner = path.join(folder, "inner");
+  fs.mkdirSync(inner);
+  const other = host.makeTempDir();
+  const child = spawn(process.execPath, ["-e", "setTimeout(() => {}, 60000)"], {
+    cwd: inner,
+    stdio: "ignore",
+  });
+  await once(child, "spawn");
+  try {
+    assert.ok(host.programsIn(folder).includes("node"));
+    assert.ok(host.programsIn(inner).includes("node"));
+    assert.deepEqual(host.programsIn(other), []);
+    assert.deepEqual(host.programsIn(path.join(folder, "missing")), []);
+  } finally {
+    child.kill();
+    host.removeUserTree(folder);
+    host.removeUserTree(other);
+  }
 });
 
 test("removes a folder of the account's own only once it's empty", () => {

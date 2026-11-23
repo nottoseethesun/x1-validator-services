@@ -6,9 +6,9 @@
  * - nothing before apply
  * - the flag put back after an update, with one notice and one alert
  * - a run skipped while another command holds the start script's lock
- * - an update waited out, for as long as the settings say, and while git
- *   holds its lock in the checkout they name, unless the git hook runs
- *   ensure
+ * - an update waited out, for as long as the settings say, while git
+ *   holds its lock in the checkout they name, and while git works there,
+ *   as through a slow fetch, unless the git hook runs ensure
  * - the reason the flag couldn't go back, in the alert, and no alert that
  *   it's back
  * - a public rpc's alert and its repeats, as often as the settings say
@@ -195,6 +195,37 @@ test("waits out an update in progress, unless the tool's git hook runs it", asyn
   await ensure(host, settings);
   assert.doesNotMatch(host.files.get(scriptPath), /--private-rpc/);
   await ensure(host, settings, { fromGitHook: true });
+  assert.match(host.files.get(scriptPath), /--private-rpc/);
+});
+
+test("waits while git works in x1console's folder, as through a slow fetch, unless the tool's git hook runs it", async () => {
+  // Every setting changed, so only git in the configured checkout counts.
+  const { changed } = shippedAndChangedSettings();
+  const { host, settings, scriptPath } = await appliedValidator(
+    { state: PRIVATE, settings: { ...changed, hostname: HOSTNAME } },
+    {},
+  );
+  const quietMs = settings.startScriptQuietSeconds * 1000;
+  // The stash changed the script long ago, and git holds no lock: only
+  // the pull's fetch is still at work.
+  host.files.set(scriptPath, scriptWithoutFlag());
+  host.modified.set(scriptPath, host.now());
+  await host.sleep(quietMs + 60000);
+  const x1consoleDir = homePath(settings.x1consoleDir, HOME);
+  host.programs.set(x1consoleDir, ["bash", "git", "git-remote-http"]);
+  const fetching = await ensure(host, settings, { quiet: false });
+  assert.doesNotMatch(host.files.get(scriptPath), /--private-rpc/);
+  assert.ok(
+    fetching.lines.some((line) => line.includes("x1console may be updating")),
+    fetching.lines.join("\n"),
+  );
+  await ensure(host, settings, { fromGitHook: true });
+  assert.match(host.files.get(scriptPath), /--private-rpc/);
+  // Another program that works there holds nothing off.
+  host.files.set(scriptPath, scriptWithoutFlag());
+  host.modified.set(scriptPath, host.now() - quietMs - 60000);
+  host.programs.set(x1consoleDir, ["bash"]);
+  await ensure(host, settings);
   assert.match(host.files.get(scriptPath), /--private-rpc/);
 });
 
