@@ -129,8 +129,9 @@ Examples:
 Examples:
   x1-validator-private-rpc add-api-key
       Makes one api key, such as for a new client, and prints its https
-      and wss urls. Save them: the client needs them, and you need the key
-      to remove it later, since no command shows the key again.
+      and wss urls. Save them off the validator: the client needs them,
+      and you need the key to remove it later, since no command shows
+      the key again.
   x1-validator-private-rpc add-api-key --count 3
       Makes three keys in one run, all with the one email you give, such
       as for one client's three apps. For three clients, run add-api-key

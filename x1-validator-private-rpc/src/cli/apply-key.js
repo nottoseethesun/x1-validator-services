@@ -63,9 +63,9 @@ export const PASSWORD_CREDENTIAL = "x1-validator-services-password";
 
 /** What the stage says beside the first key's urls. */
 export const SAVE_THE_KEY =
-  "Save these urls now. The client needs them, and so do you, to remove " +
-  "the key later. The tool stores only the key's hash, so no command can " +
-  "show the key again.";
+  "Save these urls now, off the validator. The client needs them, and so " +
+  "do you, to remove the key later. The tool stores only the key's hash, " +
+  "so no command can show the key again.";
 
 /** The prompt for the x1-validator-services password. */
 export const PASSWORD_PROMPT = "x1-validator-services password: ";
