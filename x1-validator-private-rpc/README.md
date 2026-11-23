@@ -72,7 +72,7 @@ Both hold unless the law requires otherwise, as it can for deliberate and grossl
 
 This software could, although its authors have made all best efforts to the contrary, cause your validator to exhibit degraded performance or even stop working.
 
-Each run that can change the system shows this disclaimer before it does anything. Runs that change nothing don't show it: the dry runs, and the commands that only check or print. Neither does `ensure`, even when you run it yourself, since `cron` and the tool's `git` hook run it with nobody at the terminal. `whiptail` draws the disclaimer in a dialog that takes over the terminal, like the dialogs some packages show as they install. The run goes on only once you choose Affirm, which affirms "I have read and understood the above Disclaimer." Decline, or Esc, stops it with nothing changed, and Ctrl-C does nothing in the dialog. Decline has the focus at first. The left and right arrows move between the two buttons, and Enter chooses the one that has the focus. To scroll the text, press Tab to move to it, then use the up and down arrows, or PgUp and PgDn.
+Each run that can change the system shows this disclaimer before it does anything. Runs that change nothing don't show it: the dry runs, and the commands that only check or print. Neither does `ensure`, which `cron` and the tool's `git` hook run with nobody at the terminal to answer. It skips the disclaimer when you run it yourself too. `whiptail` draws the disclaimer in a dialog that takes over the terminal, like the dialogs some packages show as they install. The run goes on only once you choose Affirm, which affirms "I have read and understood the above Disclaimer." Decline, or Esc, stops it with nothing changed, and Ctrl-C does nothing in the dialog. Decline has the focus at first. The left and right arrows move between the two buttons, and Enter chooses the one that has the focus. To scroll the text, press Tab to move to it, then use the up and down arrows, or PgUp and PgDn.
 
 ---
 
@@ -158,9 +158,9 @@ During the staging run, at its stage for the first api key, `apply` asks for a n
 
 Then `apply` says how `systemd` would protect a saved password on this machine, and asks whether to save the password there. If you forget the password, `add-api-key` can't make a key, and a saved password is then the only way to get it back. Features to come will also use a saved password to read the records unattended: billing, and rotation notices, which will email a key's client when the key is due to be replaced. None of the tool's commands reads a saved password yet, and `nginx` never needs it. [Api Key Security](#api-key-security) says what `systemd`'s protection guards against, and how root reads a saved password back.
 
-`apply` asks whether to save the password only right after it makes the first key, and no later run makes a first key while the api keys' file holds any key's hash. So if you answer no, or stop the run at the question, such as with Ctrl-C, no later run asks again, and the password stays unsaved.
+`apply` asks whether to save the password only right after it makes the first key. It makes the first key only while the api keys' file holds no key's hash. So if you answer no, or stop the run at the question, such as with Ctrl-C, no later run asks again, and the password stays unsaved.
 
-`--yes` answers yes to each stage's question and to the question about the `cron` jobs. You still affirm the disclaimer, type the password, and answer the save question.
+`--yes` answers yes to each stage's "Go on?" and to the question about the `cron` jobs, so that `apply` runs on without stopping at them. You still affirm the disclaimer, type the password, and answer the save question.
 
 Start the staging run inside `tmux`, as with the upgrade check, so that a dropped `ssh` connection can't stop the run at the save question, which no later run asks again:
 
@@ -171,13 +171,14 @@ nvm exec 24 node x1-validator-private-rpc/src/cli.js apply --acme-staging
 
 Every stage first checks whether its work is done, so running `apply` again changes nothing that's in place. If it stops partway, fix any problem it names, then run it again with the same options, and it picks up from there. So after a staging run that stopped, such as at stage 5 with no certificate, run `apply` with `--acme-staging` again. A key it made and showed stays, so the next run makes none.
 
-A run also stops at stage 5 if `nginx` refuses the configuration the stage wrote. `apply` then puts the stage's files back as they were before the run, so `nginx` stays as it was. `apply` writes what `nginx` refused, and why, to `x1-validator-private-rpc/logs/error.log`.
+A run also stops at stage 5 if `nginx` refuses the configuration the stage wrote. `nginx` only tested that configuration, and so stays as it was. `apply` then puts the stage's files back as they were before the run, so that a later start of `nginx`, such as at a reboot, doesn't load the refused files. `apply` also writes what `nginx` refused, and why, to `x1-validator-private-rpc/logs/error.log`.
 
 If you stop `apply` before stage 6, its flag stage, the start script stays as it was. No `ensure` adds the flag before `apply` does. The `cron` job and the `git` hook that run `ensure` are installed only at stage 7, and an `ensure` you run yourself puts the flag back only once `apply` has added it.
 
-A staging run that finishes gets its certificate at stage 5. The staging service checks that the hostname is yours the same way as for a real certificate, so that run shows that Let's Encrypt can check your hostname. Then run `apply` again without `--acme-staging`, for the real certificate. It changes `nginx`'s configuration, but not the api keys, so the key from the staging run stays valid, and it asks for no x1-validator-services password:
+A staging run that finishes gets its certificate at stage 5. The staging service checks that the hostname is yours the same way as for a real certificate, so that run shows that Let's Encrypt can check your hostname. Once the staging run has finished, and you've saved the key's urls, type `exit` to leave `tmux`, so that its scrollback doesn't keep the urls on the validator. The next run, without `--acme-staging`, gets the real certificate. It changes `nginx`'s configuration, but not the api keys, so the key from the staging run stays valid. It asks for no x1-validator-services password. Start it from the project root:
 
 ```bash
+cd ~/x1-validator-services
 nvm exec 24 node x1-validator-private-rpc/src/cli.js apply
 ```
 
@@ -258,7 +259,7 @@ nvm exec 24 node x1-validator-private-rpc/src/cli.js url
 
 Writing `nginx`'s list needs `sudo`, so `add-api-key` and `remove-api-key` may ask for your account's `sudo` password. They ask after their own questions and before they change anything, so a wrong or cancelled password changes nothing.
 
-Both then write `nginx`'s list, and reload a running `nginx`, so it reads the new list. Once the reload is done, a new key works, and a removed one is refused, on each connection opened from then on. A reload takes a moment, up to a second or two with hundreds of thousands of keys. `nginx` serves requests from a worker process. A reload starts a new worker, under the new list, and leaves each connection that's already open with the old worker, under the old list. A websocket's key is checked only when the websocket opens, so a removed key's websocket would stay open on the old worker. So the tool's configuration has the old worker close every connection it still holds 10 seconds after a reload. Within 10 seconds of the reload, then, a removed key stops working on every connection. Every websocket opened before the reload closes too, whatever its key, and its client must reconnect.
+Both then write `nginx`'s list, and reload a running `nginx`, so it reads the new list. Once the reload is done, a new key works, and a removed one is refused, on each connection opened from then on. A reload takes a moment, up to a second or two with hundreds of thousands of keys. `nginx` serves requests from a worker process. A reload starts a new worker, under the new list, and leaves each connection that's already open with the old worker, under the old list. A websocket's key is checked only when the websocket opens, so a removed key's websocket would stay open on the old worker. So the tool's configuration has the old worker close every connection it still holds 10 seconds after a reload. Within 10 seconds of the reload, then, a removed key stops working on every connection. After `add-api-key` or `remove-api-key`, every websocket opened before the reload closes too, whatever its key, and its client must reconnect.
 
 Only one command changes the keys at a time. While `apply`, `undo-apply` or another key command is changing the keys, `add-api-key` and `remove-api-key` refuse, change nothing, and say to run the command again once the other one is done.
 
@@ -350,7 +351,7 @@ The tool has no releases: an update brings the newest code from the project's `m
 
 An update can raise the Node.js version the tool needs. The tool's `cron` lines and its `git` hook each start the tool with the full path of the Node.js that ran the last `apply`, so after such an update they still name the older Node.js. The tool checks its Node.js before anything else, so every run they start stops at once. Then `ensure` puts no flag back, and neither it nor the key count check sends an alert. So run `apply` as soon as the new code and its packages are installed: `apply` rewrites the lines and the hook when they name another Node.js, or an old path to the tool.
 
-From the project root, get the new code with `git pull`. Then install the newest release of Node.js 24, beside any older one, with `nvm install 24`, since the new code may need a newer release than the one you have. When `nvm` holds that release already, the command installs nothing. Install the tool's Node.js packages on that release with `npm ci`, as the project's [Get the Code](../README.md#get-the-code) does. Last, run `apply` on Node.js 24:
+From the project root, get the new code with `git pull`. Then install the newest release of Node.js 24, beside any older one, with `nvm install 24`, since the new code may need a newer release than the one you have. When `nvm` holds that release already, the command installs nothing. Install the tool's Node.js packages on that release with `npm ci`, as the project's [Get the Code](../README.md#get-the-code) does. Last, run `apply` on Node.js 24. Each step, in order:
 
 ```bash
 cd ~/x1-validator-services
@@ -393,7 +394,7 @@ First `undo-apply` asks one question: whether to delete every api key, with the 
 
 Once the start-script flag is out, the running validator's rpc stays unchanged until the validator's next start, since the validator read its flags when it started. So to make the rpc public, restart the validator from `x1console`, as in [Restart the Validator](#restart-the-validator). `undo-apply` reminds you to restart, unless the running validator already lacks the flag: its rpc is public then, and a restart changes nothing.
 
-A flag `apply` didn't add stays in the start script, so the rpc stays on 127.0.0.1 after the validator's next start. `undo-apply` says so, in place of the reminder to restart. You may have added that flag by hand, or with `turn-on-private-rpc` after an `apply` that stopped before stage 6, its flag stage. If you want it gone, take it out of the start script by hand, after `undo-apply` and before the restart.
+The start script may also carry a `--private-rpc` that `apply` didn't add: one you added by hand, or with `turn-on-private-rpc` after an `apply` that stopped before stage 6, its flag stage. `undo-apply` leaves that flag, so the rpc stays on 127.0.0.1 after the validator's next start. `undo-apply` says so, in place of the reminder to restart. If you want the flag gone, take it out of the start script by hand, after `undo-apply` and before the restart.
 
 `undo-apply` never removes a package, since something else may need one. So `nginx` stays installed, with its two modules. `undo-apply` stops, disables and masks it. With the files the tool wrote for `nginx` gone, a start of `nginx` would run the package's own configuration, `/etc/nginx/nginx.conf`, and its default site. The mask stops anything from starting it. `nginx`'s configuration in `/etc/nginx`, its certificates in `/var/cache/nginx`, its logs in `/var/log/nginx`, its account and nginx.org's `apt` repository stay too.
 
