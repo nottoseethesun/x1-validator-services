@@ -105,7 +105,7 @@ Once the tool is installed, `nginx` updates with the system's other packages, wh
 
 The check installs nginx.org's previous release of `nginx`, with a throwaway api key, and runs that `nginx` under `systemd` the way the tool will. Then it upgrades `nginx` with `apt`. nginx.org's upgrade starts a new `nginx` process and hands over to it, without a restart. `systemd` tracks a service by its main process, so it must follow that handover to the new process. If it didn't, it would stop counting `nginx` as running, or restart `nginx`, which drops every open connection. The check makes sure neither happened: `systemd` still counts `nginx` as running, now as the new process, with no restart. It also makes sure the new `nginx` still lets the throwaway key through and turns a random one away. Last, it removes everything it added. It never touches the validator's software, port 443 or the firewall.
 
-It takes a few minutes. Run it inside `tmux`, so that a dropped `ssh` connection can't stop it halfway and leave `nginx` installed. If the connection drops, log in again and run `tmux attach` to get back to it. Run it as the validator's account, from the project root, `~/x1-validator-services`. It asks for your `sudo` password:
+It takes a few minutes. Run it inside `tmux`, so that a dropped `ssh` connection can't stop it halfway and leave `nginx` installed. If the connection drops, log in again and run `tmux attach` to get back to it. Run it as the validator's account, from the project root, `~/x1-validator-services`. It asks for your `sudo` password. Start `tmux`, then the check:
 
 ```bash
 tmux
@@ -143,7 +143,7 @@ Then, in the copy, set `hostname` to the name from the last step, and `publicIp`
 
 Stage 8 changes nothing: it says whether to restart the validator, and prints the url. When the run made a key, the url shows only that key's last four characters, since stage 4 showed the key in full. Otherwise the url shows `KEY` in place of the key.
 
-Until you restart the validator, its rpc still listens on every interface. So once stage 7 has installed the `cron` job, `ensure` alerts you within a minute that the rpc is public, and repeats the alert until the restart, as often as the `exposedReminderMinutes` setting says.
+Until you restart the validator, its rpc still listens on every interface. So once stage 7 has installed `ensure`'s `cron` job, `ensure` alerts you within a minute that the rpc is public, and repeats the alert until the restart, as often as the `exposedReminderMinutes` setting says.
 
 First have a look at what `apply` would do. The dry run changes nothing:
 
@@ -156,7 +156,7 @@ The first run that sets the tool up, the staging run, is started with `--acme-st
 
 During the staging run, at its stage for the first api key, `apply` asks for a new x1-validator-services password, typed twice, with at least as many characters as the `passwordMinLength` setting says. Then `apply` makes the first api key. It writes the key's hash and its record, with no email, to the api keys' file, `~/.config/x1-validator-services/hashed-api-keys.json`. Then it prints the key's two urls, https and wss, with the key in them. **Save them now**: the client needs them, and so do you, to remove the key later, since no command can show the key again.
 
-Then `apply` says how `systemd` would protect a saved password on this machine, and asks whether to save the password there. Without the password, `add-api-key` can't make a key, and a saved password is the only way back to a forgotten one. Features to come will also use it to read the records unattended: billing, and rotation notices, which will email a key's client when the key is due to be replaced. None of the tool's commands reads a saved password yet, and `nginx` never needs it. [Api Key Security](#api-key-security) says what `systemd`'s protection guards against, and how root reads a saved password back.
+Then `apply` says how `systemd` would protect a saved password on this machine, and asks whether to save the password there. If you forget the password, `add-api-key` can't make a key, and a saved password is then the only way to get it back. Features to come will also use a saved password to read the records unattended: billing, and rotation notices, which will email a key's client when the key is due to be replaced. None of the tool's commands reads a saved password yet, and `nginx` never needs it. [Api Key Security](#api-key-security) says what `systemd`'s protection guards against, and how root reads a saved password back.
 
 `apply` asks whether to save the password only right after it makes the first key, and no later run makes a first key while the api keys' file holds any key's hash. So if you answer no, or stop the run at the question, such as with Ctrl-C, no later run asks again, and the password stays unsaved.
 
@@ -195,7 +195,7 @@ Replace `203.0.113.10` with the validator's address. Then check the keyed url wi
 
 ### Cronitor Heartbeat
 
-`ensure` runs every minute, from the `cron` job that `apply` installs when you accept it. If that job ever stops working, for example because the project's folder moved or the tool's settings have a typo, the flag can stay out of the start script after an `x1console` update, and `ensure`'s alerts stop. Nothing on the validator tells you that the job has stopped, or that the flag is out. So at the end of each run, `ensure` checks in with Cronitor, and Cronitor alerts you when the check-ins stop. While all is well, Cronitor sends nothing. Without that job, don't set up the heartbeat: no run would check in each minute, and Cronitor would keep alerting.
+`ensure` runs every minute, from the `cron` job that `apply` installs when you accept it. If that job ever stops working, for example because the project's folder moved or the tool's settings have a typo, the flag can stay out of the start script after an `x1console` update, and `ensure`'s alerts stop. Nothing on the validator tells you that the job has stopped, or that the flag is out. So at the end of each run, `ensure` checks in with a web request to Cronitor, a monitoring service off the validator. These check-ins are the heartbeat. Cronitor alerts you when they stop. While all is well, Cronitor sends nothing. Without that job, don't set up the heartbeat: no run would check in each minute, and Cronitor would keep alerting.
 
 The heartbeat is optional. Without a url, `ensure` doesn't check in. To set it up, first create a Cronitor account, as the project's [Cronitor Alerts](../README.md#cronitor-alerts) section describes. Then:
 
@@ -322,7 +322,7 @@ Restart the validator as in [Restart the Validator](#restart-the-validator), for
 
 The first two stay quiet before `apply` has added the flag, and while private rpc is off, since `ensure` then doesn't check the start script for the flag, or check that the rpc is private. When an alert from `ensure` fails to send, because Telegram can't be reached or refuses it, `ensure` sends it at its next run. Without `x1console`'s Telegram files, its bot's token and chat id, `ensure` and the key count check only print their alerts. The `cron` jobs add what both print to `ensure`'s log, `x1-validator-private-rpc/logs/ensure.log`.
 
-Two checks send no alert: whether the running validator carries `--private-rpc`, and what listens on ports 80 and 443. The `cron` job runs `ensure` with `--quiet`, which prints only what `ensure` changed and its alerts, so these two checks stay out of `ensure`'s log. Their problems show only when you run `ensure` yourself: in its exit code, and, without `--quiet`, in its output. A validator running without the flag still sets off an alert, though: its rpc listens on every interface, and the alert that the rpc is public reports that.
+Two checks send no alert: whether the running validator carries `--private-rpc`, and whether `nginx` listens on the public address's port 443 alone, with nothing on port 80. The `cron` job runs `ensure` with `--quiet`, which prints only what `ensure` changed and its alerts, so these two checks stay out of `ensure`'s log. Their problems show only when you run `ensure` yourself: in its exit code, and, without `--quiet`, in its output. A validator running without the flag still sets off an alert, though: its rpc listens on every interface, and the alert that the rpc is public reports that.
 
 ---
 
@@ -348,7 +348,7 @@ The Cronitor url is a credential, so it goes in the project root's `.env` instea
 
 The tool has no releases: an update brings the newest code from the project's `main` branch. When you run `apply` after an update, it rewrites the files it wrote for `nginx`, and the tool's `cron` lines, wherever the new version writes them differently. nginx.org's `apt` repository stays as the first `apply` set it up.
 
-An update can raise the Node.js version the tool needs. The tool's `cron` lines and its `git` hook each start the tool with the full path of the Node.js that ran the last `apply`, so after such an update they still name the older Node.js. The tool checks its Node.js before anything else, so every run they start stops at once. Then `ensure` puts no flag back, and neither it nor the key count check sends an alert. So run `apply` as soon as the new code and its packages are in: it rewrites the lines and the hook when they name another Node.js, or an old path to the tool.
+An update can raise the Node.js version the tool needs. The tool's `cron` lines and its `git` hook each start the tool with the full path of the Node.js that ran the last `apply`, so after such an update they still name the older Node.js. The tool checks its Node.js before anything else, so every run they start stops at once. Then `ensure` puts no flag back, and neither it nor the key count check sends an alert. So run `apply` as soon as the new code and its packages are installed: `apply` rewrites the lines and the hook when they name another Node.js, or an old path to the tool.
 
 From the project root, get the new code with `git pull`. Then install the newest release of Node.js 24, beside any older one, with `nvm install 24`, since the new code may need a newer release than the one you have. When `nvm` holds that release already, the command installs nothing. Install the tool's Node.js packages on that release with `npm ci`, as the project's [Get the Code](../README.md#get-the-code) does. Last, run `apply` on Node.js 24:
 
@@ -432,7 +432,7 @@ Whatever a run of `undo-apply` doesn't take back, such as a step that failed, st
 
 The tests are for changing the tool, on a development machine. A validator never runs them, and using the tool needs none.
 
-On a development machine, install with `npm ci`, as the project's [Development](../README.md#development) section says, and run every `npm` command from the project root. The tool has two kinds of test: unit tests, which give the tool a stand-in for the system, so none of them touches the machine, and a system test, which runs the tool for real. `npm test` runs every test in the project except the system test, the tool's unit tests among them. Run it after each change. The system test, `npm run test:system`, runs in a throwaway Ubuntu 24.04 container on your development machine, never on a validator. It alone needs LXD. Run it before you merge a change to the tool's code. [The System Test](../docs/engineering.md#the-system-test), in the project's `docs/engineering.md`, says what it checks.
+On a development machine, install with `npm ci`, as the project's [Development](../README.md#development) section says, and run every `npm` command from the project root. The tool has two kinds of test: unit tests, which give the tool a stand-in for the system, so none of them touches the machine, and a system test, which runs the tool for real. `npm test` runs every test in the project, the tool's unit tests included, except the system test. Run it after each change. The system test, `npm run test:system`, runs in a throwaway Ubuntu 24.04 container on your development machine. It alone needs LXD. Run it before you merge a change to the tool's code. [The System Test](../docs/engineering.md#the-system-test), in the project's `docs/engineering.md`, says what it checks.
 
 Set up LXD once, on Ubuntu, then log out and back in so the group change takes effect:
 
