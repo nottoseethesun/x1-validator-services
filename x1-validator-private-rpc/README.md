@@ -41,10 +41,10 @@ Two standalone tools come with x1-validator-private-rpc: programs of their own, 
   - [Check That `nginx` Upgrades Keep Working](#check-that-nginx-upgrades-keep-working)
   - [Point the Hostname at the Validator](#point-the-hostname-at-the-validator)
   - [Set the Hostname](#set-the-hostname)
+- [Run](#run)
   - [Run apply](#run-apply)
   - [Restart the Validator](#restart-the-validator)
   - [Cronitor Heartbeat](#cronitor-heartbeat)
-- [Run](#run)
   - [Usage](#usage)
     - [Api Keys](#api-keys)
     - [Check](#check)
@@ -97,7 +97,7 @@ The tool needs Ubuntu, because of where some of the system programs it uses come
 
 > **Never point the validator's own `solana` cli at the keyed url, or at the validator's own address.** That means any rpc url that contains the tool's hostname (`x1-rpc.example.com` in these docs) or the validator's public address, whether you set it from `x1console`'s network menu or with `solana config set --url`. Point the cli at X1's public rpc instead, from `x1console`'s network menu. Autopilot, the `cron` jobs `x1console` can install to look after the validator, checks the validator's health through the cli's rpc url. It answers a failed check by deleting the ledger and restarting the validator. The keyed url and the validator's own address can both fail that check. Under `--private-rpc`, the rpc no longer answers on the validator's address. The keyed url can stop answering too, for example while `nginx` restarts, or once the last api key is removed. `apply` stops at its first check, changing nothing, while the cli's url contains the tool's hostname or the validator's address.
 
-**Start every command that runs one of the tool's `.js` files with `nvm exec 24`,** as each command below does. The validator's default `node` is Node.js 20.0.0, which `x1console` installed, and it's too old for the tool. `nvm exec 24` runs one command on Node.js 24 instead. For the tool's commands, [Run](#run) shows how to link its launcher, a small script that starts the tool on Node.js 24, so that the tool's name alone runs it. The standalone tools, `validate-nginx-upgrade` and `check-my-private-rpc`, have no launcher, so on the validator they always need `nvm exec 24`.
+**Start every command that runs one of the tool's `.js` files with `nvm exec 24`,** as each command below does. The validator's default `node` is Node.js 20.0.0, which `x1console` installed, and it's too old for the tool. `nvm exec 24` runs one command on Node.js 24 instead. For the tool's commands, [Usage](#usage) shows how to link its launcher, a small script that starts the tool on Node.js 24, so that the tool's name alone runs it. The standalone tools, `validate-nginx-upgrade` and `check-my-private-rpc`, have no launcher, so on the validator they always need `nvm exec 24`.
 
 ### Check That `nginx` Upgrades Keep Working
 
@@ -130,6 +130,10 @@ cp x1-validator-private-rpc/app-config/app-defaults-for-user-configurable/privat
 ```
 
 Then, in the copy, set `hostname` to the name from the last step, and `publicIp` to the validator's public ipv4 address, which `nginx` listens on. Or delete `publicIp`, to use the address the X1 network sees for your validator. Set `acmeEmail` to a contact address for Let's Encrypt, or delete it for none. Since June 2025, Let's Encrypt keeps no copy of the address, and sends no warning before a certificate expires. `ensure` warns you on Telegram instead, as [Alerts](#alerts) says. Let's Encrypt passes the address on to the mailing list system of ISRG, the nonprofit behind Let's Encrypt, as [Let's Encrypt's notice](https://letsencrypt.org/2025/06/26/expiration-notification-service-has-ended/) says. That system may send you an email about how to subscribe. [Configure](#configure) says where every setting is described, and what to run after you change one.
+
+---
+
+## Run
 
 ### Run apply
 
@@ -215,11 +219,9 @@ The heartbeat is optional. Without a url, `ensure` doesn't check in. To set it u
 
 4. Test it. Run `crontab -e`, and put a `#` in front of `ensure`'s line, the one that starts with `* * * * *`. Leave the key count check's line, which starts with `0 */`, as it is. Within about five minutes, Cronitor should alert you on Telegram. Then remove the `#`. Once the check-ins resume, Cronitor sends a recovery notice.
 
----
+### Usage
 
-## Run
-
-Once the tool is installed, `systemd` runs `nginx`, and starts it at each boot. [How It Works](#how-it-works) says what runs `ensure` and the key count check on their own. You run the tool's commands, and its two standalone tools, when you need them.
+Once `apply` has finished, `systemd` runs `nginx`, and starts it at each boot. [How It Works](#how-it-works) says what runs `ensure` and the key count check on their own. You run the tool's commands, and its two standalone tools, when you need them.
 
 Run the tool as the validator's account, from the project root, on Node.js 24. Its `--help` lists its commands:
 
@@ -236,8 +238,6 @@ ln -sf ~/x1-validator-services/x1-validator-private-rpc/bin/x1-validator-private
 ```
 
 Ubuntu's default profile adds `~/.local/bin` to your PATH as you log in, if the folder exists by then. So if typing the tool's name gives `command not found`, log out and back in.
-
-### Usage
 
 Each task has a section below: [Api Keys](#api-keys), [Check](#check), [After an `x1console` Update](#after-an-x1console-update), and [Turn the Private Rpc Off and On](#turn-the-private-rpc-off-and-on). [Alerts](#alerts) says what `ensure` and the key count check send you on Telegram. The `--help` of each command and of each standalone tool gives its options, an example of each common use, and what each exit code means. [`docs/project-commands.md`](docs/project-commands.md) lists every command and standalone tool, with its options and an example of each common use.
 
