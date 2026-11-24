@@ -77,6 +77,8 @@ The checks and tests. `check` runs all of them but the system test.
 | `test:system` | `--keep` | x1-validator-private-rpc end to end, in a throwaway LXD container, never on a validator. Not part of `check`. `--keep` leaves the container for a look inside. Its feature's README says what it needs, in [Test](../x1-validator-private-rpc/README.md#test). | `npm run test:system` · `npm run test:system -- --keep` |
 | `test:watch` | — | Runs the tests again on every change. | `npm run test:watch` |
 
+`check`, `test`, `test:coverage` and `test:watch` fail a test still running after a minute, by name, and go on with the rest of its file. [Tests](engineering.md#tests) says why.
+
 ---
 
 ## Commands That Are Usually Not Run Alone

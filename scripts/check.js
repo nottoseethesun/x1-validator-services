@@ -34,7 +34,11 @@ import {
 import { installedFiles, moduleFiles } from "./_project-files.js";
 import { printSummary, runStages } from "./_run-stages.js";
 import { removeLeftoverTestTempFolders } from "./_test-temp-folders.js";
-import { listTestFiles, splitConfigValueTests } from "./_test-files.js";
+import {
+  listTestFiles,
+  splitConfigValueTests,
+  TEST_TIMEOUT,
+} from "./_test-files.js";
 import {
   projectRoot,
   requireMinNode,
@@ -109,6 +113,7 @@ function runTestGroup(name, files, options) {
   }
   const status = runInherited(process.execPath, [
     "--test",
+    TEST_TIMEOUT,
     ...options,
     ...files,
   ]);

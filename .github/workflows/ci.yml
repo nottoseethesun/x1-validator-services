@@ -30,6 +30,10 @@ jobs:
   check:
     name: ${{ matrix.check }}
     runs-on: ubuntu-latest
+    # A run takes about three minutes, and GitHub's own limit is 6 hours.
+    # The cap ends a hang that no test's time limit can, such as a test
+    # file that leaves a timer running, and so never exits.
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
