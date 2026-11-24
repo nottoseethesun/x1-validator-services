@@ -28,7 +28,7 @@ nvm exec 24 node x1-validator-private-rpc/src/cli.js url
 
 A command's options go after its name, as in `apply --dry-run`: `apply` sets the tool up, and `--dry-run` makes it print every change it would make, and make none.
 
-The tool also has a launcher, `x1-validator-private-rpc/bin/x1-validator-private-rpc`, a small script that runs the tool on the newest Node.js 24 that `nvm` holds. To type the tool's name instead, from any folder, link the launcher into `~/.local/bin`, as the README's [Run](../README.md#run) section shows. Then `x1-validator-private-rpc url` does the same as the command above.
+The tool also has a launcher, `x1-validator-private-rpc/bin/x1-validator-private-rpc`, a small script that runs the tool on the newest Node.js 24 that `nvm` holds. To type the tool's name instead, from any folder, link the launcher into `~/.local/bin`, as the README's [Usage](../README.md#usage) section shows. Then `x1-validator-private-rpc url` does the same as the command above.
 
 Before a run that can change the system, most commands show the tool's disclaimer, and go on only once you affirm it. The README's [Disclaimer](../README.md#disclaimer) says which runs show it.
 
