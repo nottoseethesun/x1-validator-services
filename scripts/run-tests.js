@@ -8,7 +8,7 @@
  * `--help` for its usage, examples and exit codes.
  */
 
-import { listTestFiles } from "./_test-files.js";
+import { listTestFiles, TEST_TIMEOUT } from "./_test-files.js";
 import {
   projectRoot,
   requireMinNode,
@@ -53,7 +53,12 @@ function main() {
   }
   const root = projectRoot();
   const files = listTestFiles(root);
-  const code = runInherited(process.execPath, ["--test", ...options, ...files]);
+  const code = runInherited(process.execPath, [
+    "--test",
+    TEST_TIMEOUT,
+    ...options,
+    ...files,
+  ]);
   process.exit(code);
 }
 
