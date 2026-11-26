@@ -13,7 +13,7 @@ The first feature is x1-validator-private-rpc. It's a command-line tool that mak
 [LP Ranger](https://github.com/nottoseethesun/lp-ranger)'s conventions are the authority for this project. They cover code style, tests, the gate, security, docs, the `git` workflow and how to work with the owner. The gate is the set of checks that must pass before every commit and every push, `npm run check` here. Read LP Ranger's conventions in this order:
 
 1. its `CLAUDE.md`
-2. its `docs/claude/CLAUDE-*.md` guides, skipping `CLAUDE-DISCLOSURES.md`
+2. its `docs/claude/CLAUDE-*.md` guides, skipping `CLAUDE-DISCLOSURES.md`, and `CLAUDE-ENGLISH-AUDIT.md`, which this project keeps its own version of, below
 3. its `docs/claude/memory/MEMORY.md`, and the `feedback_*` notes it lists
 
 Skip what belongs to LP Ranger's own domain: EVM, chains, pools and positions, its dashboard and its CSS. This file keeps no copy of LP Ranger's rules, so the two can't drift apart. It records only where this project differs, below.
@@ -32,8 +32,9 @@ Skip what belongs to LP Ranger's own domain: EVM, chains, pools and positions, i
 - **The gate.** Its reports go to `tmp/check/`. Besides LP Ranger's coverage rules, it fails a source module that no test loads, since Node.js reports coverage only for the files a test loaded. The list of files held to 95% coverage is in `scripts/check.js`. Its last stage, code-fuzzing, makes small changes to each feature's code in memory, and checks that a test fails for each.
 - **Program names in backticks.** Every Markdown doc writes a program's name in backticks, as it's typed on the command line: `nginx`, `systemd`, `apt`, `ufw`, `git`, `cron`, `x1console`, `npm`. That holds in headings, tables and link text too, and inside terms such as the `cron` job or the tool's `git` hook. A product's name in its own spelling, such as Node.js, ESLint, LXD or Ubuntu, stays plain, and so does a site or a service, such as nginx.org or Let's Encrypt. A feature's own name stays plain, except as a command.
 - **Each tool introduced at its first mention.** A reader reads a doc top to bottom, and knows only what it has said so far. So each tool in the project must be properly introduced at its first mention in a doc, a help text or a message. That means starting from the big picture, giving a few words that explain the context, or an example scenario in which the tool would be used, and explaining in precise language, with no AI slop, such as an adjective where the reader needs an explanation. The tools are a feature's commands, such as `apply` or `ensure`, its standalone tools, and each `npm run` target and the script it runs.
-- **Complete help.** LP Ranger asks every program to answer `--help` and `-h`. Here the help must also be complete: it lists every option the program takes, and gives usage examples, with one for each common use. It holds for every `npm run` target, `prepare` included, which `npm install` runs to set up the `git` pre-commit hook, and for every command-line tool in the project: a feature's tool and each of its commands, its standalone tools, and each script in `scripts/` that's run by its path, even one that only other scripts run. An `npm run` target that needs another program, such as `knip`, `npm audit` or `husky`, runs it through a script of the project's, so its `--help` is the project's own. Tests fail a target that runs no such script, and any help that gives no examples, so the gate keeps them complete.
+- **Complete help.** LP Ranger asks every program to answer `--help` and `-h`. Here the help must also be complete: it lists every option the program takes, and gives usage examples, with one for each common use. It holds for every `npm run` target, `prepare` included, which `npm install` runs to set up the `git` pre-commit hook, and for every command-line tool in the project: a feature's tool and each of its commands, its standalone tools, and each script in `scripts/` that's run by its path, even one that only other scripts run. An `npm run` target that needs another program, such as `knip`, `npm audit` or `husky`, runs it through a script of the project's, so its `--help` is the project's own. Tests fail a target that runs no such script, and any help that gives no examples.
 - **The security pass.** `security/detect-non-literal-fs-filename` is off for the whole project. Its reason is beside it in `eslint-security.config.js`. [docs/security.md](docs/security.md) lists every exception and every dependency override.
+- **Auditing the English.** Every audit of the English in the docs, the help, the messages, the JSDoc, the comments and the test titles follows [docs/claude/CLAUDE-ENGLISH-AUDIT.md](docs/claude/CLAUDE-ENGLISH-AUDIT.md), the owner's guide to such audits, adapted to this project. It holds the standard each text meets, how each claim is checked against the code, how a fix is written, and the loop of fresh readers that checks an audit's report before its fixes are made.
 
 ## Layout
 
@@ -47,6 +48,7 @@ scripts/                 the gate and the runners of the tools
 test/                    tests of the project's own tooling
 eslint-rules/            this project's lint rules
 docs/                    project-wide docs, the engineering reference among them
+  claude/                guides for Claude Code, such as how to audit the English
 x1-validator-private-rpc/
   README.md              the feature's install steps and use
   app-config/            shipped settings, their schema and apply's dictionary of the changes it can make on the machine; per-install overrides
@@ -64,7 +66,7 @@ x1-validator-private-rpc/
   app-data/, logs/, tmp/ made on the validator; git ignores them
 ```
 
-Entry points sit directly in a feature's `src/`, and standalone tools in its `util/`. Modules sit in folders under `src/`, grouped by the entry point that loads them, with shared ones in `src/lib/`. A new feature joins every check when it's added to `FEATURES` in `scripts/lint-targets.js`. It also needs a list of code-fuzzing changes, its `test/code-fuzzing.json`, with at least one entry, or the gate's last stage fails.
+Entry points sit directly in a feature's `src/`, and standalone tools in its `util/`. Modules sit in folders under `src/`, grouped by the entry point that loads them, with shared ones in `src/lib/`. A new feature joins every check when it's added to `FEATURES` in `scripts/lint-targets.js`. It also needs a list of code-fuzzing changes, its `test/code-fuzzing.json`, with at least one entry, or the gate fails: `test/code-fuzzing.test.js` checks each feature's list.
 
 ## Commands
 

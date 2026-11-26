@@ -2,11 +2,14 @@
  * @file x1-validator-private-rpc/src/lib/disclaimer.js
  * @description
  * The disclaimer that each run able to change the system shows before it
- * does anything, as LP Ranger shows its disclosure on every launch. It
- * names the project's license, puts the license's disclaimer of warranty
- * and limitation of liability in plain words, and warns that the
- * software could harm the validator it runs on. The feature's README
- * holds the same text, and a test keeps the two the same.
+ * does anything, as LP Ranger shows its disclosure on every launch. A run
+ * of ensure is the one exception: cron and the tool's git hook run it
+ * with nobody at the terminal to answer, so it never shows the
+ * disclaimer, even when a person runs it. The disclaimer names the
+ * project's license, puts the license's disclaimer of warranty and
+ * limitation of liability in plain words, and warns that the software
+ * could harm the validator it runs on. The feature's README holds the
+ * same text, and a test keeps the two the same.
  *
  * It shows in a dialog that takes over the terminal until the person
  * chooses Affirm or Decline, the way a package asks about its license as

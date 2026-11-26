@@ -1,14 +1,17 @@
 /**
  * @file x1-validator-private-rpc/src/cli/state.js
  * @description
- * The tool's state, in `app-data/state.json`. It holds what apply set
- * nginx up with: the hostname, the address and the rpc port, which
- * ensure and url read, and which add-api-key and remove-api-key need
- * before they run. It also holds the operator's choice of a private or a
- * public rpc. apply's flag stage and turn-on-private-rpc set it on,
- * turn-off-private-rpc sets it off, and ensure follows it. The choice
- * starts out unset, so until apply has added the flag, or the operator
- * has turned private rpc on, ensure leaves the start script alone.
+ * The tool's state, in `app-data/state.json`. It holds the setup, what
+ * apply set nginx up with: the hostname, the address, the rpc port, and
+ * whether the certificate comes from Let's Encrypt's staging service.
+ * ensure, ensure-there-is-at-least-one-rpc-api-key, url and add-api-key
+ * read the setup. url, add-api-key, remove-api-key, turn-on-private-rpc
+ * and turn-off-private-rpc refuse to run without it. The state also
+ * holds the operator's choice of a private or a public rpc. apply's flag
+ * stage and turn-on-private-rpc set it on, turn-off-private-rpc sets it
+ * off, and ensure follows it. The choice starts out unset, so until apply
+ * has added the flag, or the operator has turned private rpc on, ensure
+ * leaves the start script alone.
  * undo-apply unsets it whenever it clears the setup, so that no ensure
  * adds the flag before apply does. ensure does nothing while the state
  * holds no setup. A later apply records the setup again at its fifth
@@ -42,7 +45,8 @@ const FORMAT_VERSION = 1;
  * @property {number} version  The file's format, 1.
  * @property {{hostname: string, publicIp: string, rpcPort: number,
  *   staging: boolean}|null} setup  What apply set up nginx with, or null
- *   until its nginx stage has run.
+ *   until apply's fifth stage, which configures nginx, has run, and again
+ *   once undo-apply has run.
  * @property {""|"on"|"off"} privateRpc  Whether ensure keeps
  *   `--private-rpc` in the start script: "on" or "off", or "" until apply
  *   or turn-on-private-rpc turns it on, and again once undo-apply has run.

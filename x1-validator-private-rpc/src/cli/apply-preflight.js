@@ -3,13 +3,16 @@
  * @description
  * apply's first stage, which changes nothing. It reads what the later
  * stages need: systemd's answer about a TPM2 chip, the rpc port from
- * x1console's start script, the validator's public address, and the
- * system's dns resolver. It stops, listing every problem at once, when
- * the machine isn't one the tool can set up: not Ubuntu 24.04 or later,
- * systemd older than 250, a tool missing, nginx installed by something
- * else, port 443 taken, a ufw rule that closes port 443, the address not
- * on this machine, the solana cli pointed at this validator, the
- * hostname pointing elsewhere, or Let's Encrypt out of reach.
+ * x1console's start script, the validator's public address, the
+ * system's dns resolver, and the Ubuntu release's code name. It stops,
+ * listing every problem at once, when the machine isn't one the tool can
+ * set up: not Ubuntu 24.04 or later, systemd older than 250, a tool
+ * missing, no hostname set, a start script it can't read or refuses,
+ * nginx installed by something else, port 443 taken, a ufw rule that
+ * closes port 443, no public address found, the address not on this
+ * machine, the solana cli pointed at this validator, the hostname
+ * pointing elsewhere, Let's Encrypt out of reach, or no nameserver in
+ * /etc/resolv.conf.
  *
  * The public address is the `publicIp` setting when set. Otherwise it's
  * the gossip address the X1 network has for this validator, which the
@@ -321,8 +324,8 @@ export async function preflight(context) {
       : await gossipAddress(host, rpcPort, timeoutMs));
   if (publicIp === undefined || publicIp === null) {
     problems.push(
-      "The local rpc didn't say which address the X1 network has for this " +
-        `validator. Set publicIp in ${overridePath}.`,
+      "apply couldn't learn from the local rpc which address the X1 network " +
+        `has for this validator. Set publicIp in ${overridePath}.`,
     );
   } else if (settings.hostname !== undefined && settings.hostname !== null) {
     await checkAddress(

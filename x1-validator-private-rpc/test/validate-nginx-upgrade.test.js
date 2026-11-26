@@ -6,8 +6,9 @@
  * each way the upgrade can go, and its clean-up, which must remove
  * everything it added even when a step fails. Every scenario runs with each setting changed from its
  * shipped value, so a step that used a default instead would show. It
- * also tests the check's decisions and test configuration on their own,
- * and runs the real entry point for its help.
+ * also runs the real entry point for its help. The check's decisions and
+ * test configuration have tests of their own, in
+ * validate-nginx-upgrade-judge.test.js.
  */
 
 import assert from "node:assert/strict";
@@ -24,18 +25,8 @@ import {
 } from "../src/lib/nginx-org.js";
 import { API_KEY_PATTERN } from "../src/lib/api-key.js";
 import { GATE_PAGE_NAME } from "../src/lib/gate-page.js";
-import {
-  hashApiKey,
-  MAP_HASH_BUCKET_SIZE,
-  MAP_HASH_MAX_SIZE,
-} from "../src/lib/key-hash-map.js";
+import { hashApiKey } from "../src/lib/key-hash-map.js";
 import { oldestNode } from "../src/lib/node-version.js";
-import {
-  keyProblems,
-  machineProblems,
-  upgradeProblems,
-} from "../util/validate-nginx-upgrade/judge.js";
-import { renderTestNginxConfig } from "../util/validate-nginx-upgrade/render-test-config.js";
 import { validateNginxUpgrade } from "../util/validate-nginx-upgrade/steps.js";
 import { shippedAndChangedSettings } from "./helpers/config-copies.js";
 import { fakeValidator, testNginxAnswer } from "./helpers/fake-validator.js";
@@ -355,6 +346,61 @@ test("Ctrl-C stops the check after the step it's on, and everything is still rem
   }
 });
 
+test("Ctrl-C during the upgrade, or the waits after it, stops the check with no verdict, and everything is still removed", async () => {
+  const stopped = {
+    passed: false,
+    problems: ["Stopped because Ctrl-C was pressed."],
+    leftovers: [],
+  };
+  // During apt's upgrade: nothing waits on systemd, or asks nginx, after it.
+  let pressed = false;
+  const asked = [];
+  const during = fakeValidator({
+    respond: (call) => {
+      if (call.args?.includes("nginx=1.30.6-1~noble")) {
+        pressed = true;
+      }
+      return undefined;
+    },
+    httpGet: async (url) => {
+      asked.push({ url, pressed });
+      return testNginxAnswer(url, during.host.files);
+    },
+  });
+  const duringRun = await runCheck(during.host, {
+    isInterrupted: () => pressed,
+  });
+  assert.deepEqual(duringRun.result, stopped);
+  const afterUpgrade = during.host.calls.slice(
+    indexOfCall(during.host.calls, "nginx=1.30.6-1~noble") + 1,
+  );
+  assert.equal(indexOfCall(afterUpgrade, "systemctl show"), -1);
+  assert.deepEqual(
+    asked.filter((entry) => entry.pressed === true),
+    [],
+  );
+  assert.ok(indexOfCall(during.host.calls, PURGE) >= 0);
+  // While the check waits for systemd after the upgrade: no verdict.
+  let waiting = false;
+  const after = fakeValidator({
+    respond: (call, state) => {
+      if (
+        state.installed === "1.30.6-1~noble" &&
+        call.command === "systemctl" &&
+        call.args[0] === "show"
+      ) {
+        waiting = true;
+      }
+      return undefined;
+    },
+  });
+  const afterRun = await runCheck(after.host, {
+    isInterrupted: () => waiting,
+  });
+  assert.deepEqual(afterRun.result, stopped);
+  assert.ok(indexOfCall(after.host.calls, PURGE) >= 0);
+});
+
 test("the long steps run through the spinner, saying the installs take minutes", async () => {
   const { host } = fakeValidator();
   const waited = [];
@@ -426,9 +472,8 @@ test("fails when the new nginx never answers after the upgrade", async () => {
   assert.deepEqual(result.problems, [
     `After the upgrade ${GATE_PAGE_NAME} never said ok. Its last answer ` +
       "was no answer (socket hang up).",
-    "After the upgrade a request with the listed key got 0, not 200: " +
-      "nginx didn't find the key's hash in its list.",
-    "After the upgrade a request with a random key got 0, not 403.",
+    "After the upgrade a request with the listed key got no answer.",
+    "After the upgrade a request with a random key got no answer.",
   ]);
 });
 
@@ -446,17 +491,6 @@ test("a test configuration nginx refuses stops the check before the start, with 
   ]);
   assert.equal(indexOfCall(host.calls, "systemctl start"), -1);
   assert.deepEqual(result.leftovers, []);
-});
-
-test("a random key that gets through fails the check", () => {
-  assert.deepEqual(
-    keyProblems({ gate: "ok", keyed: 200, stranger: 200 }, "After the upgrade"),
-    ["After the upgrade a request with a random key got 200, not 403."],
-  );
-  assert.deepEqual(
-    keyProblems({ gate: "ok", keyed: 200, stranger: 403 }, "Before"),
-    [],
-  );
 });
 
 test("fails when the old nginx main process keeps running", async () => {
@@ -485,65 +519,6 @@ test("reports what the clean-up couldn't remove, and how to remove it by hand", 
         `  By hand: sudo apt purge ${NGINX_PACKAGES.join(" ")}$`,
     ),
   );
-});
-
-test("names every reason a machine can't run the check", () => {
-  const problems = machineProblems({
-    isRoot: true,
-    osRelease: new Map([["ID", "debian"]]),
-    systemdVersion: 249,
-    nginxVersion: "1.24.0-2ubuntu7",
-  });
-  assert.equal(problems.length, 5);
-  assert.deepEqual(
-    machineProblems({
-      isRoot: false,
-      osRelease: new Map([
-        ["ID", "ubuntu"],
-        ["VERSION_CODENAME", "noble"],
-      ]),
-      systemdVersion: 255,
-      nginxVersion: null,
-    }),
-    [],
-  );
-});
-
-test("names every way nginx can fail the upgrade", () => {
-  const before = new Map([
-    ["ActiveState", "active"],
-    ["InvocationID", "a"],
-    ["MainPID", "1"],
-  ]);
-  const problems = upgradeProblems({
-    before,
-    after: new Map([
-      ["ActiveState", "failed"],
-      ["InvocationID", "b"],
-      ["MainPID", "1"],
-    ]),
-    programAfter: "/usr/sbin/nginx (deleted)",
-    oldMainRunning: true,
-    answersAfter: { gate: "no answer (refused)", keyed: 0, stranger: 0 },
-    installedVersion: null,
-    expectedVersion: "1.30.6-1~noble",
-  });
-  assert.equal(problems.length, 9);
-});
-
-test("the test configuration listens on 127.0.0.1 alone, and checks keys against the list it includes", () => {
-  const { njsModulePath, hashedApiKeysMapPath: mapPath } = testSettings();
-  const config = renderTestNginxConfig({ port: 18080, njsModulePath, mapPath });
-  assert.match(config, /^\s*listen 127\.0\.0\.1:18080;$/m);
-  assert.match(config, /^pid \/run\/nginx\.pid;$/m);
-  assert.match(config, /^\s*js_engine qjs;$/m);
-  assert.ok(config.includes(`js_import x1rpc from ${njsModulePath};`), config);
-  assert.match(config, /^\s*js_set \$x1_rpc_key_hash x1rpc\.keyHash;$/m);
-  assert.ok(config.includes(`include ${mapPath};`), config);
-  // The real configuration's sizes, without which nginx can't build it.
-  assert.ok(config.includes(`map_hash_bucket_size ${MAP_HASH_BUCKET_SIZE};`));
-  assert.ok(config.includes(`map_hash_max_size ${MAP_HASH_MAX_SIZE};`));
-  assert.doesNotMatch(config, /^env /m);
 });
 
 test("the real entry point prints its help with exit code 0", () => {

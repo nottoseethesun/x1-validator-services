@@ -64,10 +64,13 @@ export function shippedSettings() {
  * a changed path exists on a stock system, and no shipped path or folder
  * appears inside a changed one. A url's scheme and a home folder's `~`
  * stay. A number goes up by one, or down by one when it's shipped at the
- * schema's maximum.
+ * schema's maximum. A number whose rule lists the values it may take,
+ * such as apiKeyCountCheckHours, takes the next value in the list, or
+ * the one before when it's shipped at the list's end.
  * @param {string} name  The setting.
  * @param {unknown} value  Its shipped value.
- * @param {{maximum?: number}} rule  The setting's rule in the schema.
+ * @param {{maximum?: number, enum?: number[]}} rule  The setting's rule
+ *   in the schema.
  * @returns {unknown} The changed value.
  * @throws {Error} For a kind of value this helper can't change yet, so a
  *   new kind of setting can't slip through untested.
@@ -79,6 +82,10 @@ function changedValue(name, value, rule) {
       .split("/")
       .map((part) => (keep(part) ? part : `changed-${part}`))
       .join("/");
+  }
+  if (typeof value === "number" && Array.isArray(rule.enum)) {
+    const at = rule.enum.indexOf(value);
+    return rule.enum.at(at === rule.enum.length - 1 ? at - 1 : at + 1);
   }
   if (typeof value === "number") {
     return value === rule.maximum ? value - 1 : value + 1;

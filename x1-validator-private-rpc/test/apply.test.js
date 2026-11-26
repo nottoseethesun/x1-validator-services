@@ -288,11 +288,9 @@ test("a stop at a stage changes nothing after it, and a later apply picks up", a
   });
   const { code, lines } = await apply(host, { prompts });
   assert.equal(code, 1);
-  assert.ok(
-    lines.some((line) =>
-      line.includes("Stopped. Running apply again picks up from here."),
-    ),
-  );
+  const stopped =
+    "Stopped. Running apply again, with the same options, picks up from here.";
+  assert.ok(lines.some((line) => line.includes(stopped)));
   assert.equal(state.nginxInstalled, true);
   assert.equal(state.ufwRules.includes(HTTPS_RULE), false);
   const later = await apply(host);
@@ -334,7 +332,7 @@ test("another program's git hook stays as it is, and out of the record", async (
   assert.equal(record.has(`gitHook:${hookPath}`), false);
 });
 
-test("the password is saved only when asked to, and a later apply sees it saved", async () => {
+test("a yes to the save question saves the password, and a later apply asks nothing more about it", async () => {
   const settings = operatorSettings();
   const { host } = fakeX1Validator();
   const prompts = scriptedPrompts({
@@ -414,7 +412,7 @@ test("without an answer from the local rpc, the address comes from publicIp, or 
   host.postJson = async () => ({ status: 502, body: "" });
   await assert.rejects(apply(host), {
     message:
-      /The local rpc didn't say which address the X1 network has for this validator\. Set publicIp in \/operator\/private-rpc\.json\./,
+      /apply couldn't learn from the local rpc which address the X1 network has for this validator\. Set publicIp in \/operator\/private-rpc\.json\./,
   });
   const fromSettings = await apply(host, {
     settings: operatorSettings({ publicIp: PUBLIC_IP }),

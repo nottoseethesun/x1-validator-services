@@ -42,8 +42,8 @@ import { requireMinNode, scriptProgram } from "./_tools.js";
 async function readInput() {
   if (process.stdin.isTTY === true) {
     console.error(
-      "This script takes its input on stdin. The gate's code-fuzzing " +
-        "stage starts it, and hands it its input there.",
+      "This script takes its input on stdin. Code-fuzzing, the last stage " +
+        "of the gate, npm run check, starts it, and hands it its input there.",
     );
     process.exit(1);
   }
@@ -82,9 +82,13 @@ async function main() {
   scriptProgram(
     "scripts/try-code-fuzzing.js",
     "Runs one test file with one code-fuzzing change made in memory, in a " +
-      "file of a feature's code. scripts/check-code-fuzzing.js, the gate's " +
-      "last stage, starts it once for each change, with its input as json " +
-      "on stdin.",
+      "file of a feature's code. Each feature's test/code-fuzzing.json " +
+      "holds entries, each a change and the test file that must catch it. " +
+      "scripts/check-code-fuzzing.js starts this script once for each " +
+      "test file the entries name, with no change, then once for each " +
+      "change, with its input as json on stdin. " +
+      "scripts/check-code-fuzzing.js is the last stage of the gate, " +
+      "npm run check, which must pass before every commit.",
     {
       examples: [
         "node scripts/try-code-fuzzing.js < input.json",

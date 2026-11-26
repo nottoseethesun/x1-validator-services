@@ -183,9 +183,10 @@ function explain(result, hostname) {
   const reasons = new Map([
     [
       "refused",
-      "nginx refused the key, with http 403: the key isn't one nginx " +
-        "holds. It may be mistyped, or removed with remove-api-key. The " +
-        "tool can't show a key again, so add-api-key makes a new one.",
+      "nginx refused the key, with http 403: the key's hash isn't in " +
+        "nginx's list. The key may be mistyped, or removed with " +
+        "x1-validator-private-rpc's remove-api-key command. That tool " +
+        "can't show a key again, so its add-api-key command makes a new one.",
     ],
     [
       "rate-limited",
@@ -216,8 +217,9 @@ function explain(result, hostname) {
     [
       "tls",
       `${hostname}'s certificate isn't trusted (${result.detail}). A ` +
-        "certificate from Let's Encrypt's staging service never is, so run " +
-        "apply without --acme-staging.",
+        "certificate from Let's Encrypt's staging service never is, so if " +
+        "x1-validator-private-rpc's apply command last ran with " +
+        "--acme-staging, run apply without it.",
     ],
     ["other", result.detail],
   ]);

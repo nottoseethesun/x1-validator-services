@@ -11,9 +11,11 @@
  *
  * Each stage skips work that is already done, so a second apply changes
  * nothing. Each records the settings it changes, or finds as it needs
- * them, in apply's record. The second records each change just before
- * it's made, since apt runs for minutes, and a run that dies part way
- * must still leave the change on record.
+ * them, in apply's record. The second records the repository's files, the
+ * packages and the account apt makes for nginx just before each is made,
+ * since apt runs for minutes, and a run that dies part way must still
+ * leave the change on record. The mask on nginx.service goes on record
+ * just after it's made.
  */
 
 import { installPackages, installedVersion } from "../lib/apt.js";

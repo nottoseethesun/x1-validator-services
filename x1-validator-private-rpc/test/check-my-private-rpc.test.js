@@ -131,7 +131,7 @@ test("nginx's refusals, an rpc it can't reach, an rpc error and answers that are
     [
       () => ({ status: 403, body: "" }),
       0,
-      "nginx refused the key, with http 403: the key isn't one nginx holds.",
+      "nginx refused the key, with http 403: the key's hash isn't in nginx's list.",
     ],
     [
       (id) => (id > 2 ? { status: 429, body: "" } : slotAnswer(id)),
@@ -215,7 +215,7 @@ test("a name that doesn't resolve, a refused connection, an untrusted certificat
 test("answers that aren't a hostname or an api key are refused", () => {
   const key = makeApiKey();
   assert.equal(inputProblem(HOSTNAME, key), "");
-  // The whole url that url prints, pasted at the hostname prompt.
+  // A url that apply or add-api-key printed, pasted at the hostname prompt.
   const pasted = inputProblem(`https://${HOSTNAME}/${key}`, key);
   assert.match(pasted, /^That isn't a hostname such as x1-rpc\.example\.com/);
   assert.equal(pasted.includes(key), false);

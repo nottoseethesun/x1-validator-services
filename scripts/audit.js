@@ -31,13 +31,15 @@ function main() {
     {
       examples: [
         "npm run audit:security",
-        "    ESLint with the security rules, over the code the gate checks.",
+        "    ESLint with the security rules, over the project's scripts and",
+        "    the code that runs on the validator.",
         "npm run audit:secrets",
         "    Looks for a credential, such as a key or a token, in the files.",
         "npm run audit:deps",
         "    Audits the dependencies the validator installs, and fails on a",
-        "    high or critical advisory. The gate and the Security Audit",
-        "    workflow run it too.",
+        "    high or critical advisory. The gate, npm run check, which must",
+        "    pass before every commit, runs it too, and so does the Security",
+        "    Audit workflow on GitHub.",
         "npm run audit:deps:all",
         "    The same, over every dependency, the development tools'",
         "    included.",

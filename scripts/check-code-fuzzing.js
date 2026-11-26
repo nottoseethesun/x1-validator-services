@@ -26,15 +26,17 @@ async function main() {
       "lists in its test/code-fuzzing.json, small changes to its code, of " +
       "the kind a slip in an edit would make. It makes each in memory only, " +
       "and runs the test file its entry names, in a process of its own. " +
-      "That test file must fail. The runs go side by side.",
+      "That test file must fail. A change's run still going after 5 " +
+      "minutes is stopped, and counts as caught. The runs go side by side.",
     {
       examples: [
         "npm run test:fuzzing",
-        "    Runs code-fuzzing alone, without the rest of the gate, such as",
-        "    after adding a change to a feature's list.",
+        "    Runs code-fuzzing alone, such as after adding a change to a",
+        "    feature's list, without the rest of the gate, npm run check,",
+        "    which must pass before every commit.",
       ],
       exitCodes: [
-        "0  a test failed for every change",
+        "0  every change was caught",
         "1  a change's test file passed with the change made",
         "   or a change's test file never loaded the file the change",
         "     edits",

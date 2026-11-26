@@ -6,10 +6,11 @@
  * pre-commit hook runs the lint and nothing else, git ignores the files
  * that hold secrets or disposable output, the main lint fails imports
  * that don't resolve, and the security pass turns on every security
- * rule. It also tests that the project has one minimum Node.js version,
- * the one `engines` in package.json names: the scripts accept it and
- * newer, every file that gives a minimum gives that one, and no file
- * names an older major but `x1console`'s 20.
+ * rule that eslint-security.config.js doesn't turn off with a reason. It
+ * also tests that the project has one minimum Node.js version, the one
+ * `engines` in package.json names: the scripts accept it and newer, every
+ * file that gives a minimum gives that one, and no file names an older
+ * major but `x1console`'s 20.
  */
 
 import assert from "node:assert/strict";

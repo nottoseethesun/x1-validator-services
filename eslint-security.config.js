@@ -6,9 +6,10 @@
  * the code that runs on the validator and the project's own scripts,
  * from scripts/lint-targets.js, and leaves tests out.
  *
- * Every rule of eslint-plugin-security is on. A rule may be turned off
- * only for the whole project, with a reason specific to this code
- * written here. eslint-plugin-no-secrets flags strings random enough to
+ * Every rule of eslint-plugin-security is on, except those that
+ * DISABLED_SECURITY_RULES, below, lists. A rule may be turned off only for
+ * the whole project, with a reason specific to this code written there.
+ * eslint-plugin-no-secrets flags strings random enough to
  * be keys, and this project's no-secret-logging rule flags console calls
  * that pass a value named like a secret. A one-line exception is allowed
  * for a security rule alone, as `eslint-disable-next-line <rule> --

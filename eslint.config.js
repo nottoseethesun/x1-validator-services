@@ -10,7 +10,10 @@
  * at most 17 per function, at most 500 lines of code per file, strict
  * equality, no `var`, no comment that switches Prettier off, no
  * `Math.random()`, no classes, no imports inside functions and no
- * re-exports. eslint-plugin-n fails an import that doesn't resolve, and
+ * re-exports. The one exception: a program in LATE_IMPORT_TARGETS loads
+ * a package an older Node.js can't parse inside a function, once its
+ * check of the Node.js has passed. eslint-plugin-n fails an import that
+ * doesn't resolve, and
  * any Node.js api or syntax newer than the oldest version `engines` in
  * package.json allows, the oldest Node.js the project supports.
  *
@@ -31,6 +34,7 @@ import {
   CODE_FUZZING_TARGETS,
   INSTALLED_GLOBS,
   JS_TARGETS,
+  LATE_IMPORT_TARGETS,
   TEST_JS_TARGETS,
 } from "./scripts/lint-targets.js";
 
@@ -147,8 +151,28 @@ export default [
   },
   {
     /*-
-     * The njs modules run inside nginx, not Node.js, so Node.js's version
-     * rules don't apply. njs supplies its own globals.
+     * A program whose check of the Node.js running it must come before it
+     * loads a package that an older Node.js can't parse loads that
+     * package inside the function that makes the check. A static import
+     * would load it first, and end the program with a SyntaxError before
+     * the check could say how to start it.
+     */
+    files: LATE_IMPORT_TARGETS,
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        MATH_RANDOM,
+        ...STRUCTURE_RULES.filter(
+          (rule) => rule.selector !== "ImportExpression",
+        ),
+      ],
+    },
+  },
+  {
+    /*-
+     * The installed files run inside nginx, through its njs module, not
+     * in Node.js, so Node.js's version rules don't apply. njs supplies its
+     * own globals.
      */
     files: INSTALLED_GLOBS,
     languageOptions: {

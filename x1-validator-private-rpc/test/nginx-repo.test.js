@@ -4,8 +4,9 @@
  * Tests how the tool adds nginx.org's apt repository, on a fake host:
  * the key file must hold both pinned fingerprints, only those keys reach
  * apt's keyring, files that exist are left alone, an entry for
- * nginx.org the machine already has is used only once each key file it
- * names checks out, and removal takes away exactly what was written.
+ * nginx.org the machine already has is used only once it names a key
+ * file and each key file it names checks out, and removal takes away
+ * exactly what was written.
  */
 
 import assert from "node:assert/strict";

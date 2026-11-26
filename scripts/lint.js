@@ -23,8 +23,9 @@ import { requireMinNode, scriptProgram } from "./_tools.js";
 function main() {
   const program = scriptProgram(
     "scripts/lint.js",
-    "Runs the gate's lint, format, dead-code and security checks, without " +
-      "the tests and the dependency audits.",
+    "The gate, npm run check, runs the checks that must pass before every " +
+      "commit. This script runs the gate's lint, format, dead-code and " +
+      "security checks, without the tests and the dependency audits.",
     {
       examples: [
         "npm run lint",

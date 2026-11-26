@@ -8,19 +8,27 @@
  * validator carries the flag. A dry run says the restart a real run
  * would need, and not to restart now. Its last line gives the command
  * that makes more api keys, through nvm on the Node.js the tool needs,
- * since a validator's default node is older.
+ * since a validator's default node is older. A test alert that Telegram
+ * refuses doesn't stop apply before the hand-over: apply then ends with
+ * what to check, and exit code 1.
  */
 
 import assert from "node:assert/strict";
+import path from "node:path";
 import { test } from "node:test";
 import { runApply } from "../src/cli/apply.js";
-import { featurePaths } from "../src/cli/feature-paths.js";
+import { featurePaths, homePath } from "../src/cli/feature-paths.js";
 import { RESTART_HOW, RESTART_STEPS } from "../src/cli/start-script.js";
+import { TOKEN_FILE } from "../src/cli/telegram.js";
 import { oldestNode } from "../src/lib/node-version.js";
 import { loadSettings } from "../src/lib/settings.js";
 import { commandRun, PASSWORD } from "./helpers/applied-validator.js";
 import { copyShippedConfig } from "./helpers/config-copies.js";
-import { fakeX1Validator, HOSTNAME } from "./helpers/fake-x1-validator.js";
+import {
+  fakeX1Validator,
+  HOME,
+  HOSTNAME,
+} from "./helpers/fake-x1-validator.js";
 import { scriptedPrompts } from "./helpers/scripted-prompts.js";
 
 /**
@@ -100,6 +108,39 @@ test("once the running validator carries the flag, apply says nothing about a re
     lines.at(-1),
     `[hand-over] To make more api keys, run: nvm exec ${oldestNode().major} node ${featurePaths().toolCli} add-api-key`,
   );
+});
+
+test("a test alert Telegram refuses doesn't stop apply: the hand-over follows, then what to check, with exit code 1", async () => {
+  const override = JSON.stringify({ hostname: HOSTNAME });
+  const settings = loadSettings(copyShippedConfig(override).configDir);
+  const { host } = fakeX1Validator({ settings, telegram: true });
+  const postJson = host.postJson;
+  host.postJson = (url, body, timeoutMs) =>
+    url.startsWith("https://api.telegram.org/")
+      ? Promise.resolve({ status: 401, body: "" })
+      : postJson(url, body, timeoutMs);
+  const { code, lines } = await apply(
+    host,
+    settings,
+    scriptedPrompts({ passwords: [PASSWORD, PASSWORD] }),
+  );
+  assert.equal(code, 1, lines.join("\n"));
+  assert.ok(
+    lines.includes(
+      "[watchers] The test alert failed: Telegram answered http 401.",
+    ),
+    lines.join("\n"),
+  );
+  assert.ok(saysRestart(lines), lines.join("\n"));
+  assert.ok(
+    lines.some((line) => line.startsWith("[hand-over] The rpc's url: ")),
+  );
+  const tokenPath = path.join(
+    homePath(settings.x1consoleDir, HOME),
+    TOKEN_FILE,
+  );
+  assert.match(lines.at(-1), /^\[apply\] Every stage ran, but the test alert/);
+  assert.ok(lines.at(-1).includes(tokenPath), lines.at(-1));
 });
 
 test("a dry run says the restart a real run would need, and not to restart now", async () => {

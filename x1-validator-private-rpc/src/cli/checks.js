@@ -10,7 +10,8 @@
  * - The rpc and its websocket listen on 127.0.0.1 alone.
  * - nginx is active, and listens on the public address's port 443 alone.
  * - The gate page says ok.
- * - The certificate is valid for the hostname, with enough days left.
+ * - The certificate is valid for the hostname, with at least
+ *   certificateWarningDays whole days left.
  *
  * Whether nginx's list holds an api key is a check of its own, which
  * ensure-there-is-at-least-one-rpc-api-key makes every few hours.
@@ -93,7 +94,7 @@ export function judgeRpcListeners(listeners, rpcPort) {
     detail:
       listening === true
         ? "The rpc listens on 127.0.0.1 alone."
-        : "Nothing listens on the rpc port: the validator isn't running.",
+        : "Nothing listens on the rpc port: the validator isn't running, or hasn't opened its rpc yet.",
   };
 }
 
@@ -135,7 +136,8 @@ export function judgeNginxListeners(listeners, publicIp) {
  * @param {object} values  What to judge it against.
  * @param {string} values.hostname  The rpc's hostname.
  * @param {number} values.now  The time now, in milliseconds.
- * @param {number} values.warningDays  How many days left is too few.
+ * @param {number} values.warningDays  The fewest whole days left that
+ *   pass: fewer is a problem.
  * @param {string} values.failure  Why the tls check failed, if it did.
  * @returns {Check}
  */

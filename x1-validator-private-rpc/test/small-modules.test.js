@@ -7,13 +7,17 @@
  * - the logger's tags and masking
  * - the tool's state, which refuses a damaged file
  * - the Cronitor check-in, tried as many times as the settings say, with
- *   a url that never reaches the log
+ *   a url that never reaches the log, and each try that gets no answer
+ *   logged with the reason. Under --quiet, the failed tries are logged
+ *   only when the check-ins start failing, and a check-in that goes
+ *   through again says so
  * - the project's .env.example, which the operator copies to .env: it
  *   sits where the tool looks for .env, and names the Cronitor url as
  *   the tool reads it
  * - x1console's Telegram files, under x1console's own names, and the
  *   plain-text send
- * - the prompts, with --yes answering only confirmations
+ * - the prompts, with --yes answering only confirmations, and a line's
+ *   prompt that fails at a Ctrl-C or the end of its input
  * - the key stage's TPM2 explanations, and the password's length and
  *   tries, as the settings say
  */
@@ -38,6 +42,7 @@ import { createLog } from "../src/cli/log.js";
 import { createPrompts } from "../src/cli/prompts.js";
 import { emptyState, readState } from "../src/cli/state.js";
 import { readTelegram, sendTelegram } from "../src/cli/telegram.js";
+import { askLine, PROMPT_STOPPED } from "../src/lib/ask-line.js";
 import { maskSecret } from "../src/lib/mask-secret.js";
 import { shippedAndChangedSettings } from "./helpers/config-copies.js";
 import { createFakeHost } from "./helpers/fake-host.js";
@@ -132,6 +137,44 @@ test("the Cronitor url comes from .env, and the check-in is tried as many times 
   assert.equal(lines.join("\n").includes("SECRETKEY"), false);
 });
 
+test("a check-in try that gets no answer is logged with the reason, and under --quiet the failed tries are logged only when the check-ins start failing", async () => {
+  // A changed count, so code that kept the shipped one would show.
+  const tries = shippedAndChangedSettings().changed.cronitorCheckInTries;
+  const unknownName = "getaddrinfo ENOTFOUND cronitor.link";
+  let answer = async () => {
+    throw new Error(unknownName);
+  };
+  const host = createFakeHost({
+    respond: () => undefined,
+    httpsGet: () => answer(),
+  });
+  const { envPath } = featurePaths();
+  host.files.set(envPath, `${CRONITOR_URL}=${CRONITOR}\n`);
+  const { log, lines } = readableLog();
+  const values = { envPath, log, timeoutMs: 1000, tries };
+  const each = Array.from(
+    { length: tries },
+    (_, index) =>
+      `ERR [heartbeat] Cronitor's check-in, try ${index + 1} of ${tries}, got no answer: ${unknownName}`,
+  );
+  // A run by hand logs every failed try, whatever the last run found.
+  const byHand = { ...values, quiet: false, failedBefore: true };
+  assert.equal(await checkIn(host, byHand), false);
+  assert.deepEqual(lines, each);
+  lines.length = 0;
+  const quiet = { ...values, quiet: true };
+  assert.equal(await checkIn(host, { ...quiet, failedBefore: false }), false);
+  assert.deepEqual(lines, each);
+  lines.length = 0;
+  assert.equal(await checkIn(host, { ...quiet, failedBefore: true }), false);
+  assert.deepEqual(lines, []);
+  answer = async () => ({ status: 200, body: "" });
+  assert.equal(await checkIn(host, { ...quiet, failedBefore: true }), true);
+  assert.deepEqual(lines, [
+    "[heartbeat] Cronitor's check-in went through again.",
+  ]);
+});
+
 test("the project's .env.example sits where the tool looks for .env, and names the Cronitor url as the tool reads it", () => {
   // The operator makes .env with cp .env.example .env, as the root
   // README's Credentials says, so the example ties both names.
@@ -198,6 +241,39 @@ test("the prompts: --yes answers confirmations, never a choice or a line; the pa
   asking.say("A line.");
   assert.equal(shown.includes("hunter2"), false);
   assert.ok(shown.endsWith("Password: \nA line.\n"));
+});
+
+test("a Ctrl-C at a line's prompt on a terminal, or the end of its input, fails the prompt after a line break, so the program can stop with exit code 1", async () => {
+  const input = new PassThrough();
+  // Stands in for a terminal, so readline reads each key itself.
+  input.isTTY = true;
+  input.setRawMode = () => input;
+  const output = new PassThrough();
+  output.isTTY = true;
+  let shown = "";
+  output.on("data", (chunk) => {
+    shown += chunk;
+  });
+  /*-
+   * Each prompt's failure is read once the streams have delivered what
+   * the test wrote, not awaited, since a prompt left waiting would never
+   * settle.
+   */
+  const failures = [];
+  askLine("The rpc's hostname: ", { input, output }).catch((error) => {
+    failures.push(error.message);
+  });
+  input.write("x1-rpc\x03");
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(failures, [PROMPT_STOPPED]);
+  assert.ok(shown.endsWith("\n"), JSON.stringify(shown));
+  const ending = new PassThrough();
+  askLine("An email: ", { input: ending, output }).catch((error) => {
+    failures.push(error.message);
+  });
+  ending.end();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(failures, [PROMPT_STOPPED, PROMPT_STOPPED]);
 });
 
 test("explains systemd's three TPM2 answers", () => {

@@ -66,7 +66,7 @@ test("takes the files entry points load as modules", () => {
   assert.ok(modules.every((file) => !file.includes("/src/njs/")));
 });
 
-test("takes the njs modules as installed files", () => {
+test("takes the files nginx runs through its njs module as installed files", () => {
   assert.deepEqual(installedFiles(projectRoot()), [
     `${FEATURE}/src/njs/x1-validator-private-rpc.js`,
   ]);

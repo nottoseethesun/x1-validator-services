@@ -4,12 +4,16 @@
  * A probe for the LXD system test, never for a validator. With one api
  * key, it opens each kind of connection a client can keep open to
  * nginx: an http/1.1 connection kept alive, an http/2 connection and a
- * websocket. It prints `ready` once each has worked. When a line comes
- * on its input, which the system test sends once it has removed the
- * key, it waits until a new connection gets 403, and a moment more for
- * nginx's old worker to take its signal. Then it sends a request again on
- * the kept-alive and http/2 connections, waits for the websocket to close,
- * and prints one line of json:
+ * websocket. It prints `ready` once each has worked. If a first answer is
+ * anything but 200, or 101 for the websocket, it prints instead one line
+ * of json, whose `first` lists each connection's first answer, and exits
+ * with code 1. No connection or request the probe makes has a time limit
+ * of its own: the system test stops the probe after three minutes. When a
+ * line comes on its input, which the system test sends once it has removed
+ * the key, it waits until a new connection gets 403, or WAIT_MS has
+ * passed, and a moment more for nginx's old worker to take its signal.
+ * Then it sends a request again on the kept-alive and http/2 connections,
+ * waits for the websocket to close, and prints one line of json:
  *
  * - keepAlive and http2: the second answer's status, or "closed" when
  *   nginx closed the connection instead of answering
@@ -23,7 +27,10 @@ import fs from "node:fs";
 import http2 from "node:http2";
 import tls from "node:tls";
 
-/** How long the probe waits for each thing it expects. */
+/**
+ * How long after the system test's line the probe goes on trying new
+ * connections for a 403, and waits for the websocket to close.
+ */
 const WAIT_MS = 30000;
 
 /** How long it gives nginx's old worker to take its shutdown signal. */

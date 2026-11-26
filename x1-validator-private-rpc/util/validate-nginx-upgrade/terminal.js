@@ -46,7 +46,7 @@ export function createTerminal({ stdout, signals, makeSpinner }) {
       );
     }
   });
-  // ora needs a terminal that reports its width. It never stops otherwise.
+  // With no width reported, ora takes 80 columns and can erase the wrong rows.
   const canSpin = stdout.isTTY === true && stdout.columns > 0;
   const wait = async (line, work) => {
     if (canSpin === false) {

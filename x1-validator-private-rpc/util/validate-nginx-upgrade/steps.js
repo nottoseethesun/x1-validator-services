@@ -352,16 +352,19 @@ function timing({ host, settings }) {
  * @param {object} host  The host.
  * @param {string} pid  The process id.
  * @returns {string} Such as `/usr/sbin/nginx`, with ` (deleted)` added
- *   when the program file was replaced since it started.
+ *   when the program file was replaced since it started, or "" when the
+ *   process can't be read, as for pid 0, which systemd shows for a unit
+ *   with no main process.
  */
 function processProgram(host, pid) {
   const result = host.sudo("readlink", ["--", `/proc/${pid}/exe`]);
-  return result.status === 0 ? result.stdout.trim() : "(no process)";
+  return result.status === 0 ? result.stdout.trim() : "";
 }
 
 /**
- * Waits for the gate page to say ok, then asks for a path with the
- * throwaway key and one with a random key.
+ * Waits for the gate page to say ok, for up to requestTimeoutSeconds,
+ * then asks for a path with the throwaway key and one with a random key,
+ * even when the gate page never said ok.
  * @param {Context} context  The run.
  * @param {number} port  The test configuration's port.
  * @param {string} key  The throwaway api key.
@@ -390,12 +393,17 @@ async function askWithKeys(context, port, key) {
  * stops counting nginx as active, and the old main process has exited.
  * Until then the old nginx's workers are shutting down, and one of them
  * may accept a request and close it unanswered, so nginx is asked only
- * after that, and given the time limit for its gate page to say ok.
+ * after that. A wait that sees no change gives up after
+ * requestTimeoutSeconds, and the check goes on. nginx then has as long
+ * again for its gate page to say ok. A Ctrl-C during the upgrade stops
+ * the check before these waits.
  * @param {Context} context  The run.
  * @param {number} port  The test configuration's port.
  * @param {object[]} newest  The package set to upgrade to.
  * @param {string} key  The throwaway api key.
  * @returns {Promise<object>} What upgradeProblems judges.
+ * @throws {Error} When Ctrl-C was pressed during the upgrade, as
+ *   stopIfInterrupted does.
  */
 async function upgradeAndObserve(context, port, newest, key) {
   const { host } = context;
@@ -407,6 +415,7 @@ async function upgradeAndObserve(context, port, newest, key) {
       "This might take a few minutes.",
     () => installVersions(host, newest),
   );
+  stopIfInterrupted(context);
   const { answer: after } = await pollUntil(
     async () => showUnit(host, NGINX_UNIT, UNIT_STATE),
     (state) =>
@@ -462,6 +471,7 @@ async function runSteps(context) {
     return before;
   }
   const observed = await upgradeAndObserve(context, port, pair.newest, key);
+  stopIfInterrupted(context);
   return upgradeProblems(observed);
 }
 

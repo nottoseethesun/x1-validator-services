@@ -74,13 +74,17 @@ export function keyProblems(answers, when) {
       `${when} ${GATE_PAGE_NAME} never said ok. Its last answer was ${answers.gate}.`,
     );
   }
-  if (answers.keyed !== 200) {
+  if (answers.keyed === 0) {
+    problems.push(`${when} a request with the listed key got no answer.`);
+  } else if (answers.keyed !== 200) {
     problems.push(
       `${when} a request with the listed key got ${answers.keyed}, not ` +
         "200: nginx didn't find the key's hash in its list.",
     );
   }
-  if (answers.stranger !== 403) {
+  if (answers.stranger === 0) {
+    problems.push(`${when} a request with a random key got no answer.`);
+  } else if (answers.stranger !== 403) {
     problems.push(
       `${when} a request with a random key got ${answers.stranger}, not 403.`,
     );
@@ -93,7 +97,8 @@ export function keyProblems(answers, when) {
  * @param {object} seen  What the check saw before and after.
  * @param {Map<string, string>} seen.before  nginx.service's state before.
  * @param {Map<string, string>} seen.after  Its state after.
- * @param {string} seen.programAfter  The program the main process runs.
+ * @param {string} seen.programAfter  The program the main process runs,
+ *   or "" when there's none.
  * @param {boolean} seen.oldMainRunning  Whether the old main process is
  *   still running.
  * @param {{gate: string, keyed: number, stranger: number}}
@@ -122,7 +127,9 @@ export function upgradeProblems(seen) {
       "nginx's main process didn't change, so the new nginx never took over.",
     );
   }
-  if (seen.programAfter !== "/usr/sbin/nginx") {
+  if (seen.programAfter === "") {
+    problems.push("After the upgrade nginx has no main process.");
+  } else if (seen.programAfter !== "/usr/sbin/nginx") {
     problems.push(
       `nginx's main process runs ${seen.programAfter}, not the newly ` +
         "installed /usr/sbin/nginx.",

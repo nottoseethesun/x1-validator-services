@@ -3,7 +3,10 @@
  * @description
  * Tests how the settings load: the operator's override merged over the
  * shipped defaults setting by setting, without the shipped file's notes,
- * and every problem refused at once, each named with what to change.
+ * and every problem refused at once, each named with what to change. It
+ * also tests the one setting limited to a list of values,
+ * apiKeyCountCheckHours, which takes only the hour counts that divide a
+ * day.
  * Each test works in a temporary copy of the shipped folder, so no test
  * reads or writes the operator's own settings, and takes the shipped
  * values from the copy rather than keeping its own.
@@ -14,7 +17,11 @@ import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
 import { makeApiKey } from "../src/lib/api-key.js";
-import { loadSettings, readSchema } from "../src/lib/settings.js";
+import {
+  loadSettings,
+  readSchema,
+  settingsProblems,
+} from "../src/lib/settings.js";
 import { copyShippedConfig } from "./helpers/config-copies.js";
 
 /**
@@ -73,6 +80,34 @@ test("a value out of range is refused with its rule and its value", () => {
   assert.throws(() => loadSettings(configDir), {
     message: /requestTimeoutSeconds: must be <= \d+ \(it is 1000000\)/,
   });
+});
+
+test("apiKeyCountCheckHours takes only an hour count that divides a day, so the key count check's cron line runs at equal gaps, and another is refused with the counts it takes", () => {
+  const { configDir, overridePath } = copyShippedConfig();
+  const schema = readSchema(configDir);
+  const shipped = loadSettings(configDir);
+  const hours = Array.from({ length: 48 }, (_, index) => index + 1);
+  const taken = hours.filter(
+    (count) =>
+      settingsProblems(
+        schema,
+        { ...shipped, apiKeyCountCheckHours: count },
+        overridePath,
+      ).length === 0,
+  );
+  assert.deepEqual(
+    taken,
+    hours.filter((count) => 24 % count === 0),
+  );
+  const uneven = copyShippedConfig('{"apiKeyCountCheckHours": 5}');
+  const { description } = schema.properties.apiKeyCountCheckHours;
+  assert.throws(
+    () => loadSettings(uneven.configDir),
+    (error) =>
+      error.message.includes(
+        `apiKeyCountCheckHours: must be equal to one of the allowed values (it is 5). ${description}`,
+      ),
+  );
 });
 
 test("a value in the wrong form is refused with what the setting must be, from the schema", () => {

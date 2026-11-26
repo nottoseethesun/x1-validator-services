@@ -6,8 +6,10 @@
  * name nginx.org's repository. Names that nginx.org decides
  * are constants here, not settings: its signing key's address and the
  * two fingerprints the tool trusts, its repository, the three packages,
- * the systemd unit and the log folder they install, and the apt files
- * the tool adds for them.
+ * the systemd unit and the log folder they install, and the path of the
+ * apt pin the tool adds for them. So are the paths of the key and the apt
+ * source the tool adds, which the tool picks, as the comment above
+ * NGINX_KEYRING_PATH says.
  *
  * Each module package is built for one exact nginx version, which leads
  * its version string: `1.30.5+1.0.1-1~noble` is njs 1.0.1 built for

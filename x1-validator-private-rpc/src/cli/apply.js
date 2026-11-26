@@ -6,15 +6,19 @@
  * changes nothing. Then: nginx from nginx.org, the firewall rule, the
  * api keys and the password, nginx's configuration and start, the
  * start-script flag, and the watchers that keep the flag in place. The
- * last says what to do next.
+ * last says what to do next. A test alert on Telegram that fails at the
+ * seventh stage doesn't stop apply: after the last stage, apply says
+ * what to check, and exits 1.
  *
  * It asks before each stage that changes something, unless given --yes.
  * Each stage skips work already done, so a second apply changes nothing.
- * Each setting apply changes is recorded the moment it changes, with its
- * old value, in app-data/what-apply-changed.json, and so is each one it
- * finds already as it needs it. So undo-apply puts back only what
- * apply changed, and nothing that was in place before. With --dry-run it
- * prints every change it would make, and makes none.
+ * Each setting apply changes is recorded with its old value, in
+ * app-data/what-apply-changed.json, just after it changes, or just
+ * before, such as a package before apt installs it. Each setting apply
+ * finds already in the state it needs is recorded too. So undo-apply
+ * puts back only what apply changed, and nothing that was in place
+ * before. With --dry-run, apply prints every change it would make, and
+ * makes none.
  *
  * Stages one to five never touch the validator. nginx works before the
  * flag, since the rpc already listens on every interface, the loopback
@@ -135,7 +139,8 @@ function handOver(context) {
  * @param {(line: string) => void} run.out  Prints a line on stdout, as
  *   is: the new api key's urls, which the logger would mask.
  * @returns {Promise<number>} The exit code: 0 when every stage ran, 1
- *   when the operator stopped it.
+ *   when the operator stopped it, or when every stage ran but the
+ *   seventh stage's test alert failed.
  */
 export async function runApply(run) {
   const { host, paths, log, prompts, options } = run;
@@ -157,13 +162,18 @@ export async function runApply(run) {
     change: changeStep(log, dryRun),
     // The api key the fourth stage makes, or "" while it has made none.
     key: "",
+    // What to check when the seventh stage's test alert failed, or "".
+    testAlertProblem: "",
   };
   log.info("preflight", "Checking this machine. This changes nothing.");
   context.facts = await preflight(context);
   for (const [index, stage] of STAGES.entries()) {
     const question = `Stage ${index + 2} of 8: ${stage.title}. Go on?`;
     if (dryRun === false && !(await prompts.confirm(question))) {
-      log.info("apply", "Stopped. Running apply again picks up from here.");
+      log.info(
+        "apply",
+        "Stopped. Running apply again, with the same options, picks up from here.",
+      );
       return 1;
     }
     const before = JSON.stringify(state);
@@ -173,5 +183,9 @@ export async function runApply(run) {
     }
   }
   handOver(context);
+  if (context.testAlertProblem !== "") {
+    log.problem("apply", context.testAlertProblem);
+    return 1;
+  }
   return 0;
 }

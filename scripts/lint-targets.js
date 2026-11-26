@@ -9,10 +9,13 @@
  *
  * The project is a set of features, each in a sub-directory of its own
  * with `src/`, `test/` and, when it has standalone tools, `util/`. Every
- * list below is built from FEATURES, so a new feature joins every check by
- * being named there. A feature's entry points are the files directly in
- * its `src/` and its `util/` tools. The modules they load sit in folders
- * under `src/`.
+ * list below that covers a feature's files is built from FEATURES, so a
+ * new feature joins every check by being named there. It also needs a
+ * `test/code-fuzzing.json` of its own that lists at least one
+ * code-fuzzing change, or the gate fails: test/code-fuzzing.test.js
+ * checks each feature's list. A feature's entry points are the files
+ * directly in its `src/` and its `util/` tools. The modules they load sit
+ * in folders under `src/`.
  */
 
 /**
@@ -47,8 +50,9 @@ export const ENTRY_POINT_GLOBS = ENTRY_POINT_PLACES.map(
 
 /**
  * Folders of files a feature installs into another program instead of
- * importing: the njs modules nginx runs. No entry point loads them, but
- * tests do, and their own lint block knows they run in njs, not Node.js.
+ * importing: JavaScript files that nginx runs through its njs module. No
+ * entry point loads them, but tests do, and their own lint block knows
+ * they run in njs, not Node.js.
  * @type {string[]}
  */
 export const INSTALLED_FOLDERS = FEATURES.map(
@@ -98,6 +102,18 @@ export const CODE_FUZZING_TARGETS = [
   "scripts/_code-fuzzing.js",
   "scripts/check-code-fuzzing.js",
   "scripts/try-code-fuzzing.js",
+];
+
+/**
+ * The programs that load a package only once their check of the Node.js
+ * running them has passed, since an older Node.js can't parse it: the
+ * nginx upgrade check, which loads ora, the package that draws its
+ * spinner. Node.js 20.0.0, a validator's default node, can't parse a
+ * module under ora.
+ * @type {string[]}
+ */
+export const LATE_IMPORT_TARGETS = [
+  "x1-validator-private-rpc/util/validate-nginx-upgrade/index.js",
 ];
 
 /**

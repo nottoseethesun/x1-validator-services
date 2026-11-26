@@ -5,9 +5,10 @@
  * name ends in `.test.js` in a test folder that scripts/lint-targets.js
  * names. It also holds the time limit the two give each test.
  *
- * Tests of the shipped settings end in `.config-values.test.js`. The gate
- * runs them before the rest, so a bad shipped value is reported as the
- * cause rather than as the many failures it would cause.
+ * Tests of the shipped settings end in `.config-values.test.js`. A bad
+ * shipped value would make many tests fail, so the gate runs these before
+ * the other tests, to name the cause. The other tests still run after
+ * them.
  */
 
 import { listFilesUnder } from "./_tools.js";
@@ -23,10 +24,13 @@ const CONFIG_VALUES_SUFFIX = ".config-values.test.js";
  * limit, a test that never finishes would hold the whole run open, since
  * from Node.js 24 on the runner keeps a test file's process running
  * until each of its tests has finished. The limit is for each test, not
- * for a `describe` group or a file. The slowest test takes under four
- * seconds on CI. A test file that leaves a timer running never exits
- * after its last test, and no test's limit can end that: in CI, the
- * check job's 20-minute cap does.
+ * for a `describe` group or a file. The slowest test takes about four
+ * seconds on CI. No test's limit can end two kinds of hang. A test that
+ * holds the thread, such as one in a synchronous loop that never ends,
+ * or one blocked in a `spawnSync` whose program never exits, keeps the
+ * limit's timer from firing, so the runner can't stop it. A test file
+ * that leaves a timer running never exits after its last test. In CI,
+ * the check job's 20-minute cap ends either.
  */
 export const TEST_TIMEOUT = "--test-timeout=60000";
 

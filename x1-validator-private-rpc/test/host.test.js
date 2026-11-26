@@ -256,11 +256,11 @@ test("reads an http answer as text", async () => {
   }
 });
 
-test("gives up on an http server that doesn't answer in time", async () => {
+test("gives up on an http server that doesn't answer in time, naming only its origin, never the path, which may hold a secret", async () => {
   const { server, url } = await startServer(() => {});
   try {
-    await assert.rejects(testHost().httpGet(url, 100), {
-      message: /No answer from .* in 100 ms/,
+    await assert.rejects(testHost().httpGet(`${url}/secret-path`, 100), {
+      message: /^No answer from http:\/\/127\.0\.0\.1:\d+ in 100 ms\.$/,
     });
   } finally {
     server.closeAllConnections();
@@ -307,7 +307,7 @@ test("writes, reads and removes files the tool's own account owns, and leaves a 
   assert.ok(path.isAbsolute(host.homeDir()));
 });
 
-test("posts json and reads the answer; a slow server times out by its origin alone", async () => {
+test("posts json and reads the answer; a slow server's timeout names only its origin, never the path, which may hold a token", async () => {
   let received = null;
   const { server, url } = await startServer((request, response) => {
     let body = "";

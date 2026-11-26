@@ -105,7 +105,12 @@ export function readChanges(root, feature) {
     return { changes: [], problems: [`${label}: ${error.message}`] };
   }
   if (!Array.isArray(parsed) || parsed.length === 0) {
-    return { changes: [], problems: [`${label} must hold a list of them.`] };
+    return {
+      changes: [],
+      problems: [
+        `${label} must hold a list of code-fuzzing changes, with at least one entry.`,
+      ],
+    };
   }
   return { changes: parsed, problems: [] };
 }

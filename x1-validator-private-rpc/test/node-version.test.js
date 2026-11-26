@@ -7,6 +7,9 @@
  * - the check each program makes when it starts, which lets that version
  *   and newer through, and refuses an older one, saying how to start the
  *   program through nvm
+ * - the upgrade check, which makes that check on Node.js 20.0.0, the
+ *   validator's default node, before it loads ora, the package that
+ *   draws its spinner, since 20.0.0 can't parse a module under ora
  * - the launcher the README links into ~/.local/bin, run through such a
  *   link, which runs the tool on the newest release nvm holds of that
  *   major, and says how to add the major when nvm holds none of it
@@ -17,9 +20,13 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { makeTestTempFolder } from "../../scripts/_test-temp-folders.js";
-import { nodeVersionProblem, oldestNode } from "../src/lib/node-version.js";
+import {
+  nodeVersionProblem,
+  oldestNode,
+  oldestNodeText,
+} from "../src/lib/node-version.js";
 
 const LAUNCHER = fileURLToPath(
   new URL("../bin/x1-validator-private-rpc", import.meta.url),
@@ -48,7 +55,7 @@ test("the check lets the oldest Node.js and newer through, and refuses an older 
   assert.equal(
     nodeVersionProblem(older, PROGRAM),
     `a-program needs Node.js ${major} or newer, and this is Node.js ${older}. ` +
-      `If nvm has no Node.js ${major} yet, add it with: nvm install ${major}. ` +
+      `If nvm, the Node.js version manager, has no Node.js ${major} yet, add it with: nvm install ${major}. ` +
       `Then, from the project's folder, run it with: nvm exec ${major} ` +
       "node a/program.js COMMAND.",
   );
@@ -57,6 +64,43 @@ test("the check lets the oldest Node.js and newer through, and refuses an older 
     note: "A sentence more.",
   });
   assert.ok(withNote.endsWith("COMMAND. A sentence more."), withNote);
+});
+
+test("on Node.js 20.0.0, the validator's default node, the upgrade check says how to start it before it loads ora, which 20.0.0 can't parse", () => {
+  const entry = fileURLToPath(
+    new URL("../util/validate-nginx-upgrade/index.js", import.meta.url),
+  );
+  /*-
+   * The child reports Node.js 20.0.0, and fails each module under ora as
+   * 20.0.0 does, so a program that loaded ora before its check of the
+   * Node.js would end with a SyntaxError instead.
+   */
+  const asOldNode = [
+    'import nodeModule from "node:module";',
+    'Object.defineProperty(process.versions, "node", { value: "20.0.0" });',
+    "nodeModule.registerHooks({",
+    "  load(url, context, nextLoad) {",
+    '    if (url.includes("/node_modules/ora/")) {',
+    "      throw new SyntaxError(\"Unexpected token 'with'\");",
+    "    }",
+    "    return nextLoad(url, context);",
+    "  },",
+    "});",
+    `await import(${JSON.stringify(pathToFileURL(entry).href)});`,
+  ].join("\n");
+  const started = spawnSync(
+    process.execPath,
+    ["--input-type=module", "-e", asOldNode],
+    { encoding: "utf8" },
+  );
+  assert.equal(started.status, 1);
+  assert.ok(
+    started.stderr.startsWith(
+      `validate-nginx-upgrade needs Node.js ${oldestNodeText()} or newer, and this is Node.js 20.0.0.`,
+    ),
+    started.stderr,
+  );
+  assert.equal(started.stderr.includes("SyntaxError"), false);
 });
 
 /**

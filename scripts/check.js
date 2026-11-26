@@ -9,7 +9,7 @@
  * A summary at the end lists each check that ran, with its result. It
  * runs:
  *
- * - the lint, format and security checks of scripts/_gate-stages.js
+ * - the lint, format, dead-code and security checks of scripts/_gate-stages.js
  * - the audit of the shipped dependencies
  * - a saved audit report of every dependency, dev tools included
  * - the shipped-settings tests, then the rest of the suite with coverage
@@ -231,9 +231,10 @@ function main() {
   scriptProgram(
     "scripts/check.js",
     "Runs the gate, the checks that must pass before every commit and " +
-      "every push: every lint, format, security, audit, test and coverage " +
-      "check, then code-fuzzing, which makes small changes to the features' " +
-      "code in memory to check that a test fails for each change.",
+      "every push: every lint, format, dead-code, security, audit, test and " +
+      "coverage check, then, once every test has passed, code-fuzzing, which " +
+      "makes small changes to the features' code in memory to check that a " +
+      "test fails for each change.",
     {
       examples: ["npm run check", "    Before every commit and every push."],
       exitCodes: ["0  every check passed", "1  at least one check failed"],

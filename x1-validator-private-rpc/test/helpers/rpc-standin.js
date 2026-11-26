@@ -2,10 +2,13 @@
  * @file x1-validator-private-rpc/test/helpers/rpc-standin.js
  * @description
  * A stand-in for Tachyon's rpc, for the LXD system test, never for a
- * validator. It listens on an address's port 8899 for json-rpc and
- * `/health`, and on port 8900 for websocket clients, whose upgrade it
- * takes up and holds open, as the validator's rpc does: on every
- * interface without `--private-rpc`, or on 127.0.0.1 with it. It reports one identity, whose gossip address is the public
+ * validator. It listens on the address it's given, BIND_ADDRESS: on port
+ * 8899 for json-rpc and `/health`, and on port 8900 for websocket
+ * clients, whose upgrade it takes up and holds open, as the validator's
+ * rpc does. `--private-rpc` doesn't change that address. The validator's
+ * rpc listens on every interface without the flag, and on 127.0.0.1 with
+ * it, so the system test gives the stand-in 0.0.0.0 or 127.0.0.1 to
+ * match. It reports one identity, whose gossip address is the public
  * address given, so apply finds that address as on a validator. Given
  * `--private-rpc`, it carries the flag in its command line, where
  * ensure looks for it.

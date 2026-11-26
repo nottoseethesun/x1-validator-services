@@ -76,7 +76,7 @@ test("nginx must hold the public address's port 443 alone", () => {
   }
 });
 
-test("the certificate must name the hostname and have enough days left", () => {
+test("the certificate must name the hostname and have at least warningDays whole days left", () => {
   const values = {
     hostname: "x1-rpc.example.com",
     now: 0,
@@ -89,6 +89,10 @@ test("the certificate must name the hostname and have enough days left", () => {
   });
   assert.equal(
     judgeCertificate(certificate(30, "DNS:x1-rpc.example.com"), values).status,
+    "ok",
+  );
+  assert.equal(
+    judgeCertificate(certificate(14, "DNS:x1-rpc.example.com"), values).status,
     "ok",
   );
   // nginx asks for the names in lower case, whatever case the setting has.

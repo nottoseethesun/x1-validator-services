@@ -15,7 +15,8 @@
  * @param {(question: string) => boolean} [script.ask]  Answers choices,
  *   with no unless given.
  * @param {string[]} [script.lines]  The lines typed, in order, then "".
- * @param {string[]} [script.passwords]  The passwords typed, in order.
+ * @param {string[]} [script.passwords]  The passwords typed, in order,
+ *   then "".
  * @returns {object} The prompts, with `asked` listing the questions.
  */
 export function scriptedPrompts({

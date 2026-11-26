@@ -1,16 +1,17 @@
 /**
  * @file x1-validator-private-rpc/src/lib/settings.js
  * @description
- * Loads the tool's settings. The shipped defaults hold the one value of
- * each setting. The operator's override file holds only what they
- * change, and is merged over the defaults setting by setting. The
- * merged settings are checked against the shipped schema before any is
- * used: every problem is listed at once, each naming the setting, what
- * it must be and what it is, and the tool refuses to go on. An unknown
- * setting is refused too, since a misspelled one would otherwise be
- * ignored without a word. So is any other json file in the operator's
- * folder, such as a misnamed override, but not a hidden one, such as an
- * editor's lock file.
+ * Loads the tool's settings. The shipped defaults hold a value for every
+ * setting but three: hostname, publicIp and acmeEmail, which the loaded
+ * settings lack unless the operator sets them. The operator's override
+ * file holds only what they change, and is merged over the defaults
+ * setting by setting. The merged settings are checked against the
+ * shipped schema before any is used: every problem is listed at once,
+ * each naming the setting, what it must be and what it is, and the tool
+ * refuses to go on. An unknown setting is refused too, since a misspelled
+ * one would otherwise be ignored without a word. So is any other json
+ * file in the operator's folder, such as a misnamed override, but not a
+ * hidden one, such as an editor's lock file.
  *
  * A key that starts with `_` is a note, such as the warning beside a
  * setting in the shipped file, since json has no comments. The schema
@@ -236,7 +237,8 @@ export function settingsProblems(schema, settings, overridePath) {
  * Loads, merges and checks the settings.
  * @param {string} [configDir]  The `app-config` folder, the feature's own
  *   unless a test passes another.
- * @returns {object} The settings, each key holding its value.
+ * @returns {object} The settings, each key holding its value. hostname,
+ *   publicIp and acmeEmail are missing unless the operator sets them.
  * @throws {Error} Listing every problem, when a file is broken, a json
  *   file the tool doesn't read sits beside the override, or a setting is
  *   wrong or unknown, so no command runs on settings the operator didn't

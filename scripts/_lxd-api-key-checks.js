@@ -4,8 +4,9 @@
  * The api keys' checks of the LXD system test's apply phase: the keys a
  * command shows, a key's answer from nginx, the password systemd-creds
  * holds, add-api-key and remove-api-key, the connections a removed key
- * held open, and undo-apply answered no, which keeps the keys for the
- * next apply. Never on a validator.
+ * held open, the key count check that
+ * ensure-there-is-at-least-one-rpc-api-key makes, and undo-apply answered
+ * no, which keeps the keys for the next apply. Never on a validator.
  */
 
 import { spawn } from "node:child_process";
@@ -44,7 +45,8 @@ const PROBE_TIMEOUT_MS = 3 * 60 * 1000;
  * @property {string} password  The test's password.
  * @property {(command: string, answers: [string, string][]) =>
  *   Promise<{code: number, output: string}>} answer  Runs a command in a
- *   terminal, and answers its prompts.
+ *   terminal, and answers its prompts, listed in the order the command
+ *   shows them.
  * @property {(args: string[]) => number} tool  Runs one of the tool's
  *   commands, and gives its exit code.
  * @property {(what: string, holds: boolean) => void} expect  Checks one
@@ -182,6 +184,8 @@ async function probeRemoval(guest, key, remove) {
 /**
  * Adds two keys with an email, checks that both work, removes the first
  * of them, and checks that it gets 403 while the others still work.
+ * Last, it runs the key count check, which must find keys in nginx's
+ * list.
  * @param {Guest} guest  The container.
  * @param {string} key  The first key, which apply made.
  * @returns {Promise<string>} The second key added, which stays, or ""

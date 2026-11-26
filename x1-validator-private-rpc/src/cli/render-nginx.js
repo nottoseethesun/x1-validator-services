@@ -7,17 +7,20 @@
  * the tls-alpn-01 challenge, so port 80 stays closed. Every request goes
  * through the njs key check, which hashes the key at the start of the
  * path, and nginx's map looks the hash up in nginx's list of hashes,
- * which it includes. A request whose hash isn't there gets a 403. Keyed
- * requests go to the rpc, or to its websocket port when they ask for an
- * upgrade. The logs are nginx's usual access.log and error.log, in the
- * folder that nginx.org's package makes and rotates. The access log
- * shows `<key>` in place of anything in the url that looks like a key,
- * wherever the client put it, so no key reaches it: not one in the query
- * string or after a prefix, nor a mistyped one. The njs module does the
- * masking. The keyed location writes no error log at all, since each of
- * nginx's error lines carries the request line, and with it the key. The
- * main error log keeps notice and above, which leaves out the info lines
- * nginx writes, request line and all, before it picks a location.
+ * which it includes. A request whose hash isn't there gets a 403. The one
+ * exception is the gate page, a path the tool's own checks read, which
+ * answers ok to requests from the public address, the machine's own, and
+ * 403 to any other. Keyed requests go to the rpc, or to its websocket
+ * port when they ask for an upgrade. The logs are nginx's usual
+ * access.log and error.log, in the folder that nginx.org's package makes
+ * and rotates. The access log shows `<key>` in place of anything in the
+ * url that looks like a key, wherever the client put it, so no key
+ * reaches it: not one in the query string or after a prefix, nor a
+ * mistyped one. The njs module does the masking. The keyed location
+ * writes no error log at all, since each of nginx's error lines about a
+ * request carries the request line, and with it the key. The main error
+ * log keeps notice and above, which leaves out the info lines nginx
+ * writes, request line and all, before it picks a location.
  *
  * The configuration sizes the map's hash table, and sets a rate limit on
  * keyed requests: one budget that every key shares. Requests without a

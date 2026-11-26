@@ -13,8 +13,9 @@
  * - remove-api-key: a pasted key removed with no password, nginx
  *   refusing it at once, a key that isn't there, a text that isn't a
  *   key, and the last key, which asks first
- * - both holding the api keys' lock around their questions and writes,
- *   and refusing, with nothing changed, while another command holds it
+ * - both holding the api keys' lock around their writes, add-api-key
+ *   holding it while it asks for the password too, and both refusing,
+ *   with nothing changed, while another command holds it
  * - both getting sudo after their questions and before their first
  *   write, so a refused sudo changes nothing
  * - remove-api-key handing nginx the list before it writes the file.
@@ -26,9 +27,10 @@
  * - ensure-there-is-at-least-one-rpc-api-key: an alert on every run
  *   while nginx's list is empty, and quiet while it holds a key, with no
  *   question and no sudo, and the hostname nginx serves in its alert
- * - each finding its files where the settings put them, remove-api-key
- *   writing its change to the configured file, and refusing to run
- *   before apply
+ * - each finding its files where the settings put them, and
+ *   remove-api-key writing its change to the configured file
+ * - before apply, add-api-key, remove-api-key and url refusing to run,
+ *   and ensure-there-is-at-least-one-rpc-api-key doing nothing
  */
 
 import assert from "node:assert/strict";
@@ -294,7 +296,7 @@ test("add-api-key shows the new keys before it writes nginx's list, so a failed 
   assert.equal(host.locks.size, 0);
 });
 
-test("the key commands hold the api keys' lock while they ask, and refuse, with nothing changed, while another command holds it", async () => {
+test("add-api-key and remove-api-key refuse, with nothing changed, while another command holds the api keys' lock, and add-api-key holds the lock while it asks for the password", async () => {
   const { host, state, settings, apiKey } = await appliedValidator();
   const filePath = hashedApiKeysPathOf(settings, HOME);
   const folder = path.dirname(filePath);
@@ -381,7 +383,7 @@ test("remove-api-key asks before the last key goes, and nginx's list then holds 
   assert.ok(removed.lines.includes(`[remove-api-key] ${NO_API_KEY}`));
 });
 
-test("the key commands get sudo after their questions and before their first write, so a refused sudo changes nothing", async () => {
+test("add-api-key and remove-api-key get sudo after their questions and before their first write, so a refused sudo changes nothing", async () => {
   let refuse = true;
   const { host, state, settings, apiKey } = await appliedValidator({
     respond: (call) =>
