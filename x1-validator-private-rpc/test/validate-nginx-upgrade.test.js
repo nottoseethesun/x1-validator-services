@@ -6,7 +6,8 @@
  * each way the upgrade can go, and its clean-up, which must remove
  * everything it added even when a step fails. Every scenario runs with each setting changed from its
  * shipped value, so a step that used a default instead would show. It
- * also runs the real entry point for its help. The check's decisions and
+ * also runs the real entry point for its help, whose examples must use
+ * each option it lists, but help, and no other. The check's decisions and
  * test configuration have tests of their own, in
  * validate-nginx-upgrade-judge.test.js.
  */
@@ -16,6 +17,7 @@ import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { optionGaps } from "../../test/helpers/help-options.js";
 import {
   NGINX_APT_PIN_PATH,
   NGINX_APT_SOURCE_PATH,
@@ -521,7 +523,7 @@ test("reports what the clean-up couldn't remove, and how to remove it by hand", 
   );
 });
 
-test("the real entry point prints its help with exit code 0", () => {
+test("the real entry point prints its help with exit code 0, and the help's examples use each option it lists, but help, and no other", () => {
   const entry = fileURLToPath(
     new URL("../util/validate-nginx-upgrade/index.js", import.meta.url),
   );
@@ -539,6 +541,7 @@ test("the real entry point prints its help with exit code 0", () => {
     help.stdout,
     /\nExamples:\n {2}\S[^]*validate-nginx-upgrade\/index\.js[^]*\n\nExit codes:\n {2}\S/,
   );
+  assert.deepEqual(optionGaps(help.stdout), []);
   const refused = spawnSync(process.execPath, [entry, "--bogus"], {
     encoding: "utf8",
   });

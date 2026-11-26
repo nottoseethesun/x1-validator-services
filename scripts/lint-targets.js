@@ -105,18 +105,6 @@ export const CODE_FUZZING_TARGETS = [
 ];
 
 /**
- * The programs that load a package only once their check of the Node.js
- * running them has passed, since an older Node.js can't parse it: the
- * nginx upgrade check, which loads ora, the package that draws its
- * spinner. Node.js 20.0.0, a validator's default node, can't parse a
- * module under ora.
- * @type {string[]}
- */
-export const LATE_IMPORT_TARGETS = [
-  "x1-validator-private-rpc/util/validate-nginx-upgrade/index.js",
-];
-
-/**
  * Every JavaScript file under ESLint and Prettier, as globs.
  * @type {string[]}
  */

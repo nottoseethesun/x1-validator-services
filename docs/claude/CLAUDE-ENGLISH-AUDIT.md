@@ -726,8 +726,16 @@ these checks of text:
   length, is off.
 - The help checks. `test/script-help.test.js` checks that each script
   run by its path answers `--help` and `-h` with help that gives usage
-  examples. The feature's `test/cli.test.js` checks the help of each
-  command, and its tests of the standalone tools check theirs.
+  examples. The feature's `test/cli.test.js` checks the tool's own help
+  and each command's, and its tests of the standalone tools check
+  theirs. Each of these tests also fails a help when an option it lists,
+  other than `--help` and `--version`, is in none of its examples, by
+  its long or its short form, and when an example uses an option that
+  the help of the command it runs doesn't list. A script's example that runs
+  an `npm run` target counts as the command the target runs, from
+  `package.json`. An example in the tool's own help runs one of its
+  commands, so the help of that command must list the example's
+  options. `test/helpers/help-options.js` makes the comparison.
 - The checks that hold docs to the code. In the feature's tests:
   `doc-figures.test.js`, which
   [Say What Can Change a Figure](#say-what-can-change-a-figure)
@@ -755,11 +763,11 @@ No check yet follows a link to another file, or to a heading in another
 file. None holds `docs/npm-project-commands.md` to the targets in
 `package.json`, or the list of test helpers and fixtures in the
 feature's `docs/engineering.md` to its `test/` folder. The help checks
-look for an Examples section, not at what it covers: none checks that
-each common use has an example, or that an example uses only options
-its help lists. So an audit checks each of these itself. The checks
-above catch form, and the few facts the tests hold docs to; only a
-reader catches any other wrong fact.
+compare a help's examples with its options, so they can't tell whether
+a common use that has no option of its own, such as running `ensure` by
+hand before the validator's restart, has an example. So an audit checks
+each of these itself. The checks above catch form, and the few facts the
+tests hold docs to; only a reader catches any other wrong fact.
 
 ## 10. A Checklist for Each Text
 

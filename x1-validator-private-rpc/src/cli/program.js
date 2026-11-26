@@ -95,7 +95,11 @@ Examples:
       mistake can't hold up the real certificate.
   x1-validator-private-rpc apply
       After the staging run, for the real certificate. Also after each
-      update of the tool.`,
+      update of the tool.
+  x1-validator-private-rpc apply --yes
+      A later run, such as after you change a setting, without stopping
+      at each stage's question. If an earlier run left the cron jobs out,
+      this one installs them.`,
   ensure: `
 Examples:
   x1-validator-private-rpc ensure
@@ -107,7 +111,12 @@ Examples:
       what listens on ports 80 and 443.
   x1-validator-private-rpc ensure --quiet
       As the cron job runs it: prints only what changed and the alerts
-      sent.`,
+      sent.
+  x1-validator-private-rpc ensure --quiet --from-git-hook
+      As the tool's git hook runs it, once an update's git pull has
+      merged new commits. Leave this to the hook: run by hand while an
+      update runs, it could edit the start script and make the update's
+      git pull fail.`,
   undoApply: `
 Examples:
   x1-validator-private-rpc undo-apply --dry-run
@@ -119,7 +128,11 @@ Examples:
 Examples:
   x1-validator-private-rpc turn-off-private-rpc
       Makes the rpc public from the validator's next start, without
-      uninstalling the tool.`,
+      uninstalling the tool.
+  x1-validator-private-rpc turn-off-private-rpc --yes
+      The same, without asking you to confirm, such as after an update
+      of the tool. An update ends with a run of apply, the command that
+      sets the tool up, and that run turns private rpc back on.`,
   turnOn: `
 Examples:
   x1-validator-private-rpc turn-on-private-rpc
