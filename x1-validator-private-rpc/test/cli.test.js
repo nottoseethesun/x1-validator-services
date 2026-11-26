@@ -3,7 +3,9 @@
  * @description
  * Tests the tool's command-line program:
  *
- * - its help and each command's, with their examples
+ * - its help and each command's, with their examples, which use each
+ *   option the help lists, but help and version, and only options of the
+ *   command they run
  * - the commands doc's tables, which must name each command and
  *   standalone tool, and each option a command declares, and no other
  * - its version, and its refusal of what it doesn't accept
@@ -23,6 +25,7 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { listedOptions, optionGaps } from "../../test/helpers/help-options.js";
 import { featurePaths } from "../src/cli/feature-paths.js";
 import { createLog } from "../src/cli/log.js";
 import {
@@ -120,6 +123,42 @@ test("each command's help gives its own examples, and ends with the exit codes",
     );
     assert.ok(help.endsWith(`${EXIT_CODES}\n`), name);
   }
+});
+
+/**
+ * Prints the help of the tool, or of one of its commands, through a
+ * program built in the test.
+ * @param {string[]} command  The command's name, or nothing for the
+ *   tool's own help.
+ * @returns {string} The help.
+ */
+function printedHelp(command) {
+  const { program, out } = testProgram();
+  assert.throws(() => program.parse(["node", "cli", ...command, "--help"]), {
+    code: "commander.helpDisplayed",
+  });
+  return out();
+}
+
+test("the examples in the tool's help and each command's use every option the help lists, but help and version, and only options of the command they run", () => {
+  const helps = new Map(
+    buildProgram().commands.map((command) => [
+      command.name(),
+      printedHelp([command.name()]),
+    ]),
+  );
+  for (const [name, help] of helps) {
+    assert.deepEqual(optionGaps(help), [], name);
+  }
+  // An example in the tool's help runs a command, with the command's options.
+  const toolHelp = printedHelp([]);
+  assert.deepEqual(
+    optionGaps(toolHelp, {
+      listedFor: (command) =>
+        listedOptions(helps.get(command.split(" ")[1]) ?? toolHelp).flat(),
+    }),
+    [],
+  );
 });
 
 test("the commands doc has a row for each command and standalone tool, naming each option a command declares and no other", () => {

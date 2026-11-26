@@ -12,7 +12,8 @@
  *   certificate and a request that gets no answer
  * - answers that aren't a hostname or an api key, with a pasted url's
  *   key kept out of the reason
- * - the real entry point's help
+ * - the real entry point's help, whose examples use each option it
+ *   lists, but help, and no other
  */
 
 import assert from "node:assert/strict";
@@ -20,6 +21,7 @@ import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { optionGaps } from "../../test/helpers/help-options.js";
 import { makeApiKey } from "../src/lib/api-key.js";
 import { maskSecret } from "../src/lib/mask-secret.js";
 import { oldestNode } from "../src/lib/node-version.js";
@@ -235,7 +237,7 @@ test("the verdict's mark is green or red on a terminal", async () => {
   assert.equal(failed, `\x1b[31m✘\x1b[0m ${refused.judged.verdict}`);
 });
 
-test("the real entry point prints its help with exit code 0", () => {
+test("the real entry point prints its help with exit code 0, and the help's examples use each option it lists, but help, and no other", () => {
   const entry = fileURLToPath(
     new URL("../util/check-my-private-rpc/index.js", import.meta.url),
   );
@@ -253,6 +255,7 @@ test("the real entry point prints its help with exit code 0", () => {
     help.stdout,
     /\nExamples:\n {2}\S[^]*check-my-private-rpc\/index\.js[^]*\n\nExit codes:\n {2}\S/,
   );
+  assert.deepEqual(optionGaps(help.stdout), []);
   const refused = spawnSync(process.execPath, [entry, "--bogus"], {
     encoding: "utf8",
   });

@@ -2,6 +2,31 @@
 
 x1-validator-private-rpc makes an X1 validator's rpc private, and puts it behind an https url with an api key in its path, such as `https://x1-rpc.example.com/KEY`. Its `apply` command sets that up. Before you run `apply`, the url's hostname needs one dns record, which points it at the validator, and which you add by hand at your dns provider. This guide shows how, for form-based and raw zone-file editors alike, and how to check the record. It details an install step of the feature's [README](../README.md), [Point the Hostname at the Validator](../README.md#point-the-hostname-at-the-validator), so read the README first.
 
+## Table of Contents
+
+- [What You Are Setting Up](#what-you-are-setting-up)
+- [Before You Start](#before-you-start)
+  - [Choose the Subdomain](#choose-the-subdomain)
+  - [Find the Server's Public Address](#find-the-servers-public-address)
+  - [Find Who Hosts Your Dns](#find-who-hosts-your-dns)
+  - [Check for Records That Get in the Way](#check-for-records-that-get-in-the-way)
+  - [Back Up the Zone](#back-up-the-zone)
+- [Form-Based Dns Editors](#form-based-dns-editors)
+  - [Open the Zone Editor](#open-the-zone-editor)
+  - [Field Names Across Providers](#field-names-across-providers)
+  - [Adding the Record](#adding-the-record)
+  - [Mistakes to Avoid](#mistakes-to-avoid)
+- [Raw Zone-File Editors](#raw-zone-file-editors)
+  - [The Record Line](#the-record-line)
+  - [Relative and Absolute Names](#relative-and-absolute-names)
+  - [The SOA Serial](#the-soa-serial)
+  - [Checking the File](#checking-the-file)
+- [Provider Settings That Matter](#provider-settings-that-matter)
+- [Verifying the Record](#verifying-the-record)
+- [Certificates and the New Hostname](#certificates-and-the-new-hostname)
+- [Changing or Removing the Record](#changing-or-removing-the-record)
+- [Troubleshooting](#troubleshooting)
+
 ## What You Are Setting Up
 
 You are adding one dns record. It is an `A` record that points a new name under a domain you own, such as `x1-rpc.example.com`, at the validator's public ipv4 address. `nginx`, the web server from nginx.org that `apply` installs on the validator to stand in front of the rpc, uses that name to get a tls certificate, and your clients use the name in the rpc url.

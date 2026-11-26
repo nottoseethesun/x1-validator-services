@@ -1968,6 +1968,17 @@
     "test": "test/cli.test.js"
   },
   {
+    "name": "add-api-key's help loses its example of --count",
+    "file": "src/cli/program.js",
+    "edits": [
+      {
+        "from": "\n  x1-validator-private-rpc add-api-key --count 3\n      Makes three keys in one run, all with the one email you give, such\n      as for one client's three apps. For three clients, run add-api-key\n      once for each.",
+        "to": ""
+      }
+    ],
+    "test": "test/cli.test.js"
+  },
+  {
     "name": "nginx's list is written readable by root alone",
     "file": "src/cli/hashed-api-keys.js",
     "edits": [

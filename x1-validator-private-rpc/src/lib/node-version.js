@@ -9,11 +9,9 @@
  * a validator, the default node is Node.js 20.0.0, which `x1console`
  * installed with nvm, the Node.js version manager, for its own scripts.
  * nvm holds the newer Node.js beside it. So a program started on an
- * older Node.js stops here, and says how to start it through nvm. Each
- * program reaches this check on 20.0.0: none loads a module 20.0.0 can't
- * parse before it. ora, the package that draws the upgrade check's
- * spinner, has such a module under it, so the upgrade check loads ora
- * only once the check has passed.
+ * older Node.js stops here, and says how to start it through nvm. A
+ * program that loads a package the older Node.js can't parse dies before
+ * it gets here: on 20.0.0, the upgrade check does, through ora.
  */
 
 import { readFileSync } from "node:fs";

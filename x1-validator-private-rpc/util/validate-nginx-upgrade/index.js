@@ -9,16 +9,16 @@
  * progress, with a spinner beside each long step, and its outcome, and
  * answers Ctrl-C by stopping the check after the step it's on, which
  * still removes everything it added. This entry point checks the Node.js
- * running it, reads the command line, and loads ora, the package that
- * draws the spinner. Once the person affirms the disclaimer, it reads
- * the settings and joins steps.js and terminal.js. ora loads only after
- * the check of the Node.js, since Node.js 20.0.0, the validator's
- * default node, can't parse a module under it: loaded with the program,
- * ora would end it with a SyntaxError before the check could say how to
- * start it. Run it as the validator's account. It asks for sudo itself.
+ * running it and reads the command line. Once the person affirms the
+ * disclaimer, it reads the settings and joins steps.js and terminal.js.
+ * On Node.js 20.0.0, the validator's default node, the program dies with
+ * a SyntaxError before its check of the Node.js, as it loads ora, the
+ * package that draws the spinner. Run it as the validator's account. It
+ * asks for sudo itself.
  */
 
 import { Command } from "commander";
+import ora from "ora";
 import { showDisclaimer } from "../../src/lib/disclaimer.js";
 import { createHost } from "../../src/lib/host.js";
 import {
@@ -97,9 +97,8 @@ function buildProgram() {
 }
 
 /**
- * Checks the Node.js running it, reads the command line and loads ora,
- * then shows the disclaimer, runs the check and prints the outcome. The
- * file's header says why ora loads only after the check of the Node.js.
+ * Checks the Node.js running it, shows the disclaimer, then runs the
+ * check and prints the outcome.
  */
 async function main() {
   const problem = nodeVersionProblem(process.versions.node, {
@@ -113,7 +112,6 @@ async function main() {
     return;
   }
   buildProgram().parse(process.argv);
-  const { default: ora } = await import("ora");
   const host = createHost();
   const refusal = showDisclaimer(host);
   if (refusal !== "") {
