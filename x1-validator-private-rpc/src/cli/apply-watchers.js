@@ -10,7 +10,8 @@
  * in x1console's checkout, which runs ensure after an Update X1 Console
  * pulls new commits, and, when the operator agrees, two cron jobs: one
  * runs ensure every minute, the other checks every apiKeyCountCheckHours
- * hours that nginx holds an api key. It makes the two folders the cron
+ * hours that nginx's list of the api keys' hashes isn't empty. It makes
+ * the two folders the cron
  * lines write in, which git doesn't track, and records them, so
  * undo-apply removes them. Each line also makes its folders whenever
  * they're missing, so deleting one stops no run. The cron lines go in the
@@ -18,6 +19,9 @@
  * and the table written back, so Autopilot's jobs stay. Another
  * program's git hook stays as it is, and the cron job covers for it.
  * Last, it sends a test alert when x1console's Telegram files are there.
+ * A test alert that Telegram refuses, or that gets no answer, doesn't
+ * stop apply: apply goes on to its hand-over, then says what to check,
+ * and ends with exit code 1.
  *
  * A later apply may find its own hook or cron lines from an earlier run.
  * When the tool's hook names an old path to Node.js or to the tool, it
@@ -29,7 +33,7 @@
  */
 
 import path from "node:path";
-import { gitHookPathOf } from "./feature-paths.js";
+import { gitHookPathOf, homePath } from "./feature-paths.js";
 import {
   isToolHook,
   renderCronLine,
@@ -37,7 +41,12 @@ import {
   renderKeyCountCronLine,
 } from "./render-watchers.js";
 import { addPrivateRpc } from "./start-script.js";
-import { readTelegram, sendTelegram } from "./telegram.js";
+import {
+  CHAT_ID_FILE,
+  readTelegram,
+  sendTelegram,
+  TOKEN_FILE,
+} from "./telegram.js";
 import { found, made, partsOf } from "./what-apply-changed.js";
 
 /**
@@ -175,15 +184,16 @@ async function installCronLines(context) {
       "One cron job would run ensure every minute: ensure puts " +
         "--private-rpc back after an x1console update takes it out, and " +
         "sends the tool's alerts. The other would check every " +
-        `${settings.apiKeyCountCheckHours} hours that nginx holds an api ` +
-        "key. Install them?",
+        `${settings.apiKeyCountCheckHours} hours that nginx's list of the ` +
+        "api keys' hashes isn't empty. Install them?",
     ));
   if (wanted === false) {
     log.info(
       "watchers",
       "No cron jobs: nothing runs ensure every minute, or checks every " +
-        `${settings.apiKeyCountCheckHours} hours that nginx holds an api ` +
-        "key, so no alert goes out on a schedule. After each Update X1 " +
+        `${settings.apiKeyCountCheckHours} hours that nginx's list of the ` +
+        "api keys' hashes isn't empty, so no alert goes out on a schedule. " +
+        "After each Update X1 " +
         `Console, wait ${settings.startScriptQuietSeconds} seconds, then ` +
         "run ensure yourself, which puts --private-rpc back into the start " +
         "script.",
@@ -228,7 +238,29 @@ async function installCronLines(context) {
 }
 
 /**
- * Runs the seventh stage.
+ * Says what to check when the test alert failed, for apply's last line.
+ * @param {object} host  The host.
+ * @param {object} settings  The tool's settings, for x1consoleDir.
+ * @returns {string}
+ */
+function testAlertAdvice(host, settings) {
+  const folder = homePath(settings.x1consoleDir, host.homeDir());
+  const [tokenPath, chatIdPath] = [TOKEN_FILE, CHAT_ID_FILE].map((name) =>
+    path.join(folder, name),
+  );
+  return (
+    "Every stage ran, but the test alert failed. The tool's other alerts " +
+    "go through the same bot, so they may not reach you either. Check " +
+    `that x1console's Telegram files, ${tokenPath} and ${chatIdPath}, ` +
+    "hold its bot's token and chat id, and that this machine can reach " +
+    "api.telegram.org. Then run apply again, which sends another test alert."
+  );
+}
+
+/**
+ * Runs the seventh stage. A failed test alert is logged with its reason,
+ * and sets context.testAlertProblem to what to check, which apply prints
+ * after its hand-over.
  * @param {object} context  The run.
  * @returns {Promise<void>}
  */
@@ -245,12 +277,17 @@ export async function installWatchers(context) {
     return;
   }
   log.hide(telegram.token);
-  await change("watchers", "send a test alert on Telegram", () =>
-    sendTelegram(
-      host,
-      telegram,
-      `x1-validator-private-rpc on ${settings.hostname}: a test alert from apply. Alerts work.`,
-      settings.requestTimeoutSeconds * 1000,
-    ),
-  );
+  await change("watchers", "send a test alert on Telegram", async () => {
+    try {
+      await sendTelegram(
+        host,
+        telegram,
+        `x1-validator-private-rpc on ${settings.hostname}: a test alert from apply. Alerts work.`,
+        settings.requestTimeoutSeconds * 1000,
+      );
+    } catch (error) {
+      log.problem("watchers", `The test alert failed: ${error.message}`);
+      context.testAlertProblem = testAlertAdvice(host, settings);
+    }
+  });
 }

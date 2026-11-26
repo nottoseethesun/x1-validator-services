@@ -25,11 +25,13 @@
  * Whether a file, a folder, a package, an account, a firewall rule or a
  * crontab line is there is a boolean setting.
  *
- * A setting is recorded the moment apply changes it, so a stage that
- * fails part way still leaves an exact record. A later apply finds its
- * own changes in place, and never writes over an entry that says apply
- * changed the setting, so the old value stays the one from before the
- * first apply.
+ * A setting is recorded just after apply changes it, or just before,
+ * such as a package before apt installs it, since apt runs for minutes
+ * and a run that dies then must still leave the package on record. An
+ * entry may then name a change the run never made, which undo-apply
+ * finds undone already. A later apply finds its own changes in place,
+ * and never writes over an entry that says apply changed the setting,
+ * so the old value stays the one from before the first apply.
  */
 
 import path from "node:path";

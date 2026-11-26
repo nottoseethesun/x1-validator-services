@@ -53,7 +53,7 @@ Formatting and the code checks a change is written against.
 | Command | Flags | Description | Example |
 | ------- | ----- | ----------- | ------- |
 | `format` | — | Prettier rewrites every JavaScript file it would change. Run it when the lint or the gate reports unformatted JavaScript. For json or yaml, run `lint:fix`. | `npm run format` |
-| `knip:files` | — | Lists every JavaScript file nothing imports, which the gate fails on. It runs `knip`, through `scripts/check-unused-files.js`. Run it alone, such as after moving or deleting a file. | `npm run knip:files` |
+| `knip:files` | — | Lists every JavaScript file nothing imports, which the gate fails on. It runs `knip`, a package that finds files and code nothing uses, through `scripts/check-unused-files.js`. It never lists an entry point in `knip.config.js`, every test helper among them. Run it alone, such as after moving or deleting a file. | `npm run knip:files` |
 | `lint` | — | The gate's lint, format, dead-code and security checks, without the tests and the dependency audits, with a summary. The pre-commit hook runs it. | `npm run lint` |
 | `lint:fix` | — | The same checks, with each tool rewriting what it can fix. | `npm run lint:fix` |
 
@@ -77,7 +77,7 @@ The checks and tests. `check` runs all of them but the system test.
 | `test:system` | `--keep` | x1-validator-private-rpc end to end, in a throwaway LXD container, never on a validator. Not part of `check`. `--keep` leaves the container for a look inside. Its feature's README says what it needs, in [Test](../x1-validator-private-rpc/README.md#test). | `npm run test:system` · `npm run test:system -- --keep` |
 | `test:watch` | — | Runs the tests again on every change. | `npm run test:watch` |
 
-`check`, `test`, `test:coverage` and `test:watch` fail a test still running after a minute, by name, and go on with the rest of its file. [Tests](engineering.md#tests) says why.
+`check`, `test`, `test:coverage` and `test:watch` fail a test still running after a minute, by name, and go on with the rest of its file. [Tests](engineering.md#tests) says why, and which hangs the limit can't end.
 
 ---
 

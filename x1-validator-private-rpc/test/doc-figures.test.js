@@ -6,9 +6,10 @@
  * settings, so it types each figure, and this test does the job a build
  * step would: a changed setting fails the gate until the docs follow.
  *
- * - startScriptQuietSeconds: the README's "30 seconds as shipped", and
- *   the figures that follow from it and the cron job's minute, such as
- *   "30 to 90 seconds" and "up to 90 seconds"
+ * - startScriptQuietSeconds: "30 seconds as shipped" in the README and in
+ *   docs/project-commands.md, and the README's figures that follow from
+ *   it and the cron job's minute, such as "30 to 90 seconds" and "up to
+ *   90 seconds"
  * - apiKeyCountCheckHours: the README's "every two hours, as shipped"
  * - maxApiKeys's maximum in the schema: the README's "its 500,000
  *   limit", and the architecture doc's "up to 500,000 keys"
@@ -69,17 +70,20 @@ function figures(text, pattern) {
   );
 }
 
-test("the README's figures for how long ensure holds off follow the shipped startScriptQuietSeconds", () => {
+test("the docs' figures for how long ensure holds off follow the shipped startScriptQuietSeconds", () => {
   const quiet = shippedSettings().startScriptQuietSeconds;
   const latest = quiet + CRON_SECONDS;
   const readme = readDoc("../README.md");
-  const shipped = figures(readme, /(\w+) seconds(?: ago)?,? as shipped/g);
+  const commands = readDoc("../docs/project-commands.md");
+  const shipped = [readme, commands].map((doc) =>
+    figures(doc, /(\w+) seconds(?: ago)?,? as shipped/g),
+  );
   const ranges = figures(readme, /(\d+) to (\d+) seconds/g);
   const upTo = figures(readme, /up to (\d+) seconds/g);
-  for (const found of [shipped, ranges, upTo]) {
+  for (const found of [...shipped, ranges, upTo]) {
     assert.ok(found.length > 0);
   }
-  for (const [seconds] of shipped) {
+  for (const [seconds] of shipped.flat()) {
     assert.equal(seconds, quiet);
   }
   for (const range of ranges) {

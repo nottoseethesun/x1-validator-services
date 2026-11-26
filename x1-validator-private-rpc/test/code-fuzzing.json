@@ -11,7 +11,7 @@
     "test": "test/njs-key-check.test.js"
   },
   {
-    "name": "the mask looks only at the path's start again",
+    "name": "the mask looks only at the path's start",
     "file": "src/njs/x1-validator-private-rpc.js",
     "edits": [
       {
@@ -180,7 +180,7 @@
     "test": "test/apply-new-key.test.js"
   },
   {
-    "name": "the preflight quotes the solana cli's url again",
+    "name": "the preflight quotes the solana cli's url",
     "file": "src/cli/apply-preflight.js",
     "edits": [
       {
@@ -202,18 +202,51 @@
     "test": "test/ensure.test.js"
   },
   {
-    "name": "ensure makes the alert state's folder as root",
+    "name": "a start script ensure can't write stops ensure before its checks, alerts and check-in",
     "file": "src/cli/ensure.js",
     "edits": [
       {
-        "from": "host.makeUserDir(path.dirname(paths.alertStatePath), 0o755);",
-        "to": "host.makeRootDir(path.dirname(paths.alertStatePath), \"0755\");"
+        "from": "  } catch (error) {\n    // The flag-in-script check's alert carries this reason.\n    return { status: \"failed\", detail: error.message };\n  }\n",
+        "to": "  } catch (error) {\n    throw error;\n  }\n"
       }
     ],
     "test": "test/ensure.test.js"
   },
   {
-    "name": "ensure no longer waits while git works in x1console's folder",
+    "name": "ensure never records a failed Cronitor check-in in its alert state",
+    "file": "src/cli/ensure.js",
+    "edits": [
+      {
+        "from": "    writeAlertState(host, paths.alertStatePath, { ...next, checkInFailed });\n",
+        "to": ""
+      }
+    ],
+    "test": "test/ensure.test.js"
+  },
+  {
+    "name": "ensure tells its Cronitor check-in the last one went through, whatever the alert state says",
+    "file": "src/cli/ensure.js",
+    "edits": [
+      {
+        "from": "    failedBefore: next.checkInFailed,\n",
+        "to": "    failedBefore: false,\n"
+      }
+    ],
+    "test": "test/ensure.test.js"
+  },
+  {
+    "name": "ensure makes the alert state's folder as root",
+    "file": "src/cli/ensure.js",
+    "edits": [
+      {
+        "from": "host.makeUserDir(path.dirname(alertStatePath), 0o755);",
+        "to": "host.makeRootDir(path.dirname(alertStatePath), \"0755\");"
+      }
+    ],
+    "test": "test/ensure.test.js"
+  },
+  {
+    "name": "ensure doesn't wait while git works in x1console's folder",
     "file": "src/cli/ensure.js",
     "edits": [
       {
@@ -283,7 +316,7 @@
     "test": "test/apply-new-key.test.js"
   },
   {
-    "name": "undo-apply deletes the api keys' file before it has sudo again",
+    "name": "undo-apply deletes the api keys' file before it has sudo",
     "file": "src/cli/undo-apply.js",
     "edits": [
       {
@@ -360,7 +393,7 @@
     "test": "test/key-commands.test.js"
   },
   {
-    "name": "undo-apply looks for root's folders as the account again",
+    "name": "undo-apply looks for root's folders as the account",
     "file": "src/cli/undo-apply.js",
     "edits": [
       {
@@ -474,7 +507,7 @@
     "test": "test/small-modules.test.js"
   },
   {
-    "name": "the keyed location logs critical errors again",
+    "name": "the keyed location logs critical errors",
     "file": "src/cli/render-nginx.js",
     "edits": [
       {
@@ -654,6 +687,17 @@
     "test": "test/checks.test.js"
   },
   {
+    "name": "the certificate check fails a certificate with exactly certificateWarningDays left",
+    "file": "src/cli/checks.js",
+    "edits": [
+      {
+        "from": "daysLeft >= warningDays",
+        "to": "daysLeft > warningDays"
+      }
+    ],
+    "test": "test/checks.test.js"
+  },
+  {
     "name": "ensure ignores the start script's lock",
     "file": "src/cli/ensure.js",
     "edits": [
@@ -702,14 +746,14 @@
     "file": "src/cli/ensure.js",
     "edits": [
       {
-        "from": "        `for ${seconds} seconds.`,",
-        "to": "        \"for a while.\","
+        "from": "        `gone unchanged for ${seconds} seconds, and ${lockPath} is gone. If ` +",
+        "to": "        `gone unchanged for a while, and ${lockPath} is gone. If ` +"
       }
     ],
     "test": "test/ensure.test.js"
   },
   {
-    "name": "the TPM2 message promises a second chance again",
+    "name": "the TPM2 message promises a second chance",
     "file": "src/cli/apply-key.js",
     "edits": [
       {
@@ -1050,7 +1094,7 @@
     "test": "test/settings.test.js"
   },
   {
-    "name": "the settings drop every key but $schema's that starts with a letter after _ (notes kept as settings)",
+    "name": "the settings drop, besides $schema, only keys that start with two underscores, so the notes stay as settings",
     "file": "src/lib/settings.js",
     "edits": [
       {
@@ -1061,7 +1105,7 @@
     "test": "test/settings.test.js"
   },
   {
-    "name": "ensure's gate line goes back to the gate page's old name",
+    "name": "ensure's gate line drops what the gate page is",
     "file": "src/cli/checks.js",
     "edits": [
       {
@@ -1072,7 +1116,7 @@
     "test": "test/ensure.test.js"
   },
   {
-    "name": "apply's no-certificate message goes back to the gate page's old name",
+    "name": "apply's no-certificate message drops what the gate page is",
     "file": "src/cli/apply-nginx.js",
     "edits": [
       {
@@ -1083,7 +1127,7 @@
     "test": "test/apply-fails-part-way.test.js"
   },
   {
-    "name": "apply's last nginx line goes back to vague wording",
+    "name": "apply's last nginx line doesn't say which requests got 403",
     "file": "src/cli/apply-nginx.js",
     "edits": [
       {
@@ -1116,7 +1160,7 @@
     "test": "test/ensure.test.js"
   },
   {
-    "name": "undo-apply's line for a folder kept by what stays goes back to the old wording",
+    "name": "undo-apply's line for a folder kept by what stays says Kept, not Skipped",
     "file": "src/cli/undo-apply.js",
     "edits": [
       {
@@ -1127,7 +1171,7 @@
     "test": "test/undo-apply-api-keys.test.js"
   },
   {
-    "name": "undo-apply's line for a step a no keeps goes back to the old wording",
+    "name": "undo-apply's line for a step a no keeps says Kept, not Skipped",
     "file": "src/cli/undo-apply.js",
     "edits": [
       {
@@ -1149,7 +1193,7 @@
     "test": "test/apply-new-key.test.js"
   },
   {
-    "name": "the tool's purpose line goes back to leaving out private",
+    "name": "the tool's purpose line leaves out that it makes the rpc private",
     "file": "src/cli/program.js",
     "edits": [
       {
@@ -1182,7 +1226,7 @@
     "test": "test/apply.test.js"
   },
   {
-    "name": "the settings check refuses every other file again, editors' leftovers included",
+    "name": "the settings check refuses every other file, editors' leftovers included",
     "file": "src/lib/settings.js",
     "edits": [
       {
@@ -1336,7 +1380,7 @@
     "test": "test/alerts.test.js"
   },
   {
-    "name": "a held package counts as not installed again",
+    "name": "a held package counts as not installed",
     "file": "src/lib/apt.js",
     "edits": [
       {
@@ -1358,7 +1402,7 @@
     "test": "test/apply-fails-part-way.test.js"
   },
   {
-    "name": "a refused setting no longer says what it must be",
+    "name": "a refused setting doesn't say what it must be",
     "file": "src/lib/settings.js",
     "edits": [
       {
@@ -1747,12 +1791,34 @@
     "test": "test/apply.test.js"
   },
   {
+    "name": "a test alert Telegram refuses stops apply before its hand-over",
+    "file": "src/cli/apply-watchers.js",
+    "edits": [
+      {
+        "from": "    } catch (error) {\n      log.problem(\"watchers\", `The test alert failed: ${error.message}`);\n",
+        "to": "    } catch (error) {\n      throw error;\n"
+      }
+    ],
+    "test": "test/apply-hand-over.test.js"
+  },
+  {
     "name": "the real host's postJson uses http for an https url",
     "file": "src/lib/host.js",
     "edits": [
       {
         "from": "  const client = url.startsWith(\"https:\") ? https : http;\n",
         "to": "  const client = http;\n"
+      }
+    ],
+    "test": "test/host.test.js"
+  },
+  {
+    "name": "a GET that gets no answer names the whole url, path and all",
+    "file": "src/lib/host.js",
+    "edits": [
+      {
+        "from": "      const { origin } = new URL(url);\n",
+        "to": "      const origin = url;\n"
       }
     ],
     "test": "test/host.test.js"
@@ -1767,6 +1833,28 @@
       }
     ],
     "test": "test/ask-password.test.js"
+  },
+  {
+    "name": "the secret prompt waits on after a Ctrl-C closes it",
+    "file": "src/lib/ask-password.js",
+    "edits": [
+      {
+        "from": "    lineReader.on(\"close\", () => {\n      if (answered === false) {\n        output.write(\"\\n\");\n        reject(new Error(PROMPT_STOPPED));\n      }\n    });\n",
+        "to": ""
+      }
+    ],
+    "test": "test/ask-password.test.js"
+  },
+  {
+    "name": "a line's prompt waits on after a Ctrl-C closes it",
+    "file": "src/lib/ask-line.js",
+    "edits": [
+      {
+        "from": "    lineReader.on(\"close\", () => {\n      if (answered === false) {\n        output.write(\"\\n\");\n        reject(new Error(PROMPT_STOPPED));\n      }\n    });\n",
+        "to": ""
+      }
+    ],
+    "test": "test/small-modules.test.js"
   },
   {
     "name": "nginx's server_name names the example's hostname",
@@ -1812,6 +1900,28 @@
       {
         "from": "  systemctl(host, [\"daemon-reload\"]);\n  systemctl(host, [\"unmask\", NGINX_UNIT]);\n  undo.push({",
         "to": "  systemctl(host, [\"daemon-reload\"]);\n  undo.push({"
+      }
+    ],
+    "test": "test/validate-nginx-upgrade.test.js"
+  },
+  {
+    "name": "a Ctrl-C during the upgrade still has the check wait on systemd and ask nginx after it",
+    "file": "util/validate-nginx-upgrade/steps.js",
+    "edits": [
+      {
+        "from": "    () => installVersions(host, newest),\n  );\n  stopIfInterrupted(context);\n",
+        "to": "    () => installVersions(host, newest),\n  );\n"
+      }
+    ],
+    "test": "test/validate-nginx-upgrade.test.js"
+  },
+  {
+    "name": "a Ctrl-C while the check waits after the upgrade still gives a verdict",
+    "file": "util/validate-nginx-upgrade/steps.js",
+    "edits": [
+      {
+        "from": "  const observed = await upgradeAndObserve(context, port, pair.newest, key);\n  stopIfInterrupted(context);\n",
+        "to": "  const observed = await upgradeAndObserve(context, port, pair.newest, key);\n"
       }
     ],
     "test": "test/validate-nginx-upgrade.test.js"
@@ -1891,6 +2001,17 @@
     "test": "test/apply-hand-over.test.js"
   },
   {
+    "name": "apply exits 0 after a failed test alert",
+    "file": "src/cli/apply.js",
+    "edits": [
+      {
+        "from": "    log.problem(\"apply\", context.testAlertProblem);\n    return 1;\n",
+        "to": "    log.problem(\"apply\", context.testAlertProblem);\n    return 0;\n"
+      }
+    ],
+    "test": "test/apply-hand-over.test.js"
+  },
+  {
     "name": "x1console's token file misnamed",
     "file": "src/cli/telegram.js",
     "edits": [
@@ -1930,6 +2051,28 @@
       {
         "from": "export const CRONITOR_URL = \"X1_PRIVATE_RPC_CRONITOR_URL\";",
         "to": "export const CRONITOR_URL = \"X1_PRIVATE_RPC_CRONITOR\";"
+      }
+    ],
+    "test": "test/small-modules.test.js"
+  },
+  {
+    "name": "a check-in try that gets no answer says Cronitor answered http 0",
+    "file": "src/cli/heartbeat.js",
+    "edits": [
+      {
+        "from": "  return response.status === 0\n    ? `${which} got no answer: ${response.body}`\n    : `${which} answered http ${response.status}.`;\n",
+        "to": "  return `${which} answered http ${response.status}.`;\n"
+      }
+    ],
+    "test": "test/small-modules.test.js"
+  },
+  {
+    "name": "under --quiet, each run of an outage of Cronitor's logs its failed tries",
+    "file": "src/cli/heartbeat.js",
+    "edits": [
+      {
+        "from": "  if (quiet === true && failedBefore !== true) {\n",
+        "to": "  if (quiet === true) {\n"
       }
     ],
     "test": "test/small-modules.test.js"

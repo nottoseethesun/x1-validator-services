@@ -1,6 +1,6 @@
 # Security
 
-This page records each security decision that needed a person's judgment: when the security audit runs, the security lint's exceptions, and the dependency overrides. It gives each one's reason. The rules come from the security guide of LP Ranger, another project by the same owner, as [CLAUDE.md](../CLAUDE.md) says. How x1-validator-private-rpc keeps its api keys is in that feature's [Api Key Security](../x1-validator-private-rpc/README.md#api-key-security) section.
+This page records each security decision that needed a person's judgment: when the security audit runs, the security lint's exceptions, and the dependency overrides. It gives each one's reason. The rules come from the security guide of LP Ranger, another project by the same owner, as [CLAUDE.md](../CLAUDE.md) says. How x1-validator-private-rpc protects its api keys, of which it stores only hashes, is in that feature's [Api Key Security](../x1-validator-private-rpc/README.md#api-key-security) section.
 
 ## The Audit in CI
 
@@ -23,5 +23,3 @@ The gate, `npm run check`, which must pass before every commit, fails on a high 
 - `github-actionlint` takes `adm-zip` 0.6.1 or newer. Its own range is `^0.5.16`.
 - `markdownlint-cli2` takes `katex` 0.18.2 or newer. `micromark-extension-math`'s range is `^0.16.0`.
 - Every package takes `minimatch` 11.0.1 or newer. ESLint, and `@typescript-eslint/typescript-estree`, which madge pulls in, ask for `minimatch` 10. ESLint and madge are the only packages that use `minimatch`, so one override for the whole tree covers both, and changes nothing else.
-
-One known advisory has no fix yet: GHSA-fc5q-39xc-vjpf, a regular-expression denial of service in `picomatch`, which `knip`, `markdownlint-cli2`, `secretlint` and `madge` pull in. It reaches only the dev tools, which read the project's own files. An override follows once `picomatch` releases a fix.

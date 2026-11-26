@@ -6,8 +6,9 @@
  * Console takes it out, and sends the tool's alerts:
  *
  * - The tool's git hook, `.git/hooks/post-merge` in x1console's checkout,
- *   which git runs after a pull that brings in new commits. It always exits 0, so it can
- *   never fail an x1console update.
+ *   which git runs after a pull that brings in new commits. git ignores a
+ *   post-merge hook's exit code, so the hook can never fail an x1console
+ *   update.
  * - The cron line, which runs `ensure` every minute and covers a pull
  *   that brought nothing new and so ran no hook. flock skips a run while
  *   the previous one is still going.

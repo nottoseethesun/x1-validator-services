@@ -33,7 +33,7 @@ const PREFIX = "x1-validator-private-rpc on x1-rpc.example.com:";
  * show.
  * @param {object} check  The check.
  * @param {object} last  The last state.
- * @param {number} now  The time.
+ * @param {number} now  The time, in milliseconds.
  * @param {boolean} [flagRestored]  Whether the flag was put back.
  * @returns {{messages: string[], next: object}}
  */

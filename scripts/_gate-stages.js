@@ -12,9 +12,6 @@
  * that audit itself, and only saves its report. The stages take their
  * file lists from
  * scripts/lint-targets.js, but for Prettier's json and yaml globs, here.
- *
- * A stage only describes its command. scripts/lint.js and
- * scripts/check.js run it.
  */
 
 import path from "node:path";
@@ -104,8 +101,9 @@ export function actionlintStage() {
 }
 
 /**
- * knip, failing on files nothing uses. Unused exports are left alone:
- * they are hooks for tests and tools.
+ * knip, failing on files nothing uses, but never on an entry point in
+ * knip.config.js, every test helper among them. Unused exports are left
+ * alone: they are hooks for tests and tools.
  * @returns {Stage}
  */
 export function knipStage() {
@@ -161,8 +159,8 @@ export function secretlintStage() {
 }
 
 /**
- * Every lint, format and security check that runs on this machine alone,
- * in the order `npm run lint` and `npm run check` run them.
+ * Every lint, format, dead-code and security check that runs on this
+ * machine alone, in the order `npm run lint` and `npm run check` run them.
  * @param {{fix: boolean}} options  Rewrite what each tool can fix, or
  *   only check.
  * @returns {Stage[]}

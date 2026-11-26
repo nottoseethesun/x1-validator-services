@@ -12,7 +12,7 @@ root=$(readlink -f "$(dirname "$(readlink -f "$0")")/../..")
 major=$(sed -n 's/^ *"node": *">=\([0-9][0-9]*\).*/\1/p' "$root/package.json")
 newest=$(printf '%s\n' "${NVM_DIR:-$HOME/.nvm}/versions/node/v$major."* | sort -V | tail -n 1)
 if [ ! -x "$newest/bin/node" ]; then
-  echo "x1-validator-private-rpc needs Node.js $major, which nvm doesn't hold yet. Add it with: nvm install $major" >&2
+  echo "x1-validator-private-rpc needs Node.js $major, which nvm, the Node.js version manager, doesn't hold yet. Add it with: nvm install $major" >&2
   exit 1
 fi
 exec "$newest/bin/node" "$root/x1-validator-private-rpc/src/cli.js" "$@"

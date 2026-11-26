@@ -16,7 +16,8 @@
  *
  * What counts as left behind comes from the app: the paths in the
  * settings the tool loads in the container, nginx.org's repository
- * files, the folders above them, the nginx package and its account.
+ * files, nginx's log folder, the folders above them, the nginx package
+ * and its account.
  */
 
 import { spawn } from "node:child_process";
@@ -44,8 +45,9 @@ const COMMAND_TIMEOUT_MS = 10 * 60 * 1000;
 
 /**
  * The answer to the disclaimer's dialog, which each run that can change
- * the system shows first: once its Decline button shows, the left arrow
- * moves to Affirm, and Enter chooses it.
+ * the system shows first, but for a run of ensure: once the dialog's
+ * Decline button shows, the left arrow moves to Affirm, and Enter
+ * chooses it.
  */
 export const AFFIRM_DISCLAIMER = [DECLINE_BUTTON, "\x1b[D\r"];
 
@@ -161,7 +163,11 @@ export function asUser(name, command, env = {}) {
  * TERM is set, so whiptail knows the arrow keys.
  * @param {string} name  The container.
  * @param {string} command  The command, as the shell reads it.
- * @param {[string, string][]} answers  Each prompt's text, and its answer.
+ * @param {[string, string][]} answers  Each prompt's text, and its
+ *   answer, in the order the command shows them. Each prompt is looked
+ *   for only once the one before it is answered, so a prompt listed out
+ *   of order goes unanswered, and a command waiting for it holds the test
+ *   until the 10-minute limit.
  * @param {Object<string, string>} [env]  More environment variables.
  * @returns {Promise<{code: number, output: string}>}
  */

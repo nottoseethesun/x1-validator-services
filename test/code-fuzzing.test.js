@@ -144,12 +144,12 @@ test("each kind of problem in an entry is named", () => {
   ]);
 });
 
-test("a list's file that's missing, isn't json, or holds no list is named", () => {
+test("a list's file that's missing, isn't json, or holds an empty list is named", () => {
   const root = makeProject([]);
   const listPath = path.join(root, "feat", CHANGES_FILE);
   const label = `feat/${CHANGES_FILE}`;
   assert.deepEqual(readChanges(root, "feat").problems, [
-    `${label} must hold a list of them.`,
+    `${label} must hold a list of code-fuzzing changes, with at least one entry.`,
   ]);
   fs.writeFileSync(listPath, "[");
   assert.match(readChanges(root, "feat").problems.join(), /JSON/);

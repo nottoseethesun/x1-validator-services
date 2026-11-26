@@ -4,10 +4,13 @@
  * The LXD system test's checks of nginx's logs and of its own /dev, in
  * its apply phase.
  *
- * The logs must hold no key, wherever a client put it, and show `<key>`
- * in its place, since the njs mask's errors would go nowhere. Their files
- * keep the mode nginx.org's package gives them, so only root, nginx and
- * the adm group can read them.
+ * The logs must hold no key, wherever a client put it. They must also
+ * show `<key>` in its place, which proves the njs mask ran. The access
+ * log takes each request's url only from the mask, so a mask that
+ * failed would leave no key in the log either. And nothing would say it
+ * failed, since nginx sends the errors of the location that serves the
+ * rpc to /dev/null. The log files keep the mode nginx.org's package
+ * gives them, so only root, nginx and the adm group can read them.
  *
  * nginx runs with a /dev of its own, read-only, so its master can't hand
  * the machine's /dev/null to the nginx account when it reopens its logs.

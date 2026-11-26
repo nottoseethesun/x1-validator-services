@@ -14,8 +14,10 @@
  * - the names of the programs that work in a folder, read from /proc
  * - picking a free port, and pausing
  *
- * Tests pass a stand-in with the same functions instead, so no test
- * touches the machine.
+ * Other modules' tests pass a stand-in with the same functions instead.
+ * This module's own tests, in test/host.test.js, run these functions as
+ * the test's user, with a stand-in for sudo and files in a temporary
+ * folder. So no unit test touches the machine's own files.
  *
  * The tool runs as the validator's account and never as root. Steps that
  * need root run as child processes through sudo. sudo asks for the
@@ -190,7 +192,9 @@ function writeUserFile(filePath, content, mode) {
 }
 
 /**
- * Makes an http or https GET request and reads the answer as text.
+ * Makes an http or https GET request and reads the answer as text. An
+ * error names only the url's origin, never its path, which may hold a
+ * secret, as the Cronitor check-in's url does.
  * @param {typeof http|typeof https} client  node:http or node:https.
  * @param {string} url  The address.
  * @param {number} timeoutMs  How long to wait for an answer.
@@ -213,7 +217,10 @@ function get(client, url, timeoutMs) {
       );
     });
     request.on("timeout", () => {
-      request.destroy(new Error(`No answer from ${url} in ${timeoutMs} ms.`));
+      const { origin } = new URL(url);
+      request.destroy(
+        new Error(`No answer from ${origin} in ${timeoutMs} ms.`),
+      );
     });
     request.on("error", reject);
   });

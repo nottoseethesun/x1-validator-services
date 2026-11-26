@@ -10,11 +10,12 @@
  * and judges the queries, and table.js draws the report. This entry
  * point checks the Node.js running it, reads the command line, the
  * settings and the two answers, and joins them. It never prints the key,
- * only its last four characters.
+ * only its last four characters. A Ctrl-C at either question stops the
+ * check with exit code 1, and no verdict.
  */
 
 import { Command } from "commander";
-import { askLine } from "../../src/lib/ask-line.js";
+import { askLine, PROMPT_STOPPED } from "../../src/lib/ask-line.js";
 import { askPassword } from "../../src/lib/ask-password.js";
 import { createHost } from "../../src/lib/host.js";
 import { maskSecret } from "../../src/lib/mask-secret.js";
@@ -43,8 +44,9 @@ worked. A red cross comes with what went wrong.
 const EXIT_CODES = `
 Exit codes:
   0  every query worked
-  1  a query failed, or an answer wasn't a hostname or an api key. The
-     reason is printed`;
+  1  a query failed, an answer wasn't a hostname or an api key, or the
+     check couldn't run, and the reason is printed. Also when you press
+     Ctrl-C at a question, which stops the check with no verdict`;
 
 /**
  * The examples, as the help shows them, before the exit codes.
@@ -57,9 +59,10 @@ function examples(start) {
 Examples:
   cd ~/x1-validator-services
   ${start}
-      Checks the keyed url, such as after apply, or when a client reports
-      a problem. The url that the tool's apply or add-api-key command
-      printed holds both answers: the hostname, and after it the key.`;
+      Checks the keyed url, such as once x1-validator-private-rpc's apply
+      command has set it up, or when a client reports a problem. The url
+      that apply or x1-validator-private-rpc's add-api-key command printed
+      holds both answers: the hostname, and after it the key.`;
 }
 
 /**
@@ -127,7 +130,10 @@ async function main() {
   try {
     process.exitCode = (await check(color)) === true ? 0 : 1;
   } catch (error) {
-    console.log(renderVerdict(false, error.message, color));
+    // A Ctrl-C at a question stops the check, with no verdict to print.
+    if (error.message !== PROMPT_STOPPED) {
+      console.log(renderVerdict(false, error.message, color));
+    }
     process.exitCode = 1;
   }
 }

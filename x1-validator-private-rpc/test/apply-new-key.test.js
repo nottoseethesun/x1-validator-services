@@ -216,7 +216,7 @@ test("a dry run says what it would hand nginx, and changes nothing", async () =>
   assert.equal(await runApply(run), 0, run.lines.join("\n"));
   assert.ok(
     run.lines.includes(
-      `[keys] Would hand nginx the hashes of the 1 api key in ${filePath}.`,
+      `[keys] Would hand nginx the hashes of the 1 api key in ${filePath}, if nginx's list differs from them.`,
     ),
   );
   const writes = ["writeRootFile", "writeUserFile", "makeUserDir"];

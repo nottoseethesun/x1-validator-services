@@ -63,9 +63,9 @@ is Node.js 20.0.0, which x1console installed. The examples type the
 tool's bare name, x1-validator-private-rpc. That works once you've linked
 the tool's launcher, x1-validator-private-rpc/bin/x1-validator-private-rpc,
 into ~/.local/bin, as the README's Run section shows. The launcher is a
-script that runs the tool on the newest Node.js ${major} that nvm holds.
-Without the link, run the tool from the project's folder,
-~/x1-validator-services, as nvm exec ${major} node
+script that runs the tool on the newest Node.js ${major} that nvm, the
+Node.js version manager, holds. Without the link, run the tool from the
+project's folder, ~/x1-validator-services, as nvm exec ${major} node
 x1-validator-private-rpc/src/cli.js.
 
 Examples:
@@ -158,10 +158,10 @@ Examples:
 export const EXIT_CODES = [
   "",
   "Exit codes:",
-  "  0  success, or every check ok",
+  "  0  success, or no check found a problem, though some may be unknown",
   "  1  a stage failed, a check found a problem, you declined the",
-  "     disclaimer, you answered no and the command stopped, or another",
-  "     error, and the output says which",
+  "     disclaimer, you answered no or pressed Ctrl-C at a question and",
+  "     the command stopped, or another error, and the output says which",
 ].join("\n");
 
 /**
@@ -227,10 +227,11 @@ export function realMakers() {
 
 /**
  * Makes a command's action. It shows the disclaimer first when the run
- * can change the system, gathers what the command works with, runs it,
- * and sets the exit code. A declined disclaimer stops the run before it
- * does anything, with exit code 1. An error prints its reason on stderr
- * and exits 1, without a stack trace.
+ * can change the system. A run of ensure is the one exception, and
+ * SHOWS_DISCLAIMER says why. Then the action gathers what the command
+ * works with, runs the command, and sets the exit code. A declined
+ * disclaimer stops the run before it does anything, with exit code 1. An
+ * error prints its reason on stderr and exits 1, without a stack trace.
  * @param {Makers} makers  The makers.
  * @param {string} name  The command.
  * @param {(run: object) => Promise<number>} work  The command's work.

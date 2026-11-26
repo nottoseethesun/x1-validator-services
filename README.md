@@ -16,7 +16,7 @@ Install the code once, then each feature you want. Run every `npm` command from 
 
 ### Get the Code
 
-The project needs Node.js 24 or newer, while `x1console`'s scripts run on its own Node.js 20.0.0. `x1console` installs that one with `nvm`, the Node.js version manager, which holds several versions side by side. So the steps below add the newest Node.js 24 with `nvm install 24`: of the two long-term-support majors CI tests, 24 and 26, the older one, since a validator can't always move to the newest at once. `nvm install` leaves 20.0.0 the default, the one each new login finds first on its PATH. So the commands these docs give start Node.js and `npm` through `nvm exec 24`, which runs them on Node.js 24. `npm ci` installs the packages the project runs on, into `node_modules`.
+The project needs Node.js 24 or newer, while `x1console`, an outside program that installs an X1 validator and starts it, runs its own scripts on Node.js 20.0.0. `x1console` installs that one with `nvm`, the Node.js version manager, which holds several versions side by side. So the steps below add the newest Node.js 24 with `nvm install 24`: of the two long-term-support majors CI tests, 24 and 26, the older one, since a validator can't always move to the newest at once. `nvm install` leaves 20.0.0 the default, the one each new login finds first on its PATH. So the commands these docs give start Node.js and `npm` through `nvm exec 24`, which runs them on Node.js 24. `npm ci` installs the packages the project runs on, into `node_modules`.
 
 On the validator, as the validator's account:
 
@@ -56,7 +56,7 @@ Cronitor uses its own Telegram bot, so its alerts arrive in a different chat fro
 
 ## Development
 
-The whole project, its features and its development tools, supports Node.js 24 or newer, as `engines`, `>=24`, in `package.json` says. CI tests the two long-term-support majors in that range, 24 and 26, and every script behind the `npm` commands checks for at least 24. On a validator, the features run on Node.js 24, beside `x1console`'s own Node.js 20.0.0, as [Get the Code](#get-the-code) sets up.
+`engines`, `>=24`, in `package.json`, gives the project's range of Node.js versions, and every script behind the `npm` commands checks for at least 24.
 
 On a development machine, install with `npm ci`, which also sets up the `git` pre-commit hook.
 

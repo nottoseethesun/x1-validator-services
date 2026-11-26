@@ -144,7 +144,7 @@ Then, in the copy, set `hostname` to the name from the last step, and `publicIp`
 - stage 4: the x1-validator-services password and the first api key
 - stage 5: `nginx`'s configuration and start
 - stage 6: the start-script flag
-- stage 7: the `git` hook. Then one question offers the two `cron` jobs, which run `ensure` and the key count check. Last, a test alert on Telegram, when `x1console`'s bot is set up.
+- stage 7: the `git` hook. Then one question offers the two `cron` jobs, which run `ensure` and the key count check. Last, a test alert on Telegram, when `x1console`'s bot is set up. When Telegram refuses the test alert, or doesn't answer, `apply` still goes on to stage 8. After stage 8, it ends with exit code 1, and with a line that says what to check: the two files in which `x1console` keeps its Telegram bot's token and chat id, and whether the validator can reach Telegram.
 
 Stage 8 changes nothing: it says whether to restart the validator, and prints the url. When the run made a key, the url shows only that key's last four characters, since stage 4 showed the key in full. Otherwise the url shows `KEY` in place of the key.
 
@@ -297,7 +297,7 @@ Update X1 Validator restarts the validator, so the start script must carry the f
 nvm exec 24 node x1-validator-private-rpc/src/cli.js ensure
 ```
 
-If `ensure` says instead that `x1console` may be updating, so `ensure` left the start script alone, run `ensure` again once the script has gone unchanged for `startScriptQuietSeconds`. [`x1console`'s Updates and Autopilot's Restarts](docs/architecture.md#x1consoles-updates-and-autopilots-restarts), in `docs/architecture.md`, explains each time the script lacks the flag, and for how long.
+If `ensure` says instead that `x1console` may be updating, so `ensure` left the start script alone, run `ensure` again once no `git` command works in `x1console`'s folder, the script has gone unchanged for `startScriptQuietSeconds`, and `.git/index.lock`, `git`'s lock file there, is gone. A lock file that stays while no `git` command works there was left by a `git` that crashed, and holds `ensure` off until you delete it. [`x1console`'s Updates and Autopilot's Restarts](docs/architecture.md#x1consoles-updates-and-autopilots-restarts), in `docs/architecture.md`, explains each time the script lacks the flag, and for how long.
 
 #### Turn the Private Rpc Off and On
 

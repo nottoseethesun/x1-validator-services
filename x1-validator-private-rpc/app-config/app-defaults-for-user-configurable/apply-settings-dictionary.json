@@ -37,7 +37,7 @@
     "oldValueDatatype": "boolean"
   },
   "savedPassword": {
-    "description": "The x1-validator-services password, saved encrypted by systemd-creds, so that features to come can read the api keys' records unattended.",
+    "description": "The x1-validator-services password, saved encrypted by systemd-creds, so that the operator can read it back with sudo after forgetting it, and features to come can read the api keys' records unattended.",
     "oldValueDatatype": "boolean"
   },
   "nginxFileFolder": {
@@ -93,7 +93,7 @@
     "oldValueDatatype": "boolean"
   },
   "cronLine": {
-    "description": "A crontab line apply adds: the one that runs ensure every minute, or the one that checks every few hours that nginx holds an api key.",
+    "description": "A crontab line apply adds: the one that runs ensure every minute, or the one that checks every few hours that nginx's list of the api keys' hashes isn't empty.",
     "oldValueDatatype": "boolean"
   }
 }

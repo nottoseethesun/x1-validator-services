@@ -24,8 +24,9 @@ function main() {
     {
       examples: [
         "npm run format",
-        "    When the lint or the gate reports unformatted JavaScript:",
-        "    rewrites it.",
+        "    When npm run lint, which the git pre-commit hook runs, or the",
+        "    gate, npm run check, which must pass before every commit, reports",
+        "    unformatted JavaScript: rewrites it.",
         "npm run format:check",
         "    Lists the unformatted JavaScript files, and changes none.",
       ],

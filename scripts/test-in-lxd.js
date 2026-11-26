@@ -13,11 +13,16 @@
  * in package.json names, the one validators run the tool on, and
  * installs the runtime dependencies. It runs the check as the container's
  * ordinary user, who has sudo, as a validator's account does, in a real
- * terminal, where it affirms the disclaimer's dialog. Then it
- * confirms the container is as clean as before and deletes it. What
- * counts as clean comes from the app: the paths in the settings the
- * check loads in the container, nginx.org's repository files, and the
- * folders above them, so this test keeps no copy of a default.
+ * terminal, where it affirms the disclaimer's dialog. Then it confirms
+ * the check left nothing behind. The test watches paths that come from
+ * the app: each absolute path in the settings the check loads in the
+ * container, nginx.org's repository files, nginx's log folder, and the
+ * folders above them, so this test keeps no copy of a default. A watched
+ * path there after the check but not before it counts as left behind, as
+ * does the nginx package or its account, if either is there. Only when
+ * the check passed and left nothing behind does the second phase run.
+ * Last, the test deletes the container, whether the phases passed or
+ * not, unless --keep keeps it.
  *
  * It needs LXD, and network access to nodejs.org, and from the container
  * to Ubuntu's archive, nginx.org, npm's registry and GitHub, for Pebble.
@@ -57,7 +62,7 @@ const IMAGE = "ubuntu:24.04";
 /** nodejs.org's list of every Node.js release, the newest first. */
 const NODE_RELEASES = "https://nodejs.org/dist/index.json";
 
-/** Prints, as json, the settings the check loads, using the app's code. */
+/** Prints, as json, the settings the feature's programs load, using the app's code. */
 const PRINT_SETTINGS =
   'import { loadSettings } from "./x1-validator-private-rpc/src/lib/settings.js";' +
   "process.stdout.write(JSON.stringify(loadSettings()));";
@@ -171,7 +176,8 @@ function copyProject(name, workFolder) {
 }
 
 /**
- * Reads the settings the check loads in the container, from the app.
+ * Reads the settings the feature's programs load in the container, from
+ * the app, for either phase.
  * @param {string} name  The container.
  * @returns {object}
  */
@@ -180,13 +186,14 @@ function guestSettings(name) {
     "lxc",
     asUserArgs(name, ["node", "--input-type=module", "--eval", PRINT_SETTINGS]),
   );
-  mustPass(result.status, "Reading the check's settings in the container");
+  mustPass(result.status, "Reading the feature's settings in the container");
   return JSON.parse(result.stdout);
 }
 
 /**
  * Sets up the container, runs the check and inspects the container,
- * then runs the apply phase there.
+ * then, when the check passed and left nothing behind, runs the apply
+ * phase there.
  * @param {string} name  The container.
  * @param {string} workFolder  A local temporary folder.
  * @returns {Promise<boolean>} Whether both phases passed.
@@ -250,8 +257,8 @@ async function main() {
         '    questions by their opening words, such as "Stage 2 of 8". It',
         "    answers other prompts by their whole text, which it takes from",
         "    the tool's code. And it checks what some commands print, such as",
-        '    "holds 1 api key." from url, the command that prints the keyed',
-        "    url. Needs LXD.",
+        '    "holds 1 api key." from url, the command that prints the url with',
+        "    KEY in place of an api key. Needs LXD.",
         "npm run test:system -- --keep",
         "    The same, but keeps the container, which it names at the end,",
         "    to look inside with lxc exec <name> -- bash. Delete it after",

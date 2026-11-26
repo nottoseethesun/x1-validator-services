@@ -109,8 +109,9 @@ function missingPinnedKeys(host, home, keyFile, what) {
  * @param {object} host  The host.
  * @param {string} keyText  The key file nginx.org serves.
  * @returns {Buffer} A binary keyring holding the two pinned keys.
- * @throws {Error} When the key file lacks a pinned fingerprint, since
- *   apt would otherwise trust packages signed by a key nobody checked.
+ * @throws {Error} When the key file lacks a pinned fingerprint, since it
+ *   then isn't nginx.org's key file as the tool knows it. The export
+ *   already keeps every key but the pinned ones out of apt's keyring.
  */
 export function exportPinnedKeys(host, keyText) {
   return withGpgHome(host, (home) => {

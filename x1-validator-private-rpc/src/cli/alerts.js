@@ -10,7 +10,9 @@
  * The flag's restoring sends a notice of its own. A check whose verdict
  * is unknown keeps its last state. Messages that couldn't be sent stay
  * pending and go first at the next run, so none is lost. Each message
- * names the hostname and the event, never a secret.
+ * names the hostname and the event, never a secret. The state also
+ * records whether the last run's Cronitor check-in failed, for
+ * heartbeat.js, the check-in's module.
  */
 
 const MINUTE_MS = 60 * 1000;
@@ -41,6 +43,9 @@ export const FLAG_RESTORED =
  * @property {number} version  The file's format, 1.
  * @property {Object<string, CheckState>} checks  Each alerting check.
  * @property {string[]} pending  Messages not yet delivered.
+ * @property {boolean} checkInFailed  Whether the last run's Cronitor
+ *   check-in failed, so that under --quiet ensure logs the failures only
+ *   when the check-ins start failing.
  */
 
 /**
@@ -48,7 +53,7 @@ export const FLAG_RESTORED =
  * @returns {AlertState}
  */
 export function emptyAlertState() {
-  return { version: 1, checks: {}, pending: [] };
+  return { version: 1, checks: {}, pending: [], checkInFailed: false };
 }
 
 /**
@@ -151,7 +156,9 @@ function decideOne(check, was, rule, now) {
  * @param {boolean} run.flagRestored  Whether ensure put the flag back.
  * @returns {{messages: string[], next: AlertState}} The new messages,
  *   and the state to keep. The state carries over the last run's pending
- *   messages, which the new messages leave out.
+ *   messages, which the new messages leave out, and whether the last
+ *   run's Cronitor check-in failed, which ensure updates after its own
+ *   check-in.
  */
 export function decideAlerts(run) {
   const { checks, last, now, hostname, flagRestored } = run;
@@ -183,6 +190,11 @@ export function decideAlerts(run) {
   }
   return {
     messages,
-    next: { version: 1, checks: nextChecks, pending: last.pending },
+    next: {
+      version: 1,
+      checks: nextChecks,
+      pending: last.pending,
+      checkInFailed: last.checkInFailed === true,
+    },
   };
 }

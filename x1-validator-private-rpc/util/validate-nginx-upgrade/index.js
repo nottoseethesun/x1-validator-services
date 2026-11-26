@@ -9,13 +9,16 @@
  * progress, with a spinner beside each long step, and its outcome, and
  * answers Ctrl-C by stopping the check after the step it's on, which
  * still removes everything it added. This entry point checks the Node.js
- * running it, reads the command line and the settings, and joins the
- * two, once the person affirms the disclaimer. Run it as the validator's
- * account. It asks for sudo itself.
+ * running it, reads the command line, and loads ora, the package that
+ * draws the spinner. Once the person affirms the disclaimer, it reads
+ * the settings and joins steps.js and terminal.js. ora loads only after
+ * the check of the Node.js, since Node.js 20.0.0, the validator's
+ * default node, can't parse a module under it: loaded with the program,
+ * ora would end it with a SyntaxError before the check could say how to
+ * start it. Run it as the validator's account. It asks for sudo itself.
  */
 
 import { Command } from "commander";
-import ora from "ora";
 import { showDisclaimer } from "../../src/lib/disclaimer.js";
 import { createHost } from "../../src/lib/host.js";
 import {
@@ -47,16 +50,18 @@ the throwaway key through and turns a random one away. Then it removes
 everything it added.
 
 Run it as the validator's account, before installing the tool. It asks
-for sudo itself, and never touches the validator, port 443 or the
-firewall. Ctrl-C stops it after the step it's on, and it still removes
-everything it added.
+for sudo itself, and never touches the validator's software, port 443
+or the firewall. Ctrl-C stops it after the step it's on, and it still
+removes everything it added.
 `;
 
 const EXIT_CODES = `
 Exit codes:
-  0  an upgrade keeps the keyed url working
-  1  it didn't, the check couldn't run, or you declined the disclaimer.
-     The reasons are printed`;
+  0  an upgrade keeps the keyed url working, and the check removed
+     everything it added
+  1  the upgrade didn't keep the url working, the check couldn't run,
+     some of what it added is still in place, you stopped it with
+     Ctrl-C, or you declined the disclaimer. The reasons are printed`;
 
 /**
  * The examples, as the help shows them, before the exit codes.
@@ -92,8 +97,9 @@ function buildProgram() {
 }
 
 /**
- * Checks the Node.js running it, shows the disclaimer, then runs the
- * check and prints the outcome.
+ * Checks the Node.js running it, reads the command line and loads ora,
+ * then shows the disclaimer, runs the check and prints the outcome. The
+ * file's header says why ora loads only after the check of the Node.js.
  */
 async function main() {
   const problem = nodeVersionProblem(process.versions.node, {
@@ -107,6 +113,7 @@ async function main() {
     return;
   }
   buildProgram().parse(process.argv);
+  const { default: ora } = await import("ora");
   const host = createHost();
   const refusal = showDisclaimer(host);
   if (refusal !== "") {

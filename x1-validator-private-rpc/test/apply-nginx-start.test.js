@@ -14,8 +14,8 @@
  *   stops apply
  * - an `nginx -t` that refuses the configuration stops apply before
  *   systemd reads the drop-in, and before any start, restart or reload.
- *   Every file the run wrote goes back as it was, and what nginx refused
- *   is kept in the tool's error log.
+ *   The key check, nginx.conf and the drop-in go back as they were, and
+ *   what nginx refused is kept in the tool's error log.
  */
 
 import assert from "node:assert/strict";
@@ -132,7 +132,7 @@ test("an nginx that lets a path without a key, or a random key, through stops ap
   });
 });
 
-test("an nginx -t that refuses the configuration stops apply before systemd reads the drop-in and before any start, restart or reload, puts back every file the run wrote, and keeps what it refused in the tool's error log", async () => {
+test("an nginx -t that refuses the configuration stops apply before systemd reads the drop-in and before any start, restart or reload, puts back the key check, nginx.conf and drop-in as they were, and keeps what it refused in the tool's error log", async () => {
   // The one nginx call to refuse, set once apply has set the fake up.
   let refused = "";
   const { host, settings } = await appliedValidator({

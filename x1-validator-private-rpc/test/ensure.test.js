@@ -4,13 +4,14 @@
  * Tests ensure on a fake validator that apply set up:
  *
  * - nothing before apply
- * - the flag put back after an update, with one notice and one alert
+ * - the flag put back after an update, with one line in ensure's output
+ *   and one Telegram notice
  * - a run skipped while another command holds the start script's lock
  * - an update waited out, for as long as the settings say, while git
  *   holds its lock in the checkout they name, and while git works there,
  *   as through a slow fetch, unless the git hook runs ensure
- * - the reason the flag couldn't go back, in the alert, and no alert that
- *   it's back
+ * - the reason the flag couldn't go back, in the alert, and no notice
+ *   that it's back, also when the start script can't be written
  * - a public rpc's alert and its repeats, as often as the settings say
  * - the certificate's warning, as many days ahead as they say, and its
  *   alert's repeats, as often as they say
@@ -18,7 +19,7 @@
  * - an alert Telegram didn't take, sent at the next run
  * - a damaged alert state, set aside for a fresh one
  * - the Cronitor check-in, tried as many times as the settings say, and
- *   what --quiet prints
+ *   what --quiet prints, an outage of Cronitor's included
  * - every check passing with every setting changed, and an alert sent
  *   through the Telegram files in the folder they name for x1console
  * - in every run, no question and no sudo, and the hostname apply set
@@ -185,7 +186,7 @@ test("waits out an update in progress, unless the tool's git hook runs it", asyn
   // A run by hand says when to run it again, for a machine without cron.
   assert.ok(
     recent.lines.some((line) =>
-      line.endsWith(`gone unchanged for ${quietMs / 1000} seconds.`),
+      line.includes(`gone unchanged for ${quietMs / 1000} seconds,`),
     ),
     recent.lines.join("\n"),
   );
@@ -249,6 +250,41 @@ test("when the flag can't go back, the alert says why", async () => {
     telegramTexts(host).some((text) => text.endsWith(FLAG_RESTORED)),
     false,
   );
+});
+
+test("when the start script can't be written, as on a full disk, the alert says why, and the check-in still goes", async () => {
+  const { host, settings, scriptPath } = await appliedValidator(
+    { state: PRIVATE, telegram: true },
+    {},
+  );
+  host.files.set(scriptPath, scriptWithoutFlag());
+  host.modified.set(scriptPath, host.now());
+  await host.sleep(settings.startScriptQuietSeconds * 1000);
+  const full = "ENOSPC: no space left on device, write";
+  const writeUserFile = host.writeUserFile;
+  host.writeUserFile = (filePath, content, mode) => {
+    if (filePath === scriptPath) {
+      throw new Error(full);
+    }
+    writeUserFile(filePath, content, mode);
+  };
+  host.files.set(
+    featurePaths().envPath,
+    `${CRONITOR_URL}=https://cronitor.link/p/KEY/MONITOR\n`,
+  );
+  const checkedIn = [];
+  host.httpsGet = async (url) => {
+    checkedIn.push(url);
+    return { status: 200, body: "" };
+  };
+  const { code } = await ensure(host, settings);
+  assert.equal(code, 1);
+  assert.equal(host.files.get(scriptPath), scriptWithoutFlag());
+  const alert = telegramTexts(host).find((text) =>
+    text.includes("couldn't put it back"),
+  );
+  assert.ok(alert.endsWith(full), alert);
+  assert.equal(checkedIn.length, 1);
 });
 
 test("a public rpc alerts once, then again after the reminder interval", async () => {
@@ -440,6 +476,38 @@ test("checks in with Cronitor when .env holds its url, and tries as many times a
   };
   await ensure(host, settings);
   assert.equal(fetched.length, tries);
+});
+
+test("under --quiet, an outage of Cronitor's adds its failed tries to the output at its first run alone, and its end one line, as the alert state records", async () => {
+  const { host, settings } = await appliedValidator({ state: PRIVATE }, {});
+  const { envPath, alertStatePath } = featurePaths();
+  host.files.set(
+    envPath,
+    `${CRONITOR_URL}=https://cronitor.link/p/KEY/MONITOR\n`,
+  );
+  let status = 503;
+  host.httpsGet = async () => ({ status, body: "" });
+  const tries = settings.cronitorCheckInTries;
+  const first = await ensure(host, settings);
+  assert.deepEqual(
+    first.lines,
+    Array.from(
+      { length: tries },
+      (_, index) =>
+        `[heartbeat] Cronitor's check-in, try ${index + 1} of ${tries}, answered http ${status}.`,
+    ),
+  );
+  assert.equal(JSON.parse(host.files.get(alertStatePath)).checkInFailed, true);
+  const lasting = await ensure(host, settings);
+  assert.deepEqual(lasting.lines, []);
+  status = 200;
+  const back = await ensure(host, settings);
+  assert.deepEqual(back.lines, [
+    "[heartbeat] Cronitor's check-in went through again.",
+  ]);
+  const after = await ensure(host, settings);
+  assert.deepEqual(after.lines, []);
+  assert.equal(JSON.parse(host.files.get(alertStatePath)).checkInFailed, false);
 });
 
 test("with every setting changed, it reports every check without --quiet, nothing with it when all is well, and an alert through the Telegram files in the folder x1consoleDir names", async () => {

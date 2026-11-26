@@ -4,13 +4,18 @@
  * A stand-in for the real host (src/lib/host.js), with the same
  * functions, for tests. Commands go to a `respond` function the test
  * writes, which answers each one as the test's scenario needs. Files
- * live in a map, where writing a file or making a folder also creates
- * every missing folder above it, and removing a folder that still holds
- * anything fails, as on the real host. A locked folder stays locked
- * until its release, so a second lock on it fails. Requests go to
- * functions the test gives. Every call is recorded in order, so a test
- * can check what was done and in what order. Nothing touches the
- * machine.
+ * live in a map. writeRootFile, writeUserFile, makeRootDir and
+ * makeUserDir each also create every missing folder above their path.
+ * The real host's functions do the same, but for writeUserFile, which
+ * fails when the file's folder is missing. removeRootDir fails on a
+ * folder that still holds anything, as on the real host. A locked folder
+ * stays locked until its release, so a second lock on it fails. Requests
+ * go to functions the test gives. Each command, each lock and its
+ * release, and each call of a function that writes, makes or removes a
+ * file or folder is recorded in order, in `calls`, so a test can check
+ * what was done and in what order. Three such functions aren't recorded:
+ * writeText, makeTempDir and removeUserTree. Nor are reads, requests or
+ * the clock. Nothing touches the machine.
  */
 
 import path from "node:path";
@@ -108,7 +113,7 @@ export function sudoCalls(calls) {
  * @param {Object<string, string[]>} [scenario.dns]  Each hostname's
  *   ipv4 addresses. A name missing here doesn't resolve.
  * @param {string[]} [scenario.addresses]  The machine's own addresses.
- * @returns {object} The fake host, with `calls` listing every call.
+ * @returns {object} The fake host, with `calls` listing the calls it records, in order.
  */
 export function createFakeHost({
   respond,
@@ -217,7 +222,7 @@ export function createFakeHost({
         files.delete(folder);
       }
     }),
-    // Unrecorded, like makeTempDir: it changes only the account's files.
+    // Unrecorded, like makeTempDir and writeText.
     removeUserTree: (folder) => removeTree(files, folder),
     // A test takes a lock itself to play another command that holds it.
     lockFolder: (folder) => {

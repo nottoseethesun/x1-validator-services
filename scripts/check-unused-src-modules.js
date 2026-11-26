@@ -19,7 +19,9 @@ async function main() {
   scriptProgram(
     "scripts/check-unused-src-modules.js",
     "Fails when a module under a feature's src/ or util/ is loaded by no " +
-      "entry point, only by tests. The gate and npm run lint run it.",
+      "entry point, only by tests. The gate, npm run check, which must pass " +
+      "before every commit, runs it, and so does npm run lint, which the " +
+      "git pre-commit hook runs.",
     {
       examples: [
         "node scripts/check-unused-src-modules.js",

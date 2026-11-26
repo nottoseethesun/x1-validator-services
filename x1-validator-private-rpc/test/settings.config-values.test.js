@@ -1,12 +1,12 @@
 /**
  * @file x1-validator-private-rpc/test/settings.config-values.test.js
  * @description
- * Tests the shipped settings, before any other test runs: every shipped
- * value passes its schema, every setting has a type or range rule, and
- * the shipped file holds exactly the settings the schema requires,
- * besides its notes, the keys that start with `_`. A
- * wrong shipped value would break whatever reads it. Run first, these
- * tests name the cause.
+ * Tests the shipped settings: every shipped value passes its schema,
+ * every setting has a type of its own or a `$ref` to a shared
+ * definition, and the shipped file holds exactly the settings the schema
+ * requires, besides its notes, the keys that start with `_`. A wrong
+ * shipped value would break whatever reads it. The gate runs these tests
+ * before every other test, so they name the cause.
  */
 
 import assert from "node:assert/strict";
@@ -54,7 +54,7 @@ test("the example override, merged over the shipped defaults, passes", () => {
   );
 });
 
-test("every setting the schema accepts has a type or range rule", () => {
+test("every setting the schema accepts has a type of its own or a $ref to a shared definition", () => {
   const schema = shipped("private-rpc.schema.json");
   for (const [name, rule] of Object.entries(schema.properties)) {
     assert.ok(

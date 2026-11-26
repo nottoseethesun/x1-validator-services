@@ -34,8 +34,9 @@
  * flag in the running validator, and where the rpc listens.
  *
  * With --quiet, as from cron, it prints only when it changes something
- * or sends an alert, so a lasting problem adds no line per minute to the
- * log.
+ * or sends an alert, and when its Cronitor check-in starts failing or
+ * goes through again, so a lasting problem adds no line per minute to
+ * the log. Its alert state records whether the last check-in failed.
  */
 
 import path from "node:path";
@@ -58,7 +59,9 @@ const PRIVACY_CHECKS = ["flag-in-script", "flag-running", "rpc-private"];
 
 /**
  * Puts the flag back into the start script when it's missing, unless an
- * update may be under way.
+ * update may be under way. A script it can't read, edit or write, such
+ * as one on a full disk, gives "failed" with the reason, so ensure's
+ * checks, alerts and Cronitor check-in still run.
  * @param {object} host  The host.
  * @param {object} values  What the restore needs.
  * @param {string} values.scriptPath  The start script.
@@ -98,12 +101,19 @@ export function restoreFlag(host, values) {
       detail:
         "x1console may be updating, so ensure left the start script alone. " +
         "The cron job tries again every minute. Without it, run ensure " +
-        "again once the update is done and the script has gone unchanged " +
-        `for ${seconds} seconds.`,
+        `again once no git command works in ${x1consoleDir}, the script has ` +
+        `gone unchanged for ${seconds} seconds, and ${lockPath} is gone. If ` +
+        "the lock file stays while no git command works there, a git that " +
+        "crashed left it, so delete it.",
     };
   }
-  const mode = host.fileMode(scriptPath);
-  host.writeUserFile(scriptPath, edit.text, mode);
+  try {
+    const mode = host.fileMode(scriptPath);
+    host.writeUserFile(scriptPath, edit.text, mode);
+  } catch (error) {
+    // The flag-in-script check's alert carries this reason.
+    return { status: "failed", detail: error.message };
+  }
   return {
     status: "restored",
     detail: `Put --private-rpc back into ${scriptPath}.`,
@@ -123,10 +133,25 @@ function readAlertState(host, alertStatePath) {
   try {
     const text = host.readText(alertStatePath);
     const state = JSON.parse(text);
-    return isAlertState(state) ? state : emptyAlertState();
+    // A field added since the file was written starts as an empty state's.
+    return isAlertState(state)
+      ? { ...emptyAlertState(), ...state }
+      : emptyAlertState();
   } catch {
     return emptyAlertState();
   }
+}
+
+/**
+ * Writes the alert state whole, making its folder when it's missing.
+ * @param {object} host  The host.
+ * @param {string} alertStatePath  Its file.
+ * @param {import("./alerts.js").AlertState} state  The state.
+ */
+function writeAlertState(host, alertStatePath, state) {
+  host.makeUserDir(path.dirname(alertStatePath), 0o755);
+  const text = `${JSON.stringify(state, null, 2)}\n`;
+  host.writeUserFile(alertStatePath, text, 0o644);
 }
 
 /**
@@ -247,20 +272,25 @@ export async function runEnsure(run) {
     flagRestored: flag?.status === "restored",
   });
   next.pending = await sendAlerts(run, last.pending, messages);
-  host.makeUserDir(path.dirname(paths.alertStatePath), 0o755);
-  const alertText = `${JSON.stringify(next, null, 2)}\n`;
-  host.writeUserFile(paths.alertStatePath, alertText, 0o644);
+  writeAlertState(host, paths.alertStatePath, next);
   if (flag?.status === "restored") {
     log.info("ensure", flag.detail);
   }
   if (options.quiet !== true) {
     printReport(log, privateRpc, checks);
   }
-  await checkIn(host, {
+  const checkedIn = await checkIn(host, {
     envPath: paths.envPath,
     log,
     timeoutMs: settings.requestTimeoutSeconds * 1000,
     tries: settings.cronitorCheckInTries,
+    quiet: options.quiet === true,
+    failedBefore: next.checkInFailed,
   });
+  const checkInFailed = checkedIn === false;
+  if (checkInFailed !== next.checkInFailed) {
+    // Written again only on a change, so most runs write the state once.
+    writeAlertState(host, paths.alertStatePath, { ...next, checkInFailed });
+  }
   return checks.some((check) => check.status === "problem") ? 1 : 0;
 }

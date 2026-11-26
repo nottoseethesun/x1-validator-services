@@ -145,7 +145,7 @@ test("after a later apply moves nginx's list, undo-apply removes the new list an
   });
   assert.equal(await runApply(applying), 0, applying.lines.join("\n"));
   const mapPath = settings.hashedApiKeysMapPath;
-  const top = path.dirname(path.dirname(mapPath));
+  const top = path.dirname(path.dirname(path.dirname(mapPath)));
   assert.equal(host.exists(mapPath), true);
   const { code, lines } = await undoApply(host, settings);
   assert.equal(code, 0, lines.join("\n"));

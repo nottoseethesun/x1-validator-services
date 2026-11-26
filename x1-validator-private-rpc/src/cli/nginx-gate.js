@@ -129,8 +129,9 @@ export async function waitForGate(host, target, waitMs, pollMs) {
  * try, and a path without a key, or with a random one, gets a 403.
  * @param {object} host  The host.
  * @param {Target} target  Where to ask.
- * @param {string} key  An api key nginx holds, or "" when the caller has
- *   none in hand, since the tool keeps only the keys' hashes.
+ * @param {string} key  An api key whose hash is in nginx's list, or ""
+ *   when the caller has none in hand, since the tool keeps only the keys'
+ *   hashes.
  * @returns {Promise<string[]>} What failed, or nothing when all passed.
  */
 export async function requestPathProblems(host, target, key) {

@@ -2,17 +2,22 @@
  * @file x1-validator-private-rpc/test/apply-fails-part-way.test.js
  * @description
  * Tests apply's record when apply fails part way, and undo-apply after
- * it, on a fake validator. apply records each change of its nginx stage
- * just before making it. So a run that dies during apt's install, or
- * fails while writing nginx.org's repository files, leaves every change
- * on record. After a run that failed at either point, or while waiting
- * for the certificate, with a message that says where to look for why,
- * undo-apply leaves the machine as apply found it,
- * once the operator has purged the nginx it leaves, and skips a package
- * on record that apt never installed. On a first install, a
- * configuration nginx -t refuses leaves none of the files the run wrote
- * for nginx, is kept in the tool's error log, and once the operator
- * purges nginx, undo-apply takes all back.
+ * it, on a fake validator. apply's second stage, which installs nginx,
+ * records each of nginx.org's repository files just before writing it,
+ * and each package just before apt installs that package. So a run that
+ * dies during apt's install, or fails while writing nginx.org's
+ * repository files, leaves every change on record. After a run that
+ * failed at either point, or while waiting for the certificate, with a
+ * message that says where to look for why, undo-apply leaves the machine
+ * as apply found it. Since undo-apply never removes a package, undoing a
+ * run that got as far as installing nginx takes two runs of undo-apply,
+ * with the operator's purge of nginx between them. undo-apply takes each
+ * package on record that apt never installed off the record, and says
+ * that nginx isn't installed and how to purge what an apt remove may have
+ * left. On a first install, a configuration nginx -t refuses leaves none
+ * of the key check, nginx.conf and drop-in that the run wrote. The
+ * refused configuration is kept in the tool's error log, and the same two
+ * runs of undo-apply leave the machine as apply found it.
  */
 
 import assert from "node:assert/strict";
@@ -70,8 +75,8 @@ function machineOf(host, state) {
 /**
  * Runs apply, which must fail, then undo-apply, which must leave the
  * machine as apply found it. When apply got as far as installing nginx,
- * undo-apply leaves it, so the operator's purge of nginx, and a second
- * undo-apply, come first.
+ * undo-apply leaves it, so the operator's purge of nginx, then a second
+ * undo-apply, follow before the machine is compared.
  * @param {{host: object, state: object, settings: object}} validator
  *   The fake validator.
  * @param {string} failure  Part of the message apply must fail with.
@@ -113,7 +118,7 @@ async function failThenUndo(
   return { names, lines };
 }
 
-test("on a first install, a configuration nginx -t refuses leaves none of the files the run wrote for nginx, is kept in the tool's error log, and once the operator purges nginx, undo-apply leaves the machine as apply found it", async () => {
+test("on a first install, a configuration nginx -t refuses leaves none of the key check, nginx.conf and drop-in that the run wrote, is kept in the tool's error log, and once the operator purges nginx, undo-apply leaves the machine as apply found it", async () => {
   // The one nginx call to refuse, set once the fake's settings are known.
   let refused = "";
   const validator = freshValidator({
@@ -214,7 +219,7 @@ test("after a run that waited in vain for the certificate, and once the operator
   );
 });
 
-test("packages on record that apt never installed are skipped by undo-apply", async () => {
+test("undo-apply takes the packages on record that apt never installed off the record, and says that nginx isn't installed and how to purge what an apt remove may have left", async () => {
   const validator = freshValidator({
     respond: (call) =>
       call.command === "env" && call.args.includes("install")

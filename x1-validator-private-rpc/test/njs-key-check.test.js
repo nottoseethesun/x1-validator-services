@@ -3,10 +3,11 @@
  * @description
  * Tests the api-key check that nginx runs, loaded into Node.js as it is:
  * which request paths it forwards and which it refuses, the hash it
- * gives nginx's map, the url it gives the access log, with `<key>`
- * wherever a key or most of one is, and what its nginx handlers do. Its
- * copy of the key's pattern must be the one the rest of the tool uses,
- * and its hash the one the tool writes into nginx's list.
+ * gives nginx's map, the url it gives the access log, with `<key>` in
+ * place of every run of hex digits half a key long or more, and what its
+ * nginx handlers do. Its copy of the key's pattern must be the one the
+ * rest of the tool uses, and its hash the one the tool writes into
+ * nginx's list.
  */
 
 import assert from "node:assert/strict";

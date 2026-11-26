@@ -52,7 +52,7 @@ Then it runs these, in this order:
 | Lint (Markdown) | `markdownlint-cli2` | Any rule broken |
 | Format (JavaScript), Format (json), Format (yaml) | Prettier, in check mode | A file Prettier would change |
 | Lint (GitHub Actions) | `actionlint` | A mistake in a workflow |
-| Dead code (unused files) | `knip`, files only | A file nothing reaches |
+| Dead code (unused files) | `knip`, files only | A file nothing reaches, but never a file `knip` counts as an entry point, every test helper among them |
 | Dead code (modules only tests load) | `scripts/check-unused-src-modules.js` | A source module no entry point loads |
 | Security lint | ESLint, with `eslint-security.config.js` | Any error or warning |
 | Secret scan | `secretlint` | A credential in the files |
@@ -68,11 +68,11 @@ Every stage but the tests, the coverage verdict and code-fuzzing is written down
 - `npm run lint` runs every check but the tests and the audits of the dependencies: the lints of JavaScript, Markdown and GitHub Actions, the format checks, the two checks for dead code, the security lint and the secret scan. The `git` pre-commit hook runs it before each commit.
 - `scripts/format.js`, behind `npm run format` and `format:check`, runs Prettier on the JavaScript: `format` when the lint reports unformatted JavaScript, `format:check` to list the files without changing them.
 - `scripts/audit.js` runs one of the gate's four security checks alone, such as to recheck a fix, through four targets: `audit:security` the security lint, `audit:secrets` the secret scan, `audit:deps` the audit of the shipped dependencies, and `audit:deps:all` the audit of every dependency. Each target fails on what its check finds. The gate fails on the first three, and only saves the fourth's report. The Security Audit workflow runs the first three on GitHub.
-- `scripts/check-unused-files.js`, behind `npm run knip:files`, lists the files nothing imports, which the gate fails on. Run it alone, such as after moving or deleting a file.
+- `scripts/check-unused-files.js`, behind `npm run knip:files`, runs the gate's `knip` stage alone, such as after moving or deleting a file.
 
 ### Node.js Versions
 
-The whole project, its features and its tools, supports one range of Node.js versions: 24 or newer, as `engines`, `>=24`, in `package.json` says. CI tests the two long-term-support majors in that range, on the newest release of each: the newest major, 26, and the one two majors before it, 24. Every script and every `npm` command runs on both. On a validator, the features run on 24, the older major, since a validator can't always move to the newest at once. They run beside `x1console`'s own Node.js 20.0.0. No tool pins a version, and `engines` names no minor, since no tool needs a later release than 24.0.0. Every script reads that minimum from `engines`, through the feature's `src/lib/node-version.js`, which the feature's programs use too, so the two can't drift. On an older version, a script stops. eslint-plugin-n reads the minimum from `engines` too, and the lint fails code that uses an api or syntax newer than that. When a newer major becomes long-term-support, `engines`, the Node.js versions in the three workflows, CI, Security Audit and System Test, and the docs move up together, and CI's jobs keep their names, as [The Pre-Commit Hook and CI](#the-pre-commit-hook-and-ci) says.
+The whole project, its features and its tools, supports one range of Node.js versions: 24 or newer, as `engines`, `>=24`, in `package.json` says. CI tests the two long-term-support majors in that range, on the newest release of each: the newest major, 26, and the one two majors before it, 24. Every script and every `npm` command runs on both. On a validator, the features run on 24, the older major, since a validator can't always move to the newest at once. They run beside Node.js 20.0.0, on which `x1console`, an outside program that installs an X1 validator and starts it, runs its own scripts. No tool pins a version, and `engines` names no minor, since no tool needs a later release than 24.0.0. Every script reads that minimum from `engines`, through the feature's `src/lib/node-version.js`, which the feature's programs use too, so the two can't drift. On an older version, a script stops. eslint-plugin-n reads the minimum from `engines` too, and the lint fails code that uses an api or syntax newer than that. When a newer major becomes long-term-support, `engines`, the Node.js versions in the three workflows, CI, Security Audit and System Test, and the docs move up together, and CI's jobs keep their names, as [The Pre-Commit Hook and CI](#the-pre-commit-hook-and-ci) says.
 
 ### Reports
 
@@ -82,13 +82,13 @@ The gate writes its reports to `tmp/check/`, which `git` ignores: `lcov.info`, t
 
 ## File Lists
 
-`scripts/lint-targets.js` holds the file lists the checks share: ESLint's, Prettier's for JavaScript, the security lint's, the secret scan's, Markdown lint's, the dead-code checks', the test runner's and the coverage report's. Prettier's json and yaml globs sit in `scripts/_gate-stages.js`. `knip` adds the scripts, the lint rules and its project glob, in `knip.config.js`.
+`scripts/lint-targets.js` holds the file lists the checks share: ESLint's, Prettier's for JavaScript, the security lint's, the secret scan's, Markdown lint's, the dead-code checks', the test runner's and the coverage report's. Prettier's json and yaml globs sit in `scripts/_gate-stages.js`. In `knip.config.js`, `knip` adds its project glob, the scripts, the lint rules and every JavaScript file in a test folder's `helpers/`.
 
-Every list is built from `FEATURES`, the names of the feature folders, so a new feature joins every check by being named there. It also needs a list of code-fuzzing changes, its `test/code-fuzzing.json`, with at least one entry, or the gate's last stage fails. Within a feature, the lists rely on three kinds of file, which `scripts/_project-files.js` finds:
+Every list that covers a feature's files is built from `FEATURES`, the names of the feature folders, so a new feature joins every check by being named there. It also needs a list of code-fuzzing changes, its `test/code-fuzzing.json`, with at least one entry, or the gate fails: `test/code-fuzzing.test.js` checks each feature's list. Within a feature, the lists rely on three kinds of file, which `scripts/_project-files.js` finds:
 
 - **Entry points**: the programs a person or a scheduler starts by their path. They sit directly in a feature's `src/` or `util/`, or in a `util/` tool's folder, as `index.js`.
 - **Modules**: the files entry points load, in folders under `src/`, and a tool's other files.
-- **Installed files**: files a feature copies into another program, such as `nginx`'s njs module. No entry point loads them.
+- **Installed files**: files a feature copies into another program, such as the check of each request's api key, a JavaScript file that `nginx` runs through its njs module. No entry point loads them.
 
 ---
 
@@ -106,7 +106,7 @@ Every list is built from `FEATURES`, the names of the feature folders, so a new 
 
 Two checks, since neither catches everything alone:
 
-- **`knip`**, files only, fails on a file nothing imports. It counts tests as entry points, so it passes a module that only tests load.
+- **`knip`**, files only, fails on a file nothing imports. It counts tests and every test helper as entry points, so it passes a module that only tests load, and a helper nothing uses.
 - **`scripts/check-unused-src-modules.js`** starts from the entry points alone, with madge, and fails on every source module it never reaches: code that runs in the tests and never on the validator.
 
 An exported function nothing imports is fine. Only whole files are judged.
@@ -119,7 +119,7 @@ Tests are files ending in `.test.js` in a test folder that `scripts/lint-targets
 
 Tests of the shipped settings end in `.config-values.test.js`, and the gate runs them before the rest. A bad shipped value would make many tests fail, and running these first names the cause.
 
-A test that never finishes, such as one that waits for a promise that never resolves, would hold the whole run open: from Node.js 24 on, the test runner keeps a test file's process running until each of its tests has finished. So the gate's test stages and `npm test` give each test a minute, with the runner's option `--test-timeout=60000`, which `scripts/_test-files.js` holds. A test still running after a minute fails, by name, and the rest of its file runs. The runner's summary counts such a test as cancelled, not failed, and lists it among the failing tests, with "test timed out after 60000ms". The limit is for each test, not for a `describe` group or a file, and the slowest test takes under four seconds on CI. A test file that leaves a timer running never exits after its last test, and no test's limit can end that. In CI, the check job's 20-minute cap does, as [The Pre-Commit Hook and CI](#the-pre-commit-hook-and-ci) says. Locally, the gate waits until you stop it with Ctrl-C, so a gate that never finishes points to a test file still running.
+A test that never finishes, such as one that waits for a promise that never resolves, would hold the whole run open: from Node.js 24 on, the test runner keeps a test file's process running until each of its tests has finished. So the gate's test stages and `npm test` give each test a minute, with the runner's option `--test-timeout=60000`, which `scripts/_test-files.js` holds. A test still running after a minute fails, by name, and the rest of its file runs. The runner's summary counts such a test as cancelled, not failed, and lists it among the failing tests, with "test timed out after 60000ms". The limit is for each test, not for a `describe` group or a file. The slowest test takes about four seconds on CI. No test's limit can end two kinds of hang. A test that holds the thread, such as one in a synchronous loop that never ends, or one blocked in a `spawnSync` whose program never exits, keeps the limit's timer from firing, so the runner can't stop it. A test file that leaves a timer running never exits after its last test. In CI, the check job's 20-minute cap ends either, as [The Pre-Commit Hook and CI](#the-pre-commit-hook-and-ci) says. Locally, the gate waits until you stop it with Ctrl-C, so a gate that never finishes points to a test file still running.
 
 Every test follows the same rules:
 
@@ -134,7 +134,7 @@ Every test follows the same rules:
 
 Tests can all pass and still miss the bugs they're meant to catch. The gate's last stage, code-fuzzing, checks that they don't. Where the usual fuzzing feeds a program random input, code-fuzzing changes the code itself, from a fixed list: small changes to a feature's code, of the kind a slip in an edit would make, each paired with the test file that must fail when the change is made. When a test file still passes with its change made, that test has a hole, and the gate fails.
 
-Each feature lists its changes in its `test/code-fuzzing.json`. A new feature needs that list too, with at least one entry, or the stage fails. Each entry has:
+Each feature lists its changes in its `test/code-fuzzing.json`. Each entry has:
 
 - `name`: what the change does, in a few words
 - `file`: the file it changes, from the feature's folder
@@ -169,26 +169,26 @@ The tests above hand the feature a stand-in for the system, so none of them show
 3. It copies in `package.json`, the lockfile and the feature's folder, without the operator's own settings, and installs the runtime dependencies, as a validator's install does.
 4. It runs the tool's commands as the container's ordinary user, who has `sudo`, as a validator's account does.
 
-A command that asks anything runs in a real terminal, which the `script` program makes, and its prompts are answered as they appear. One is the disclaimer: every run that can change the system shows it first, in a dialog `whiptail` draws, and goes on only once Affirm is chosen. Decline has the focus at first, and Affirm sits to its left. So once `whiptail` draws the Decline button, the test presses the left arrow and Enter.
+A command that asks anything runs in a real terminal, which the `script` program makes, and its prompts are answered as they appear. One is the disclaimer: every run that can change the system shows it first, in a dialog `whiptail` draws, and goes on only once Affirm is chosen. The exception is `ensure`, the tool's command that checks every part of the setup. It also puts back `--private-rpc`, the flag that keeps the rpc private, into `x1console`'s start script after an `x1console` update takes it out. A `cron` job runs `ensure` every minute on a validator, and the tool's `git` hook, in `x1console`'s folder, runs it when an update's `git pull` brings new commits. Neither has anybody at the terminal to answer, so no run of `ensure` shows the disclaimer, a run by hand included. Decline has the focus at first, and Affirm sits to its left. So once `whiptail` draws the Decline button, the test presses the left arrow and Enter.
 
 Then it runs two phases:
 
 - **The `nginx` upgrade check.** It runs `util/validate-nginx-upgrade/index.js`, the feature's standalone tool that proves, with a throwaway api key, that an `apt` upgrade of `nginx` keeps the feature's url working. It must pass, and must leave the container as it found it.
-- **`apply`, which sets the feature up, and the commands after it**, in `scripts/_lxd-apply-phase.js`. Pebble, Let's Encrypt's test server, stands in for Let's Encrypt, and a stand-in rpc plays the validator's. `x1console`, which starts the validator, is a `git` checkout that holds the start script the tool edits. In the test, a checkout stands in for it, at the path the settings give, cloned from a local repository that stands in for `x1console`'s on GitHub. After `apply`, it runs every other command. `ensure`, which a `cron` job runs every minute on a validator, puts back `--private-rpc`, the start script's flag that keeps the rpc private, after an `x1console` update takes it out, and checks every part. `url` prints the url's https and wss forms. `add-api-key` and `remove-api-key` make and remove api keys, and the key count check, `ensure-there-is-at-least-one-rpc-api-key`, alerts when no key is left. `turn-off-private-rpc` and `turn-on-private-rpc` switch the rpc between public and private, and `undo-apply` takes back what `apply` did. The phase checks:
+- **`apply`, which sets the feature up, and the commands after it**, in `scripts/_lxd-apply-phase.js`. Pebble, Let's Encrypt's test server, stands in for Let's Encrypt, and a stand-in rpc plays the validator's. `x1console` is a `git` checkout that holds the start script the tool edits. In the test, a checkout stands in for it, at the path the settings give, cloned from a local repository that stands in for `x1console`'s on GitHub. The `crontab` of the container's user holds one job of Autopilot, the `cron` jobs `x1console` can install to look after the validator. After `apply`, the test runs every other command. `url` prints the url's https and wss forms. `add-api-key` and `remove-api-key` make and remove api keys, and the key count check, `ensure-there-is-at-least-one-rpc-api-key`, alerts when no key is left. A second `cron` job of the tool's, beside `ensure`'s, runs the key count check. `turn-off-private-rpc` and `turn-on-private-rpc` switch the rpc between public and private, and `undo-apply` takes back what `apply` did. The phase checks:
   - the first key `apply` shows, the saved password `systemd-creds` holds, the request path, a random key's 403, the firewall rule, the rate limit, and that `nginx`'s logs hold no key, show `<key>` in its place, and keep the mode nginx.org's package gives them: 640, owner `nginx`, group `adm`
   - that `nginx`'s main process has its own read-only `/dev`, and still serves after a log reopen
   - `ensure`'s failure while the rpc is still public, and every one of its verdicts after the validator's restart
-  - the flag put back by the tool's `git` hook, when `git stash` and a `git pull` that brings a new commit play an Update X1 Console, and the key still working after a restart of `nginx`
+  - the flag put back by the tool's `git` hook, when `git stash` and a `git pull` that brings a new commit play an Update X1 Console, `x1console`'s menu entry for its updates, and the key still working after a restart of `nginx`
   - `nginx`'s log folder deleted, then made again by the drop-in before a restart of `nginx`, then deleted again, and made again by `add-api-key` before its reload
   - two keys from `add-api-key`, then `remove-api-key` on one of them: it gets 403 and the rest still work
   - the connections the removed key held open through its removal, which `x1-validator-private-rpc/test/helpers/reload-probe.js` opens. An http/1.1 one kept alive and an http/2 one no longer answer for it, and a websocket closes within the old worker's time limit.
-  - both commands that switch private rpc, and a later `apply` that asks nothing
+  - both commands that switch private rpc, and a later `apply` that asks for no password
   - `undo-apply` answered no, which keeps the keys and the saved password, and the next `apply`, which hands `nginx` the same keys
-  - that the last `undo-apply`, answered yes, leaves `nginx` installed, stopped and masked, and says how to purge it
-  - that once the test purges `nginx`, a second `undo-apply` leaves the container as `apply` found it, with Autopilot's job still in the `crontab` and the start script still executable
+  - that `undo-apply`, answered yes, leaves `nginx` installed, stopped and masked, and says how to purge it
+  - that once the test purges `nginx`, `undo-apply` run again leaves the container as `apply` found it, with Autopilot's job still in the `crontab` and the start script still executable
   - last, that a firewall rule for port 443 with a comment, added while `ufw` is off, survives an `apply` stopped after its firewall stage, then `undo-apply`, a purge of `nginx` and `undo-apply` again
 
-Both phases decide what counts as left behind the same way, through `scripts/_lxd.js`. A leftover is anything watched that exists after a phase and didn't before it. What's watched comes from the app: every absolute path in the settings the tool loads in the container, nginx.org's repository files, `nginx`'s log folder, the folders above them all, and the `nginx` package and its user. The second phase adds the tool's own paths in the user's home and in the feature's folder. It also checks that the firewall rule, both `cron` lines and `nginx`'s mask are gone, and that `x1console`'s checkout is as committed. It reads the firewall rule from the rules the `ufw` command added, which `ufw` lists even while it's off, as it is in the container.
+Both phases decide what counts as left behind the same way, through `scripts/_lxd.js`. A leftover is anything watched that exists after a phase and didn't before it. What's watched comes from the app: every absolute path in the settings the tool loads in the container, nginx.org's repository files, `nginx`'s log folder, the folders above them all, and the `nginx` package and its user. The second phase adds the tool's own paths in the user's home and in the feature's folder. It also checks that the firewall rule, the tool's two `cron` lines and `nginx`'s mask are gone, and that `x1console`'s checkout is as committed. It reads the firewall rule from the rules the `ufw` command added, which `ufw` lists even while it's off, as it is in the container.
 
 The test deletes the container at the end. With `--keep`, it stays, for a look inside.
 

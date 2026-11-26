@@ -10,7 +10,7 @@ x1-validator-private-rpc's `apply` command, which makes the validator's rpc priv
 | `apt/nginx.sources.example` | nginx.org's `apt` repository |
 | `apt/99nginx.example` | The `apt` pin that prefers nginx.org's packages |
 | `cron/x1-validator-private-rpc-ensure.cron.example` | The `crontab` line that runs `ensure` every minute. `ensure` is the tool's command that keeps the rpc private: it puts `--private-rpc` back into `x1console`'s start script after an `x1console` update takes it out, and sends the tool's Telegram alerts. |
-| `cron/x1-validator-private-rpc-api-key-count.cron.example` | The `crontab` line that checks every few hours that `nginx` holds an api key |
+| `cron/x1-validator-private-rpc-api-key-count.cron.example` | The `crontab` line that checks every few hours that `nginx`'s list of the api keys' hashes isn't empty |
 | `git-hooks/post-merge.example` | The tool's `git` hook in `x1console`'s checkout, which runs `ensure` after an update |
 
 The placeholders:
@@ -22,7 +22,7 @@ The placeholders:
 
 Each example but `nginx`'s list of hashes opens with a short header that says what it is. The list has none, since `apply` writes it as hash lines alone.
 
-The sections below show where each file goes, for a set-up by hand. Replace the placeholders with your own values, and run the copy commands from this feature's folder, `~/x1-validator-services/x1-validator-private-rpc`. `apply` also installs the key check, the njs file `nginx` runs on each request. It has no example here, since the tool ships it as is. If `apply` finds an `nginx` configuration, a `systemd` drop-in or a key check that it didn't write, it stops, and says to move the file away. So don't leave such a copy on a machine where you'll run `apply`.
+The sections below show where each file goes, for a set-up by hand. Replace the placeholders with your own values, and run the copy commands from this feature's folder, `~/x1-validator-services/x1-validator-private-rpc`. `apply` also installs the key check, the njs file `nginx` runs on each request. It has no example here, since the tool ships it as is. If `apply` finds an `nginx` configuration, a `systemd` drop-in or a key check that it didn't write, it stops, and says to move the file away. But a file that holds just what `apply` would write doesn't stop it, and a copy of the key check or of the drop-in made as the sections below show holds just that. `apply` then leaves the file as it is, and so does a later run of `undo-apply`, the tool's command that takes back only what `apply` changed. So don't leave such a copy on a machine where you'll run `apply`.
 
 ## `nginx`
 

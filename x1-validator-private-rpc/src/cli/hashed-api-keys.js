@@ -26,9 +26,9 @@
  *
  * nginx's list, which the hashedApiKeysMapPath setting names, has the
  * form src/lib/key-hash-map.js gives. The tool writes it from the file's
- * hashes, and counts its lines to tell whether nginx holds any key at
- * all. writeMap and ensure-there-is-at-least-one-rpc-api-key share that
- * count.
+ * hashes, and counts its lines to tell whether the list holds any hash
+ * at all. writeMap and ensure-there-is-at-least-one-rpc-api-key share
+ * that count.
  *
  * Each command that changes the file or the list holds the api keys'
  * lock, from its read of the file to its last write, so no two of them

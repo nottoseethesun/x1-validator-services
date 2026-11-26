@@ -24,17 +24,19 @@
  * nginx then starts when it's stopped. A running nginx reloads when a
  * file changed, which keeps it answering throughout. It restarts instead
  * when the drop-in changed, since systemd applies the drop-in only at a
- * start, or when it doesn't answer the gate page. With nothing
- * changed and the gate page answering, the stage leaves nginx as it is.
- * The stage waits for the certificate, and checks the whole request path
- * from the server: the gate page says ok, the keyed path reaches the rpc
- * when the fourth stage made a key, and a path without a key, or with a
- * random one, gets a 403. It runs the checks again until they pass, for up
- * to certificateWaitSeconds, since a reload takes a moment, while nginx
- * still checks against its old list of keys. Before the first start it
- * records the certificates' folders. `nginx -t` makes those first, so
- * apply records them as found. They stay with nginx, which undo-apply
- * never removes, and a purge of nginx removes them at the shipped paths.
+ * start, or when it doesn't answer the gate page. With nothing changed
+ * and the gate page answering, the stage skips nginx -t and leaves nginx
+ * as it is. When the fourth stage made no key either, the stage ends
+ * there. Otherwise it waits for the certificate, and checks the whole
+ * request path from the server: the gate page says ok, the keyed path
+ * reaches the rpc when the fourth stage made a key, and a path without a
+ * key, or with a random one, gets a 403. It runs the checks again until
+ * they pass, for up to certificateWaitSeconds, since a reload takes a
+ * moment, while nginx still checks against its old list of keys. Before
+ * the first start it records the certificates' folders. `nginx -t` makes
+ * those first, so apply records them as found. They stay with nginx,
+ * which undo-apply never removes, and a purge of nginx removes them at
+ * the shipped paths.
  */
 
 import path from "node:path";
@@ -108,8 +110,9 @@ function nginxFiles(context) {
  * @param {{name: string, path: string, text: string, mode: string}} file
  *   The file.
  * @returns {Promise<boolean>} Whether it wrote the file.
- * @throws {Error} When the file exists and apply didn't write it, since
- *   writing over it would lose a file someone else made.
+ * @throws {Error} When the file exists, differs from what apply would
+ *   write, and apply didn't write it, since writing over it would lose a
+ *   file someone else made.
  */
 async function writeFile(context, file) {
   const { host, record, change } = context;
@@ -247,10 +250,15 @@ function keepRefused(context, reason, takenBack) {
 }
 
 /**
- * Takes back a configuration nginx refused. Each file this run wrote goes
- * back as it was, or goes when the run made it new, so the files on disk
- * match what the running nginx and systemd run. Then it keeps what was
- * refused in the tool's error log, and stops the run.
+ * Takes back a configuration nginx refused. Of the stage's three files,
+ * the key check, nginx.conf and the drop-in, each that this run wrote
+ * goes back as it was, or goes when the run made it new, so the files on
+ * disk match what the running nginx and systemd run. nginx's list of the
+ * api keys' hashes stays, even when this run's fourth stage wrote it. The
+ * list holds the hashes in the api keys' file, which stays too, and a
+ * running nginx already reads the list, since that stage reloads nginx
+ * right after writing it. Then the function keeps what was refused in the
+ * tool's error log, and stops the run.
  * @param {object} context  The run.
  * @param {{stderr: string}} tested  nginx -t's answer.
  * @param {{files: object[], before: Map<string, string|null>,

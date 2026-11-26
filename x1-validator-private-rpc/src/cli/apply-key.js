@@ -16,7 +16,8 @@
  * nothing then, unless the saved password is marked stale, as below.
  *
  * With the password in hand, the stage offers to save it with systemd's
- * encrypted credentials, so that features to come can read the records
+ * encrypted credentials, so that the operator can read it back with sudo
+ * after forgetting it, and features to come can read the records
  * unattended. It shows first what systemd said about a TPM2 chip and
  * what that means.
  * The question is asked even with --yes, which skips only confirmations.
@@ -76,8 +77,9 @@ export const SAME_PASSWORD_PROMPT = "The same password again: ";
 
 /** The question that offers to save the password. */
 export const SAVE_PASSWORD_QUESTION =
-  "Save the password, so the tool can read the api keys' records " +
-  "unattended, for the rotation notices and billing to come?";
+  "Save the password, so that you can read it back with sudo if you " +
+  "forget it, and the tool can read the api keys' records unattended, " +
+  "for the rotation notices and billing to come?";
 
 /**
  * Explains systemd's answer about a TPM2 chip, for the save question.
@@ -415,7 +417,7 @@ export async function setUpApiKeys(context) {
       "keys",
       count === 0
         ? `Would make the first api key, and its record in ${filePath}.`
-        : `Would hand nginx the hashes of the ${apiKeysCount(count)} in ${filePath}.`,
+        : `Would hand nginx the hashes of the ${apiKeysCount(count)} in ${filePath}, if nginx's list differs from them.`,
     );
     return { key: "" };
   }

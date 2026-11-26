@@ -118,7 +118,7 @@
       "maximum": 20
     },
     "websocketIdleTimeoutSeconds": {
-      "description": "How long a quiet websocket subscription stays open: nginx's proxy_read_timeout.",
+      "description": "How long a quiet websocket subscription stays open: nginx's proxy_read_timeout, the longest nginx waits for the rpc to send anything on a keyed request. So it also limits an http request: one the rpc takes longer than that to start answering gets 504 Gateway Time-out.",
       "type": "integer",
       "minimum": 1,
       "maximum": 86400
@@ -202,10 +202,9 @@
       "maximum": 500000
     },
     "apiKeyCountCheckHours": {
-      "description": "How often, in hours, a cron job checks that nginx holds at least one api key.",
+      "description": "How often, in hours, a cron job checks that nginx's list of the api keys' hashes isn't empty: 1, 2, 3, 4, 6, 8, 12 or 24. The job runs at each hour of the validator's clock that is a multiple of this number, counting from midnight, so only a number that divides 24 keeps the gaps equal across midnight.",
       "type": "integer",
-      "minimum": 1,
-      "maximum": 24
+      "enum": [1, 2, 3, 4, 6, 8, 12, 24]
     },
     "checkQueryCount": {
       "description": "How many queries check-my-private-rpc, the standalone tool that tests the keyed url as a client would, sends through the keyed url, one right after another.",

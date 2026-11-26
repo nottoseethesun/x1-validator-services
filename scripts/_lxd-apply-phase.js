@@ -3,37 +3,44 @@
  * @description
  * The second phase of the LXD system test, run on the container the
  * nginx upgrade phase left clean: x1-validator-private-rpc's apply,
- * ensure, url, add-api-key, remove-api-key, the key count check,
- * turn-off-private-rpc, turn-on-private-rpc and undo-apply, end to end,
- * as the container's ordinary user, with sudo, as on a validator. Never
- * on a validator.
+ * ensure, url, add-api-key, remove-api-key,
+ * ensure-there-is-at-least-one-rpc-api-key, turn-off-private-rpc,
+ * turn-on-private-rpc and undo-apply, end to end, as the container's
+ * ordinary user, with sudo, as on a validator. Never on a validator.
  *
- * The container plays a validator: a stand-in for Tachyon's rpc listens
- * on every interface, a git checkout holds the stand-in start script,
+ * The container plays a validator: a stand-in for the rpc of Tachyon, the
+ * validator's software, listens on every interface, a git checkout holds
+ * the stand-in start script,
  * and the hostname points at the container in /etc/hosts. Pebble, Let's
- * Encrypt's test server, stands in for Let's Encrypt. Its certificate
- * authority goes into the system's store, which nginx's ACME module
- * trusts by default, and into NODE_EXTRA_CA_CERTS for the tool's own
- * checks. The commands' prompts are answered through a real terminal,
- * made by `script`, as a person would answer them, the disclaimer's
- * dialog among them.
+ * Encrypt's test server, stands in for Let's Encrypt. The certificate
+ * authority behind Pebble's own https goes into the system's store, which
+ * nginx's ACME module trusts by default. The root and intermediate that
+ * sign the certificates Pebble issues go with that authority into one
+ * file, which the tool's own checks trust through NODE_EXTRA_CA_CERTS,
+ * and the test's own requests trust directly. The commands' prompts are
+ * answered through a real terminal, made by `script`, as a person would
+ * answer them, the disclaimer's dialog among them.
  *
  * It checks the outcome after each step: the first key apply shows, its
  * working request path, the saved password, the firewall rule, logs that
  * hold no key and keep the mode nginx.org's package gives them, and
  * nginx's own read-only /dev, with the key still working once nginx
- * reopens its logs. Then ensure: its failure while the rpc is public, every one of
- * its verdicts after the validator's restart, the flag put back by the
- * tool's git hook when `git stash` and a `git pull` that brings a commit
- * play an Update X1 Console, and its silence about a public rpc while
- * private rpc is off. Then every key working after a restart of nginx,
- * two keys added with an email and one of them removed, the flag back
- * once private rpc is on, and a later apply that asks nothing. undo-apply
- * answered no keeps the keys and the saved password, and the next apply
- * hands nginx the same keys. The last undo-apply, answered yes, must
- * leave nginx installed, stopped and masked, and say how to purge it.
- * Once the test purges nginx, as the operator may, a second undo-apply
- * must leave the container as apply found it.
+ * reopens its logs. Then ensure: its failure while the rpc is public,
+ * every one of its verdicts after the validator's restart, and
+ * `--private-rpc`, the start script's flag that keeps the rpc private,
+ * put back by the tool's git hook, which runs ensure, when `git stash`
+ * and a `git pull` that brings a commit play an Update X1 Console, the
+ * menu entry that updates x1console, an outside program that installs an
+ * X1 validator and starts it. Then the key working after a restart of
+ * nginx, and two keys added with an email and one of them removed. Then
+ * the flag taken out once turn-off-private-rpc runs, ensure's silence
+ * about a public rpc while private rpc is off, the flag back once
+ * turn-on-private-rpc runs, and a later apply that asks for no password.
+ * undo-apply answered no keeps the keys and the saved password, and the
+ * next apply hands nginx the same keys. Then undo-apply, answered yes,
+ * must leave nginx installed, stopped and masked, and say how to purge
+ * it. Once the test purges nginx, as the operator may, undo-apply run
+ * again must leave the container as apply found it.
  *
  * Last, a firewall rule for port 443 with a comment, added before apply
  * while ufw is off, as in a fresh container. An apply stopped after its
@@ -102,7 +109,11 @@ const PEBBLE_VERSION = "v2.10.3";
 const NODE_CA = "/opt/pebble/node-ca.pem";
 const PASSWORD = "a long password for the system test";
 const STANDIN = `${GUEST_PROJECT}/x1-validator-private-rpc/test/helpers/rpc-standin.js`;
-/** One of Autopilot's jobs, from the project's root, which must stay. */
+/**
+ * The file, from the project's root, that holds one of the jobs of
+ * Autopilot, the cron jobs x1console can install to look after the
+ * validator. apply and undo-apply must keep that job.
+ */
 const CRONTAB_FIXTURE = "x1-validator-private-rpc/test/fixtures/crontab";
 const FLAG_LINE = "--rpc-port 8899 --private-rpc \\";
 /** The stand-in for x1console's repository on GitHub. */
@@ -161,12 +172,12 @@ function guestCli() {
  * Writes the script that makes the stand-in x1console checkout, as the
  * container's user: a stand-in for x1console's repository, cloned where
  * the settings say x1console and its start script are, so the checkout
- * pulls from it as x1console's pulls from GitHub. The script is committed
- * executable, as x1console's is, so the last check's `git status` sees a
- * command that drops the mode after the test's `git stash`, which puts
- * the committed mode back. apply's own edit comes before that, so its
- * unit test covers it.
- * The user's crontab gets one of Autopilot's jobs, which the last check
+ * pulls from it as x1console's pulls from GitHub. The start script is
+ * committed executable, as x1console's is, so the `git status` that
+ * checkUndone runs after undo-apply sees a command that drops the mode
+ * after the test's `git stash`, which puts the committed mode back.
+ * apply's own edit comes before that, so its unit test covers it.
+ * The user's crontab gets one of Autopilot's jobs, which checkUndone
  * looks for. In the container it only fails, since the stand-in has no
  * `autopilot.sh`.
  * @param {object} settings  The settings the tool loads in the container.
@@ -215,7 +226,9 @@ git pull -q
  * NODE_EXTRA_CA_CERTS set, and answers its prompts as each one appears.
  * @param {string} name  The container.
  * @param {string} command  The command, as the shell reads it.
- * @param {[string, string][]} answers  Each prompt's text, and its answer.
+ * @param {[string, string][]} answers  Each prompt's text, and its
+ *   answer, in the order the command shows them, as answerInTerminal
+ *   takes them.
  * @returns {Promise<{code: number, output: string}>}
  */
 function withAnswers(name, command, answers) {
@@ -416,9 +429,11 @@ function recordFoundRule(name) {
 
 /**
  * Checks the container once undo-apply has run: nothing apply made is
- * left, the firewall rule and both cron lines are gone while Autopilot's
- * job stays, nginx.service is no longer masked, and x1console's checkout
- * is as committed, with no backup beside the start script.
+ * left, the firewall rule and the tool's two cron lines, which run
+ * ensure and ensure-there-is-at-least-one-rpc-api-key, are gone while
+ * Autopilot's job stays, nginx.service is no longer masked, and
+ * x1console's checkout is as committed, with no backup beside the start
+ * script.
  * @param {string} name  The container.
  * @param {object} watched  The paths apply might make, and those of
  *   them that were there before it ran.
@@ -436,7 +451,7 @@ function checkUndone(name, watched, settings, failures) {
   const crontab = asUserCaptured(name, ["crontab", "-l"]).stdout;
   expect(
     failures,
-    "undo-apply removed both cron lines",
+    "undo-apply removed the tool's two cron lines",
     !crontab.includes(" ensure"),
   );
   const autopilot = fs.readFileSync(
@@ -614,7 +629,7 @@ export async function runApplyPhase(name, settingsOf) {
   const beforeRestart = tool(name, ["ensure"]);
   expect(
     failures,
-    "ensure finds the rpc public before the validator's restart",
+    "ensure exits 1 before the validator's restart, while the rpc is public and the running validator lacks --private-rpc",
     beforeRestart === 1,
   );
   startRpc(name, address, true);
@@ -696,7 +711,7 @@ export async function runApplyPhase(name, settingsOf) {
   checkNginxStays(guest, undone.output);
   expect(
     failures,
-    "after the operator purges nginx, a second undo-apply finishes",
+    "after the operator purges nginx, undo-apply run again finishes",
     await purgeThenUndo(guest),
   );
   checkUndone(name, watched, settings, failures);

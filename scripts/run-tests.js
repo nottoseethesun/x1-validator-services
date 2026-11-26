@@ -23,9 +23,9 @@ import {
 function main() {
   const program = scriptProgram(
     "scripts/run-tests.js",
-    "Runs every test, without the gate's other checks, for quick runs " +
-      "while working. Before a commit, run the gate, npm run check, which " +
-      "runs these tests and every other check that must pass.",
+    "Runs every test, and nothing else, for quick runs while working. " +
+      "Before a commit, run the gate, npm run check, which runs these tests " +
+      "and every other check that must pass.",
     {
       examples: [
         "npm test",

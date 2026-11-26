@@ -4,7 +4,7 @@ x1-validator-private-rpc makes an X1 validator's rpc private, and puts it behind
 
 ## What You Are Setting Up
 
-You are adding one dns record. It is an `A` record that points a new name under a domain you own, such as `x1-rpc.example.com`, at the validator's public ipv4 address. `nginx` on the validator uses that name to get a tls certificate, and your clients use it in the rpc url.
+You are adding one dns record. It is an `A` record that points a new name under a domain you own, such as `x1-rpc.example.com`, at the validator's public ipv4 address. `nginx`, the web server from nginx.org that `apply` installs on the validator to stand in front of the rpc, uses that name to get a tls certificate, and your clients use the name in the rpc url.
 
 The record needs a new name, a subdomain, rather than a path on the domain's website, such as `https://example.com/x1-rpc`. dns maps names to addresses, and never sees url paths. So for a path, whatever web server answers for `example.com` today would have to forward it to the validator. Most shared hosting cannot do that, and it would put that host in the middle of every rpc request. A subdomain is a name of its own, so adding it changes nothing about the domain's website, its mail or any other record.
 

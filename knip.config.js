@@ -3,9 +3,11 @@
  * @description
  * knip's settings for the gate's unused-file check (`npm run
  * knip:files`). Its entry points are the features' programs and tests,
- * from scripts/lint-targets.js, the test helpers that tests start as
- * programs, and the project's own scripts and lint rules. Every other
- * JavaScript file must be imported by one of them.
+ * from scripts/lint-targets.js; every JavaScript file in a test folder's
+ * `helpers/`, since some helpers are started as programs rather than
+ * imported; and the project's own scripts and lint rules. Every other
+ * JavaScript file must be imported by one of them. knip never reports an
+ * entry point, so a helper nothing uses passes the check.
  */
 
 import {

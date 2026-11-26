@@ -284,7 +284,7 @@ test("a change to the keys holds their lock, lets it go even when it fails, and 
   release();
 });
 
-test("a key's urls and the count read as they should", () => {
+test("a key's urls are its https and wss forms, and the count reads 0 api keys, 1 api key and 2 api keys", () => {
   assert.deepEqual(apiKeyUrls("x1-rpc.example.com", "KEY"), [
     "https://x1-rpc.example.com/KEY",
     "wss://x1-rpc.example.com/KEY",

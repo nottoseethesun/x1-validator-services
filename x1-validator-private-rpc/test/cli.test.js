@@ -9,7 +9,8 @@
  * - its version, and its refusal of what it doesn't accept
  * - its commands, each run with its options on stand-ins, a failure
  *   exiting 1 with its reason, and the disclaimer before each run that
- *   can change the system
+ *   can change the system, but for ensure's, which cron and the tool's
+ *   git hook run with nobody at the terminal
  *
  * Most tests parse argument lists through a program built in the test,
  * with commander's exits turned into exceptions and its output caught.
@@ -238,7 +239,7 @@ function standInMakers(host, settings, refusal = "") {
   return { makers, out, err, code: () => code, shown: () => shown };
 }
 
-test("each run that can change the system shows the disclaimer first, and a refusal stops it with nothing done", async () => {
+test("each run that can change the system, but for ensure's, shows the disclaimer first, and a refusal stops it with nothing done", async () => {
   const settings = loadSettings(
     copyShippedConfig('{"hostname": "x1-rpc.example.com"}').configDir,
   );

@@ -22,7 +22,9 @@
  *
  * ufw is on, unless a scenario turns it off. Its status then lists no
  * rules, though it still holds them. A folder root makes with mode 0700
- * hides what it holds from the validator's account, as on a real system.
+ * hides its files from the fake's exists, as a real system hides them
+ * from the validator's account. readText, fileMode and modifiedAt still
+ * reach them.
  * nginx reads the list of the api keys' hashes where the settings put
  * it, as its map's include does, at each start, restart and reload, and
  * fails to start or reload while the list is missing. Once started, it
@@ -455,7 +457,7 @@ function gpgAnswer(call) {
  * Answers nginx's https paths the way the real nginx would.
  * @param {object} state  The machine's state.
  * @param {object} target  The request.
- * @param {(ms: number) => number} clock  The fake's clock.
+ * @param {() => number} clock  The fake's clock, in milliseconds.
  * @returns {Promise<object>}
  */
 async function nginxAnswer(state, target, clock) {
