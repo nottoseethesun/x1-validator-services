@@ -6,10 +6,9 @@ engineering reference, the help its command lines print, the messages
 its programs show, the comments in its shell scripts, and its JSDoc, the
 comment blocks in JavaScript files that describe a file, a function or a
 value in a set form (`@param`, `@returns`, `@throws`). It gives the
-standard each text must meet, how to check each text against the code,
-how to write a fix, and the loop of fresh readers that checks an audit
-before its fixes are made. Every audit of the project's English follows
-it.
+standard each text must meet, what an audit reports, how to check each
+text against the code, how to write a fix, and the loop of fresh readers
+that checks a big rewrite. Every audit of the project follows it.
 
 It's adapted from a hand-off the project's owner wrote from audits of
 the owner's projects. LP Ranger, the owner's project whose conventions
@@ -17,7 +16,7 @@ this one follows, as [`CLAUDE.md`](../../CLAUDE.md) says, keeps that
 hand-off as its own `docs/claude/CLAUDE-ENGLISH-AUDIT.md`. Here, most
 examples are this project's own, and those in section 8 are findings
 from its audits. The guide also adds the rules for text that `CLAUDE.md`
-and the owner's rulings in those audits set.
+and the owner's rulings set.
 
 ## Table of Contents
 
@@ -25,15 +24,15 @@ and the owner's rulings in those audits set.
 - [2. The Standard Every Text Meets](#2-the-standard-every-text-meets)
   - [Describe the System as It Is](#describe-the-system-as-it-is)
   - [Lead Each Topic With Its Context](#lead-each-topic-with-its-context)
-  - [Introduce Each Tool Where It Is First Named](#introduce-each-tool-where-it-is-first-named)
+  - [Introduce Each Tool Once](#introduce-each-tool-once)
     - [What Counts as a Tool](#what-counts-as-a-tool)
     - [The Four Parts of an Introduction](#the-four-parts-of-an-introduction)
-    - [Where an Introduction Must Appear](#where-an-introduction-must-appear)
+    - [Where an Introduction Goes](#where-an-introduction-goes)
   - [Facts, Not Adjectives](#facts-not-adjectives)
   - [Leave Out No Step of the Logic](#leave-out-no-step-of-the-logic)
   - [One Word for One Thing](#one-word-for-one-thing)
   - [One Idea to a Sentence](#one-idea-to-a-sentence)
-  - [Say Each Fact Once](#say-each-fact-once)
+  - [One Home for Each Fact](#one-home-for-each-fact)
   - [Say What Can Change a Figure](#say-what-can-change-a-figure)
   - [Name the Clock and the Calendar](#name-the-clock-and-the-calendar)
   - [Quote Outputs and Names Exactly](#quote-outputs-and-names-exactly)
@@ -54,6 +53,7 @@ and the owner's rulings in those audits set.
 - [6. Writing a Fix](#6-writing-a-fix)
   - [Traps a Rewrite Falls Into](#traps-a-rewrite-falls-into)
 - [7. The Fresh-Reader Loop](#7-the-fresh-reader-loop)
+  - [What the Loop Checks](#what-the-loop-checks)
   - [Why Fresh Readers](#why-fresh-readers)
   - [The Files of the Loop](#the-files-of-the-loop)
   - [The Steps of the Loop](#the-steps-of-the-loop)
@@ -68,10 +68,30 @@ and the owner's rulings in those audits set.
 
 A doc is read by someone who doesn't have the code open: an operator
 deciding how to run a feature on a validator, or a developer about to
-change it. An audit makes sure that what they read is true of the code
-as it stands, that a newcomer can follow it, and that it leaves out no
-condition that changes what the code does. It covers every text a reader
-meets:
+change it. So what they read must be true of the code as it stands, and
+must leave out no condition that changes what the code does.
+
+An audit is led by the code. It looks first for code bugs: code that
+does other than the texts say it's meant to do. Each bug it finds gets a
+known-bug test, a test that passes while the bug is there, as
+[section 5](#5-significant-and-minor-findings) describes. Then the audit
+reads the texts against the code, and reports a text only for one of
+three things:
+
+- a wrong fact;
+- a missing turning point: a condition that changes the outcome, which
+  the text leaves out, as
+  [Leave Out No Step of the Logic](#leave-out-no-step-of-the-logic)
+  describes;
+- a passage that would mislead its reader.
+
+It leaves the wording alone.
+
+An English audit is an audit that the project's owner asks for by that
+name. It also holds every text to the whole standard of sections 2 and
+3, wording included, so that a newcomer can follow each one.
+
+Both kinds cover every text a reader meets:
 
 - the Markdown docs: the root `README.md`, `CLAUDE.md`, and the docs in
   `docs/`; each feature's `README.md` and the docs in its own `docs/`,
@@ -125,19 +145,31 @@ can all pass and still miss the bugs they're meant to catch, and only
 then what the stage does about it. A section on a fallback first says
 what the first source is and when it fails.
 
-### Introduce Each Tool Where It Is First Named
+### Introduce Each Tool Once
+
+A name a reader hasn't met is a gap in the text, however familiar it is
+to the writer. But a tool introduced in every doc that names it is one
+fact said many times. So each tool and term is introduced once, in the
+place its kind has: the project's glossary, `docs/glossary.md`, for a
+basic tool or term, and its home doc for a part of the project.
 
 #### What Counts as a Tool
 
-A tool is anything a reader runs or a program uses: a feature's
-commands, such as `apply` or `ensure`, its standalone tools in `util/`,
-the launcher in its `bin/`, each `npm run` target and the script it
-runs, a package, an outside program such as `x1console`, `nginx` or
-`whiptail`, and an outside service such as Let's Encrypt or Cronitor.
-Treat a technical term the same way: an http status such as 403, a hash,
-a flag such as `--private-rpc`, a setting such as
-`startScriptQuietSeconds`, a "UTC day". A name a reader hasn't met is a
-gap in the text, however familiar it is to the writer.
+A tool is anything a reader runs or a program uses. It's one of two
+kinds:
+
+- A basic tool is one that the project's texts name and the project
+  doesn't own: an outside program such as `git`, `npm`, Node.js,
+  `x1console`, `nginx` or `whiptail`, a package, and an outside service
+  such as GitHub, Let's Encrypt or Cronitor. Treat a technical term the
+  same way: an http status such as 403, a hash, a flag of the
+  validator's software such as `--private-rpc`, a "UTC day".
+- A part of the project is a tool that the project owns: a feature's
+  commands, such as `apply` or `ensure`, its standalone tools in
+  `util/`, the launcher in its `bin/`, and each `npm run` target and the
+  script it runs. Treat a name of the project's own the same way: a
+  setting such as `startScriptQuietSeconds`, or a name the docs give to
+  a thing of the project's, such as "the keyed url".
 
 #### The Four Parts of an Introduction
 
@@ -153,21 +185,29 @@ repo's tool, puts `--private-rpc` back into `x1console`'s start script
 after an `x1console` update takes it out. The tool's `git` hook runs it
 when the update's `git pull` brings new commits."
 
-`CLAUDE.md`'s rule "Each tool introduced at its first mention" asks for
-parts 1, 2 and 4 in every doc, help text and message. An audit asks for
-part 3 too.
+An introduction in the glossary or in a home doc holds all four parts.
 
-#### Where an Introduction Must Appear
+#### Where an Introduction Goes
 
-- At the first mention in each doc: a reader may open any doc first. A
-  doc that points to another for the details still introduces the tool
-  itself.
-- At the first mention in each part a reader can see alone, such as a
-  command's `--help`, or a message the operator meets on its own.
-- Before the text uses the name, not after: a sentence that names a tool
-  above the paragraph that introduces it fails, even if the introduction
-  is a few lines below. A reader knows only what the doc has said so
-  far, plus what its audience knows.
+- A basic tool or term is introduced only in the glossary, which says
+  each one once. No other text introduces it: not a README, another doc,
+  `CLAUDE.md`, a JSDoc block or a test file's header. The READMEs and
+  the docs link to the glossary.
+- A part of the project is introduced in its home doc, the one that
+  [One Home for Each Fact](#one-home-for-each-fact) names for what the
+  part is. The gate, for example, is introduced in
+  [The Gate](../engineering.md#the-gate), in `docs/engineering.md`.
+  Another doc that names the part links to the heading that introduces
+  it.
+- A help, or any other text that its reader sees alone, introduces what
+  that reader needs, in a few words: a command's `--help`, or a message
+  the operator meets on its own, such as an alert. Its reader has no doc
+  open, and the text can't link to one.
+- In the text that introduces a name, the introduction comes before the
+  text uses the name, not after. A sentence that names a tool above the
+  paragraph that introduces it fails, even if the introduction is a few
+  lines below: a reader knows only what the text has said so far, plus
+  what its audience knows.
 
 ### Facts, Not Adjectives
 
@@ -230,21 +270,53 @@ in [section 8](#8-findings-from-past-audits-before-and-after) shows.
 - An instruction says what to do, and why: what to copy, where to put
   it, and what is lost if you don't.
 
-### Say Each Fact Once
+### One Home for Each Fact
 
-A fact said twice in one text doesn't read as a reminder. It reads as a
-second fact, so the reader stops to work out what changed, and finds
-nothing. So each text states a fact once. A summary that restates facts
-from the paragraphs above it is a defect too: cut the repeat, rather
-than weigh it as a summary. This guide's checklist,
+A fact stated in two texts must be changed in both, and a change that
+misses one leaves them saying it two ways. So each fact lives in one
+text, its home, and every other text that needs it links to the home's
+heading. The homes:
+
+- A user's steps: a README. The root `README.md` holds the steps every
+  feature shares, and a feature's `README.md` holds the steps to
+  install, run and use that feature.
+- How a feature's parts work, and why: its `docs/architecture.md`.
+- The files, the gate, the tests and CI: an engineering reference. The
+  project's `docs/engineering.md` holds what every feature shares, and a
+  feature's `docs/engineering.md` holds its own modules, files and
+  tests.
+- Command syntax: a command list. `docs/npm-project-commands.md` holds
+  the `npm` commands, and a feature's `docs/project-commands.md` holds
+  its commands and standalone tools.
+- Basic tools and terms: `docs/glossary.md`, as
+  [Introduce Each Tool Once](#introduce-each-tool-once) says.
+- A topic with a doc of its own: that doc, such as `docs/security.md`
+  for the security lint's exceptions and the dependency overrides, or a
+  feature's `docs/manual-domain-setup.md` for the dns record the
+  operator adds by hand.
+- Rules: `CLAUDE.md`, each with a link to the doc that holds its facts.
+  `CLAUDE.md` states no fact that a doc holds.
+
+A fact found outside its home is moved there, never dropped, and a link
+to the home's heading takes its place.
+
+A text that its reader sees alone, or that can't carry a link, says what
+its own reader needs: a command's `--help`, a message, a JSDoc block, a
+comment, a test's title. Where it states a fact that a doc holds, the
+two say it the same way, as
+[Keeping Every Text Saying the Same Thing](#keeping-every-text-saying-the-same-thing)
+covers.
+
+Within one text, too, a fact is said once. A fact said twice in one
+text doesn't read as a reminder. It reads as a second fact, so the
+reader stops to work out what changed, and finds nothing. A summary that
+restates facts from the paragraphs above it is a defect too: cut the
+repeat, rather than weigh it as a summary. This guide's checklist,
 [section 10](#10-a-checklist-for-each-text), is the one exception: it
 lists the rules again on purpose, as checks to run on each text. Each
 brief in [section 7](#7-the-fresh-reader-loop), the instructions a fresh
 reader gets for checking an audit, is a text of its own, since it
-reaches the reader without this guide. A fact that two texts both state
-is a different case, which
-[Keeping Every Text Saying the Same Thing](#keeping-every-text-saying-the-same-thing)
-covers.
+reaches the reader without this guide.
 
 ### Say What Can Change a Figure
 
@@ -312,8 +384,9 @@ text or a message prints as plain text, so it puts no name in backticks.
 ## 3. JSDoc and Comments
 
 JSDoc is what a developer reads before changing the code, and it's held
-to the same standard as the docs: true of the code, complete at each
-turning point, with each name introduced.
+to the same standard as the docs: true of the code, and complete at each
+turning point. It introduces no basic tool or term, since the glossary
+does, as [Introduce Each Tool Once](#introduce-each-tool-once) says.
 
 ### File Headers
 
@@ -476,12 +549,13 @@ Check each of these against the code, not against another doc:
 
 ### Keeping Every Text Saying the Same Thing
 
-A fact is often stated in several places: the feature's README, its
-`docs/project-commands.md`, its architecture doc, a command's `--help`,
-a file header, a function's docstring, a test's title. An audit that
-changes one changes all, and checks that none now says the same fact
-twice in one text, or says it two ways. Where two texts must say the
-same thing, a test can hold them to it, as this project's tests do: the
+A fact has one home among the docs, as
+[One Home for Each Fact](#one-home-for-each-fact) says. But the texts
+that stand alone state it too: a command's `--help`, a message, a file
+header, a function's docstring, a test's title. An audit that changes
+one changes all, and checks that none now says the same fact twice in
+one text, or says it two ways. Where two texts must say the same thing,
+a test can hold them to it, as this project's tests do: the
 feature's `test/cli.test.js` fails `docs/project-commands.md` unless the
 doc has a row for each command and standalone tool, and no other row,
 and the Options column of each command's row names exactly the options
@@ -491,25 +565,38 @@ disclaimer differs from the one the dialog shows.
 
 ## 5. Significant and Minor Findings
 
-A finding is significant when it is:
+An audit is led by the code, as [section 1](#1-what-an-audit-covers)
+says, so a code bug comes first. In every audit, a finding is
+significant when it is:
 
-- a wrong fact, in a doc or in a proposed fix;
-- a missing turning point, or a missing step of reasoning;
-- a sentence that would mislead a reader into acting wrongly;
-- a name or tool used before it is introduced;
-- a fact said twice in one text;
-- any other break of a rule in sections 2 and 3, such as a story of an
-  old bug or design, a topic that doesn't open with its context, an
-  adjective in place of a fact, or a program's name out of backticks in
-  a Markdown doc;
+- a code bug: code that does other than the texts say it's meant to do;
+- a wrong fact, in a text or in a proposed fix;
+- a missing turning point;
+- a passage that would mislead a reader into acting wrongly;
 - a fix that would leave a file wrong, unclear or repeating itself;
 - a change that would break a test or the project's checks.
 
-Wording that is only a matter of taste is minor, and an audit doesn't
-report it.
+A code bug is never written into a text as the design. It's listed
+first in the audit's report, and it gets a known-bug test: a test that
+passes while the bug is there. The fix makes that test fail, so the
+change that fixes the bug turns it into an ordinary test, which then
+holds the code to the fix.
 
-The project's owner has also ruled two kinds of finding out, so an
-audit doesn't report them either:
+An English audit also reports each break of a rule in sections 2 and 3:
+
+- a tool or a term introduced in a place other than the one
+  [Introduce Each Tool Once](#introduce-each-tool-once) gives it, or
+  nowhere;
+- a fact outside its home, or said twice in one text;
+- any other break, such as a story of an old bug or design, a topic
+  that doesn't open with its context, an adjective in place of a fact,
+  or a program's name out of backticks in a Markdown doc.
+
+Wording that is only a matter of taste is minor, and no audit reports
+it.
+
+The project's owner has also ruled two kinds of finding out, so no
+audit reports them either:
 
 - text or code that doesn't cover a non-standard installation. A setting
   changed from its shipped value is still in scope, but not a change
@@ -556,14 +643,27 @@ rewrites of the rounds before them. Check each new text for them:
 
 ## 7. The Fresh-Reader Loop
 
+### What the Loop Checks
+
+The fresh-reader loop is for big rewrites. It checks:
+
+- a new doc;
+- a rewrite of a whole section of a doc, or of more;
+- an audit report that rewrites text at that scale.
+
+An audit report of code fixes with their tests, and of short
+corrections of facts, skips the loop. The editor, who runs the audit and
+makes its fixes, checks each finding against the code, makes the fixes
+with their tests, and runs the gate, `npm run check`.
+
 ### Why Fresh Readers
 
-An audit report, or a large rewrite of the docs, is checked by fresh
-readers before its fixes are made. A fresh reader is an agent that knows
-nothing of the project but its brief, so the text must make sense to a
-newcomer, which is the reader the docs are for. Each reader reports only
-significant findings; the editor fixes those, and sends the next reader,
-until one finds no significant issue.
+A text that the loop checks goes to fresh readers before it's committed
+or, when it's a report, before its fixes are made. A fresh reader is an
+agent that knows nothing of the project but its brief, so the text must
+make sense to a newcomer, which is the reader the docs are for. Each
+reader reports only significant findings; the editor fixes those, and
+sends the next reader, until one finds no significant issue.
 
 A reader that checks every fact repeats the work of every reader before
 it. So only the first reader does a full pass. Every later reader also
@@ -688,12 +788,13 @@ docs, and each finding that holds is fixed in the docs themselves.
 ### The Rounds of an Audit
 
 A round is one cycle of the audit: the findings of its auditors, the
-report built from them, the readers who check the report, and the fixes.
-Once the readers pass the report, its fixes are made, and the gate,
-`npm run check`, runs on the newest release of each Node.js major CI
-tests, code-fuzzing included. When the fixes change a feature's code, the system test runs
-too. The fixes then reach `main` through a pull request, as every change
-does.
+report built from them, the readers who check the report when
+[What the Loop Checks](#what-the-loop-checks) calls for them, and the
+fixes. Once the report has passed its readers, or needs none, its fixes
+are made, and the gate, `npm run check`, runs on the newest release of
+each Node.js major CI tests, code-fuzzing included. When the fixes
+change a feature's code, the system test runs too. The fixes then reach
+`main` through a pull request, as every change does.
 
 The next round starts with new auditors, and the rounds go on until one
 finds no significant issue: a round that finds only a few, or only small
@@ -771,17 +872,24 @@ tests hold docs to; only a reader catches any other wrong fact.
 
 ## 10. A Checklist for Each Text
 
+An English audit runs every check below on each text. Any other audit
+reports a text only for what
+[section 5](#5-significant-and-minor-findings) lists for every audit.
+
 - [ ] Says how the system works now; tells no history.
 - [ ] Each topic and sub-topic opens with its context.
-- [ ] Each tool and term is introduced at its first mention in this
-      text, in four parts.
+- [ ] Each basic tool and term is introduced only in the glossary, and
+      each part of the project in its home doc, in four parts; a text
+      its reader sees alone introduces what that reader needs, in a few
+      words.
 - [ ] No adjective stands in for a fact; each number has its unit.
 - [ ] Every branch of the code that changes the outcome is in the text,
       each exception beside its rule.
 - [ ] One word for each idea, and the code's names for settings, files,
       commands and messages.
 - [ ] One idea to a sentence; each "it" or "its" points at one thing.
-- [ ] Each fact said once in this text.
+- [ ] Each fact is in its home, and said once there; every other text
+      that needs it links to the home's heading.
 - [ ] Each figure a setting can change says so, and names the setting.
 - [ ] Each day, week or month names its time zone, and each week its
       first day.
@@ -795,6 +903,7 @@ tests hold docs to; only a reader catches any other wrong fact.
 - [ ] Each test title still matches what its test holds the code to.
 - [ ] Each help lists every option its program takes, and gives a usage
       example of each common use.
-- [ ] Every other text that states the same fact says it the same way.
+- [ ] Each text that stands alone, such as a help or a JSDoc block,
+      says a fact the same way as the fact's home.
 - [ ] Each fix quotes the whole text it replaces and gives the whole new
       text.
